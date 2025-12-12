@@ -4,7 +4,7 @@ import com.mojang.brigadier.arguments.LongArgumentType
 import dev.yourname.obelisks.MOD_ID
 import dev.yourname.obelisks.player.PlayerReturnHandler
 import dev.yourname.obelisks.player.getRunInfo
-import dev.yourname.obelisks.run.RunManager
+import dev.yourname.obelisks.jaunt.RunManager
 import net.minecraft.commands.Commands
 import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component

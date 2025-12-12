@@ -1,0 +1,25 @@
+{
+  "dimensionId": "fallout_wastelands:wasteland",
+  "dimensionName": "Wasteland",
+  "stemBlockType": "fallout_wastelands:wasteland_dirt",
+  "feMultiplier": 1.3,
+  "spawnY": 70,
+  "platformBlock": "fallout_wastelands:wasteland_stone",
+  "glowBlock": "minecraft:torch",
+  "enabled": true,
+  "minFERequired": 1500,
+  "collapseSpeedMultiplier": 1.1,
+  "drainExponentialFactor": 0.00007,
+  "drainExponentialIntervalTicks": 20,
+  "flavorBlocks": [
+    "fallout_wastelands:wasteland_dirt",
+    "fallout_wastelands:wasteland_sand",
+    "fallout_wastelands:wasteland_stone",
+    "minecraft:sand",
+    "minecraft:gravel"
+  ],
+  "rarityMultiplier": 1.0,
+  "slotCount": 5,
+  "targetBlock": "fallout_wastelands:wasteland_stone",
+  "customProperties": {}
+}

@@ -3,7 +3,7 @@ package dev.yourname.obelisks.dimension
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
 import dev.yourname.obelisks.MOD_ID
-import dev.yourname.obelisks.config.DimensionConfigLoader
+import dev.yourname.obelisks.config.ConfigManager
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -18,7 +18,7 @@ object DimensionSlotJsonGenerator {
 
     /**
      * Generates dimension and dimension_type JSON files for all slots.
-     * Should be called after DimensionConfigLoader.loadAll() and DimensionSlotManager.initializeSlots()
+     * Should be called after ConfigManager.load() and DimensionSlotManager.initializeSlots()
      */
     fun generateSlotJsons() {
         val dimensionDir = Paths.get("src/main/resources/data/$MOD_ID/dimension")
@@ -34,7 +34,7 @@ object DimensionSlotJsonGenerator {
 
         // Iterate through all dimension base types and generate slots
         for (baseType in DimensionBaseType.entries) {
-            val config = DimensionConfigLoader.getConfigForBaseType(baseType)
+            val config = ConfigManager.getConfigForBaseType(baseType)
             if (config != null && config.enabled) {
                 val slotCount = config.slotCount
 

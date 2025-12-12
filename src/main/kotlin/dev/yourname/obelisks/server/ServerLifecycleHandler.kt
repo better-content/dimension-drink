@@ -3,8 +3,8 @@ package dev.yourname.obelisks.server
 import dev.yourname.obelisks.MOD_ID
 import dev.yourname.obelisks.dimension.DimensionCollapseHandler
 import dev.yourname.obelisks.dimension.DimensionSlotManager
-import dev.yourname.obelisks.run.RunBossBarManager
-import dev.yourname.obelisks.run.RunManager
+import dev.yourname.obelisks.jaunt.RunBossBarManager
+import dev.yourname.obelisks.jaunt.RunManager
 import net.minecraftforge.event.server.ServerStartedEvent
 import net.minecraftforge.event.server.ServerStoppingEvent
 import net.minecraftforge.eventbus.api.SubscribeEvent

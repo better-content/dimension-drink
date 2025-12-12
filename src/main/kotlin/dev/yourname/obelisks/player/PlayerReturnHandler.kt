@@ -1,7 +1,7 @@
 package dev.yourname.obelisks.player
 
 import dev.yourname.obelisks.dimension.DimensionCoordinator
-import dev.yourname.obelisks.run.RunManager
+import dev.yourname.obelisks.jaunt.RunManager
 import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerPlayer
 import net.minecraftforge.event.TickEvent
@@ -108,7 +108,7 @@ object PlayerReturnHandler {
      * Now uses DimensionCoordinator.
      */
     fun forceReturnAllPlayersInRun(
-        runData: dev.yourname.obelisks.run.RunData,
+        runData: dev.yourname.obelisks.jaunt.RunData,
         server: net.minecraft.server.MinecraftServer,
         reason: String
     ) {

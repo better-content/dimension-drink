@@ -48,7 +48,7 @@ object ObeliskPlacer {
      * @return True if placement succeeded
      */
     fun placeObelisk(level: Level, pos: BlockPos, baseType: DimensionBaseType): Boolean {
-        val dimConfig = dev.yourname.obelisks.config.DimensionConfigLoader.getConfigForBaseType(baseType) ?: return false
+        val dimConfig = dev.yourname.obelisks.config.ConfigManager.getConfigForBaseType(baseType) ?: return false
         val config = ObeliskTypeRegistry.getConfigForDimension(dimConfig)
 
         // Find ground below the given position

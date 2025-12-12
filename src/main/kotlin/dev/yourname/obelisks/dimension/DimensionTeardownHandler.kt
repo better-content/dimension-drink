@@ -1,8 +1,8 @@
 package dev.yourname.obelisks.dimension
 
 import dev.yourname.obelisks.ObelisksConstants
-import dev.yourname.obelisks.run.RunData
-import dev.yourname.obelisks.run.RunManager
+import dev.yourname.obelisks.jaunt.RunData
+import dev.yourname.obelisks.jaunt.RunManager
 import net.minecraft.core.BlockPos
 import net.minecraft.resources.ResourceKey
 import net.minecraft.server.MinecraftServer
@@ -100,7 +100,7 @@ object DimensionTeardownHandler {
                 // Clear active run ID so obelisk can be reused
                 obeliskBE.activeRunId = null
                 obeliskBE.setChanged()
-                println("[$modId] Reset obelisk: cleared active run (FE will regenerate naturally at ${dev.yourname.obelisks.config.ObelisksConfig.FE_REGEN_PER_TICK} FE/tick)")
+                println("[$modId] Reset obelisk: cleared active run (FE will regenerate naturally at ${dev.yourname.obelisks.ObelisksConstants.FE_REGEN_PER_TICK} FE/tick)")
             } else {
                 println("[$modId] Warning: Could not find origin obelisk to reset")
             }
@@ -114,63 +114,76 @@ object DimensionTeardownHandler {
     }
 
     /**
-     * Spawns emerald rewards at the obelisk based on monsters killed during the run.
+     * Spawns loot rewards at the obelisk based on monsters killed during the run.
+     * Uses configurable loot tables for flexible reward systems.
      */
     private fun spawnEmeraldRewards(level: net.minecraft.server.level.ServerLevel, pos: BlockPos, monstersKilled: Int) {
-        if (!ObelisksConstants.EMERALD_REWARDS_ENABLED) return
         if (monstersKilled == 0) return
 
-        val minPerKill = ObelisksConstants.EMERALD_REWARD_MIN_PER_KILL
-        val maxPerKill = ObelisksConstants.EMERALD_REWARD_MAX_PER_KILL
-
-        var totalEmeralds = 0
+        // Generate loot for each kill using loot table
+        val allLoot = mutableListOf<net.minecraft.world.item.ItemStack>()
         repeat(monstersKilled) {
-            val emeraldsFromKill = kotlin.random.Random.nextInt(minPerKill, maxPerKill + 1)
-            totalEmeralds += emeraldsFromKill
+            val loot = dev.yourname.obelisks.config.LootGenerator.generateLootForKill()
+            allLoot.addAll(loot)
         }
 
-        if (totalEmeralds == 0) {
-            println("[${ObelisksConstants.MOD_ID}] Run complete: $monstersKilled monsters killed, no emeralds awarded")
+        if (allLoot.isEmpty()) {
+            println("[${ObelisksConstants.MOD_ID}] Run complete: $monstersKilled monsters killed, no loot generated")
             return
         }
 
-        // Spawn emeralds as item entities
-        val spawnPos = pos.above() // Spawn above the obelisk
-        val emeraldStack = net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.EMERALD, totalEmeralds)
-        val itemEntity = net.minecraft.world.entity.item.ItemEntity(
-            level,
-            spawnPos.x + 0.5,
-            spawnPos.y + 0.5,
-            spawnPos.z + 0.5,
-            emeraldStack
-        )
+        // Consolidate identical items
+        val consolidatedLoot = mutableMapOf<net.minecraft.world.item.Item, Int>()
+        allLoot.forEach { stack ->
+            consolidatedLoot[stack.item] = (consolidatedLoot[stack.item] ?: 0) + stack.count
+        }
 
-        // Add upward velocity for dramatic effect
-        itemEntity.deltaMovement = itemEntity.deltaMovement.add(0.0, 0.3, 0.0)
-        level.addFreshEntity(itemEntity)
+        // Spawn loot as item entities
+        val spawnPos = pos.above() // Spawn above the obelisk
+        consolidatedLoot.forEach { (item, count) ->
+            val stack = net.minecraft.world.item.ItemStack(item, count)
+            val itemEntity = net.minecraft.world.entity.item.ItemEntity(
+                level,
+                spawnPos.x + 0.5,
+                spawnPos.y + 0.5,
+                spawnPos.z + 0.5,
+                stack
+            )
+
+            // Add upward velocity for dramatic effect
+            itemEntity.deltaMovement = itemEntity.deltaMovement.add(0.0, 0.3, 0.0)
+            level.addFreshEntity(itemEntity)
+        }
 
         // Spawn particles
-        level.sendParticles(
-            net.minecraft.core.particles.ParticleTypes.HAPPY_VILLAGER,
-            spawnPos.x + 0.5,
-            spawnPos.y + 1.0,
-            spawnPos.z + 0.5,
-            20,
-            0.3, 0.3, 0.3,
-            0.1
-        )
+        if (dev.yourname.obelisks.util.EffectLimiter.trySpawnParticles(20)) {
+            level.sendParticles(
+                net.minecraft.core.particles.ParticleTypes.HAPPY_VILLAGER,
+                spawnPos.x + 0.5,
+                spawnPos.y + 1.0,
+                spawnPos.z + 0.5,
+                20,
+                0.3, 0.3, 0.3,
+                0.1
+            )
+        }
 
         // Play success sound
-        level.playSound(
-            null as net.minecraft.world.entity.player.Player?,
-            spawnPos,
-            net.minecraft.sounds.SoundEvents.PLAYER_LEVELUP,
-            net.minecraft.sounds.SoundSource.BLOCKS,
-            1.0f,
-            1.0f
-        )
+        if (dev.yourname.obelisks.util.EffectLimiter.tryPlaySound()) {
+            level.playSound(
+                null as net.minecraft.world.entity.player.Player?,
+                spawnPos,
+                net.minecraft.sounds.SoundEvents.PLAYER_LEVELUP,
+                net.minecraft.sounds.SoundSource.BLOCKS,
+                1.0f,
+                1.0f
+            )
+        }
 
-        println("[${ObelisksConstants.MOD_ID}] Run complete: $monstersKilled monsters killed, awarded $totalEmeralds emeralds")
+        val lootSummary = consolidatedLoot.entries.joinToString(", ") { (item, count) ->
+            "$count x ${item.description.string}"
+        }
+        println("[${ObelisksConstants.MOD_ID}] Run complete: $monstersKilled monsters killed, awarded: $lootSummary")
     }
 
     // Note: The following methods are no longer needed with the slot-based dimension system.

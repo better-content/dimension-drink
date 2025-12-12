@@ -1,0 +1,25 @@
+{
+  "dimensionId": "deeperdarker:otherside",
+  "dimensionName": "The Otherside",
+  "stemBlockType": "minecraft:sculk",
+  "feMultiplier": 2.2,
+  "spawnY": 40,
+  "platformBlock": "deeperdarker:sculk_stone",
+  "glowBlock": "deeperdarker:sculk_glow",
+  "enabled": true,
+  "minFERequired": 8000,
+  "collapseSpeedMultiplier": 1.4,
+  "drainExponentialFactor": 0.00012,
+  "drainExponentialIntervalTicks": 20,
+  "flavorBlocks": [
+    "minecraft:sculk",
+    "minecraft:sculk_vein",
+    "deeperdarker:sculk_stone",
+    "deeperdarker:sculk_gleam",
+    "deeperdarker:echo_soil"
+  ],
+  "rarityMultiplier": 0.7,
+  "slotCount": 5,
+  "targetBlock": "deeperdarker:sculk_stone",
+  "customProperties": {}
+}

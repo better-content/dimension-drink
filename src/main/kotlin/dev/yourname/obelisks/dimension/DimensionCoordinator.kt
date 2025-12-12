@@ -60,7 +60,7 @@ object DimensionCoordinator {
      * Force return all players in a run (used for 0% energy collapse).
      */
     fun forceReturnAllPlayers(
-        runData: dev.yourname.obelisks.run.RunData,
+        runData: dev.yourname.obelisks.jaunt.RunData,
         server: net.minecraft.server.MinecraftServer,
         reason: String
     ) {

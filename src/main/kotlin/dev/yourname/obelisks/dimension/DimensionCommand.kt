@@ -1,12 +1,11 @@
 package dev.yourname.obelisks.dimension
 
 import dev.yourname.obelisks.ObelisksConstants
-import dev.yourname.obelisks.config.ObeliskTypeRegistry
 import dev.yourname.obelisks.content.ObeliskBlockEntity
 import dev.yourname.obelisks.player.PlayerRunInfo
 import dev.yourname.obelisks.player.getRunInfo
-import dev.yourname.obelisks.run.RunData
-import dev.yourname.obelisks.run.RunManager
+import dev.yourname.obelisks.jaunt.RunData
+import dev.yourname.obelisks.jaunt.RunManager
 import dev.yourname.obelisks.util.Result
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.Registries
@@ -210,6 +209,20 @@ class EnterDimensionCommand(
 
         // Step 9: Teleport player
         teleportPlayer(player, runDimension, spawnPos)
+
+        // Step 10: Play activation sound/VFX
+        if (dev.yourname.obelisks.ObelisksConstants.OBELISK_ACTIVATION_SOUND_ENABLED) {
+            if (dev.yourname.obelisks.util.EffectLimiter.tryPlaySound()) {
+                originLevel.playSound(
+                    null,
+                    obeliskPos,
+                    net.minecraft.sounds.SoundEvents.END_PORTAL_SPAWN,
+                    net.minecraft.sounds.SoundSource.BLOCKS,
+                    1.0f,
+                    1.0f
+                )
+            }
+        }
 
         // Notify player
         player.sendSystemMessage(

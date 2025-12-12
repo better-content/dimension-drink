@@ -29,7 +29,7 @@ object ObeliskTypeRegistry {
      * @return ObeliskTypeConfig or null if no enabled dimensions exist
      */
     fun getRandomWeightedConfig(random: RandomSource): ObeliskTypeConfig? {
-        val enabledConfigs = DimensionConfigLoader.getEnabledConfigs()
+        val enabledConfigs = ConfigManager.getEnabledDimensionConfigs()
 
         if (enabledConfigs.isEmpty()) {
             return null

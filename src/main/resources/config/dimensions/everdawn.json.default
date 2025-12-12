@@ -1,0 +1,25 @@
+{
+  "dimensionId": "blue_skies:everdawn",
+  "dimensionName": "Everdawn",
+  "stemBlockType": "blue_skies:everdawn_grass",
+  "feMultiplier": 1.0,
+  "spawnY": 80,
+  "platformBlock": "blue_skies:everdawn_stone",
+  "glowBlock": "blue_skies:sun_bloom",
+  "enabled": true,
+  "minFERequired": 600,
+  "collapseSpeedMultiplier": 1.0,
+  "drainExponentialFactor": 0.000065,
+  "drainExponentialIntervalTicks": 20,
+  "flavorBlocks": [
+    "blue_skies:everdawn_grass",
+    "blue_skies:everdawn_dirt",
+    "blue_skies:everdawn_stone",
+    "blue_skies:fiery_sand",
+    "blue_skies:rune_stone"
+  ],
+  "rarityMultiplier": 1.2,
+  "slotCount": 5,
+  "targetBlock": "blue_skies:everdawn_stone",
+  "customProperties": {}
+}

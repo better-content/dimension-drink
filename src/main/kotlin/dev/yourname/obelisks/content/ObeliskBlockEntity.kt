@@ -1,9 +1,9 @@
 package dev.yourname.obelisks.content
 
-import dev.yourname.obelisks.config.ObelisksConfig
+import dev.yourname.obelisks.ObelisksConstants
 import dev.yourname.obelisks.dimension.DimensionBaseType
 import dev.yourname.obelisks.registry.ModBlockEntities
-import dev.yourname.obelisks.run.FERegenerationHandler
+import dev.yourname.obelisks.jaunt.FERegenerationHandler
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.nbt.CompoundTag
@@ -26,7 +26,7 @@ class ObeliskBlockEntity(
         FERegenerationHandler.registerObelisk(this)
     }
 
-    var feStored: Int = ObelisksConfig.MAX_FE_STORAGE
+    var feStored: Int = ObelisksConstants.MAX_FE_STORAGE
         private set
     var targetDimensionId: ResourceLocation? = null
 
@@ -43,7 +43,7 @@ class ObeliskBlockEntity(
     private val energyStorage = object : IEnergyStorage {
         override fun receiveEnergy(maxReceive: Int, simulate: Boolean): Int {
             if (maxReceive <= 0) return 0
-            val energyReceived = minOf(ObelisksConfig.MAX_FE_STORAGE - feStored, maxReceive)
+            val energyReceived = minOf(ObelisksConstants.MAX_FE_STORAGE - feStored, maxReceive)
             if (!simulate && energyReceived > 0) {
                 feStored += energyReceived
                 setChanged()
@@ -63,7 +63,7 @@ class ObeliskBlockEntity(
 
         override fun getEnergyStored(): Int = feStored
 
-        override fun getMaxEnergyStored(): Int = ObelisksConfig.MAX_FE_STORAGE
+        override fun getMaxEnergyStored(): Int = ObelisksConstants.MAX_FE_STORAGE
 
         override fun canExtract(): Boolean = true
 
@@ -93,22 +93,22 @@ class ObeliskBlockEntity(
     /**
      * Gets the maximum FE capacity.
      */
-    fun getMaxEnergyStored(): Int = ObelisksConfig.MAX_FE_STORAGE
+    fun getMaxEnergyStored(): Int = ObelisksConstants.MAX_FE_STORAGE
 
     /**
      * Gets the FE as a percentage (0.0 to 1.0).
      */
-    fun getEnergyPercent(): Double = feStored.toDouble() / ObelisksConfig.MAX_FE_STORAGE.toDouble()
+    fun getEnergyPercent(): Double = feStored.toDouble() / ObelisksConstants.MAX_FE_STORAGE.toDouble()
 
     /**
      * Regenerates FE naturally when idle (no active run).
      * Returns the amount of FE actually regenerated.
      */
     fun regenerateEnergy(amount: Int): Int {
-        if (isRunActive() || feStored >= ObelisksConfig.MAX_FE_STORAGE) {
+        if (isRunActive() || feStored >= ObelisksConstants.MAX_FE_STORAGE) {
             return 0
         }
-        val actualRegen = minOf(amount, ObelisksConfig.MAX_FE_STORAGE - feStored)
+        val actualRegen = minOf(amount, ObelisksConstants.MAX_FE_STORAGE - feStored)
         if (actualRegen > 0) {
             feStored += actualRegen
             setChanged()

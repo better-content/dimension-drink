@@ -185,5 +185,15 @@
     "emeraldRewardMinPerKill": 0,
     "emeraldRewardMaxPerKill": 3,
     "emeraldRewardsEnabled": true
+  },
+
+  "visualAndAudioEffects": {
+    "_comment": "VFX and SFX configuration for obelisks and dimension collapse",
+    "maxParticlesPerTick": 50,
+    "maxSoundsPerTick": 10,
+    "obeliskBeamEnabled": true,
+    "obeliskActivationSoundEnabled": true,
+    "collapseBlockBreakSoundEnabled": true,
+    "collapseBlockBreakSoundChance": 0.1
   }
 }

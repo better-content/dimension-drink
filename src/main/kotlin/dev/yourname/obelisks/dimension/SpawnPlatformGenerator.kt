@@ -271,10 +271,22 @@ object SpawnPlatformGenerator {
      * Checks if a position is suitable for building a platform.
      * Requirements:
      * - 7x7x3 air space above the position (full platform clearance)
-     * - Most of the 7x7 platform area must be touching target block below (within 5 blocks)
+     * - No bedrock within platform area or 5 blocks below
+     * - Solid ground nearby (within 5 blocks below center)
      */
     private fun isSuitableForPlatform(level: ServerLevel, groundPos: BlockPos, targetBlock: Block?): Boolean {
         val radius = ObelisksConstants.PLATFORM_RADIUS
+
+        // Check that platform ground level doesn't contain bedrock
+        for (x in -radius..radius) {
+            for (z in -radius..radius) {
+                val checkPos = groundPos.offset(x, 0, z)
+                val state = level.getBlockState(checkPos)
+                if (state.block == Blocks.BEDROCK) {
+                    return false
+                }
+            }
+        }
 
         // Check for 7x7x3 air space above ground level (ensures no suffocation)
         for (y in 1..3) {
@@ -291,44 +303,22 @@ object SpawnPlatformGenerator {
             }
         }
 
-        // If no target block specified, just check for any solid ground
-        if (targetBlock == null) {
-            for (y in 0 downTo -5) {
-                val checkPos = groundPos.offset(0, y, 0)
-                val state = level.getBlockState(checkPos)
+        // Check for solid ground within 5 blocks below center (and no bedrock below)
+        for (y in 0 downTo -5) {
+            val checkPos = groundPos.offset(0, y, 0)
+            val state = level.getBlockState(checkPos)
 
-                if (state.isSolidRender(level, checkPos)) {
-                    return true
-                }
+            // Reject if we hit bedrock
+            if (state.block == Blocks.BEDROCK) {
+                return false
             }
-            return false
-        }
 
-        // Check that most of the 7x7 platform area touches target block within 5 blocks below
-        var touchingCount = 0
-        var totalChecked = 0
-
-        for (x in -radius..radius) {
-            for (z in -radius..radius) {
-                totalChecked++
-                val platformPos = groundPos.offset(x, 0, z)
-
-                // Check if target block exists within 5 blocks below this position
-                for (y in 0 downTo -5) {
-                    val checkPos = platformPos.offset(0, y, 0)
-                    val state = level.getBlockState(checkPos)
-
-                    if (state.block == targetBlock) {
-                        touchingCount++
-                        break
-                    }
-                }
+            if (state.isSolidRender(level, checkPos)) {
+                return true
             }
         }
 
-        // Require at least 60% of platform to touch target block
-        val touchingPercentage = touchingCount.toDouble() / totalChecked.toDouble()
-        return touchingPercentage >= 0.6
+        return false
     }
 
     /**

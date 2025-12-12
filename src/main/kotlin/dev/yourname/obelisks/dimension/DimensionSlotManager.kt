@@ -2,15 +2,13 @@ package dev.yourname.obelisks.dimension
 
 import dev.yourname.obelisks.MOD_ID
 import dev.yourname.obelisks.ObelisksConstants
-import dev.yourname.obelisks.config.DimensionConfigLoader
-import dev.yourname.obelisks.run.RunData
+import dev.yourname.obelisks.config.ConfigManager
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.Registries
 import net.minecraft.resources.ResourceKey
 import net.minecraft.resources.ResourceLocation
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerLevel
-import net.minecraft.world.level.Level
 import java.util.*
 import kotlin.random.Random
 
@@ -40,7 +38,7 @@ object DimensionSlotManager {
 
     /**
      * Initializes slot ranges based on loaded dimension configs.
-     * Call this after DimensionConfigLoader.loadAll()
+     * Call this after ConfigManager.load()
      */
     fun initializeSlots() {
         dimensionSlotRanges.clear()
@@ -49,7 +47,7 @@ object DimensionSlotManager {
 
         // Iterate through all dimension base types and their configs
         for (baseType in DimensionBaseType.entries) {
-            val config = DimensionConfigLoader.getConfigForBaseType(baseType)
+            val config = ConfigManager.getConfigForBaseType(baseType)
             if (config != null && config.enabled) {
                 val slotCount = config.slotCount
                 if (slotCount > 0) {
@@ -141,7 +139,7 @@ object DimensionSlotManager {
         val z = Random.nextInt(ObelisksConstants.SPAWN_POS_Z_MIN, ObelisksConstants.SPAWN_POS_Z_MAX)
 
         // Y coordinate from config or fallback to constants
-        val config = DimensionConfigLoader.getConfigForBaseType(baseType)
+        val config = ConfigManager.getConfigForBaseType(baseType)
         val y = config?.spawnY ?: when (baseType) {
             DimensionBaseType.NETHER -> ObelisksConstants.SPAWN_POS_NETHER_Y
             DimensionBaseType.END -> ObelisksConstants.SPAWN_POS_END_Y

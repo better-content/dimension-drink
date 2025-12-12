@@ -1,10 +1,9 @@
 package dev.yourname.obelisks.dimension
 
 import dev.yourname.obelisks.ObelisksConstants
-import dev.yourname.obelisks.config.ObelisksConfig
 import dev.yourname.obelisks.content.ObeliskBlockEntity
-import dev.yourname.obelisks.run.RunData
-import dev.yourname.obelisks.run.RunManager
+import dev.yourname.obelisks.jaunt.RunData
+import dev.yourname.obelisks.jaunt.RunManager
 import net.minecraft.core.BlockPos
 import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.server.level.ServerLevel
@@ -246,23 +245,27 @@ object DimensionCollapseHandler {
             val currentBlock = level.getBlockState(targetPos).block
 
             // Don't remove important blocks
-            if (currentBlock != Blocks.AIR && 
+            if (currentBlock != Blocks.AIR &&
                 currentBlock != Blocks.BEDROCK &&
                 currentBlock != Blocks.BARRIER &&
+                currentBlock != Blocks.WATER &&
+                currentBlock != Blocks.LAVA &&
                 !currentBlock.defaultBlockState().isAir) {
-                
+
                 level.setBlock(targetPos, Blocks.AIR.defaultBlockState(), 3)
-                
+
                 // Spawn particles at removal site
-                level.sendParticles(
-                    ParticleTypes.LARGE_SMOKE,
-                    targetPos.x + 0.5,
-                    targetPos.y + 0.5,
-                    targetPos.z + 0.5,
-                    5,
-                    0.3, 0.3, 0.3,
-                    0.02
-                )
+                if (dev.yourname.obelisks.util.EffectLimiter.trySpawnParticles(5)) {
+                    level.sendParticles(
+                        ParticleTypes.LARGE_SMOKE,
+                        targetPos.x + 0.5,
+                        targetPos.y + 0.5,
+                        targetPos.z + 0.5,
+                        5,
+                        0.3, 0.3, 0.3,
+                        0.02
+                    )
+                }
             }
         }
     }
@@ -283,7 +286,10 @@ object DimensionCollapseHandler {
                         val targetPos = center.offset(x, y, z)
                         val currentBlock = level.getBlockState(targetPos).block
 
-                        if (currentBlock != Blocks.BEDROCK && currentBlock != Blocks.BARRIER) {
+                        if (currentBlock != Blocks.BEDROCK &&
+                            currentBlock != Blocks.BARRIER &&
+                            currentBlock != Blocks.WATER &&
+                            currentBlock != Blocks.LAVA) {
                             level.setBlock(targetPos, Blocks.AIR.defaultBlockState(), 3)
                         }
                     }
@@ -292,14 +298,16 @@ object DimensionCollapseHandler {
         }
 
         // Play dramatic sound
-        level.playSound(
-            null,
-            center,
-            SoundEvents.PORTAL_TRAVEL,
-            SoundSource.AMBIENT,
-            1.0f,
-            0.5f
-        )
+        if (dev.yourname.obelisks.util.EffectLimiter.tryPlaySound()) {
+            level.playSound(
+                null,
+                center,
+                SoundEvents.PORTAL_TRAVEL,
+                SoundSource.AMBIENT,
+                1.0f,
+                0.5f
+            )
+        }
 
         // Spawn void particles
         for (i in 0..30) {
@@ -307,15 +315,17 @@ object DimensionCollapseHandler {
             val offsetY = Random.nextDouble(-radius.toDouble(), radius.toDouble())
             val offsetZ = Random.nextDouble(-radius.toDouble(), radius.toDouble())
 
-            level.sendParticles(
-                ParticleTypes.PORTAL,
-                center.x + offsetX,
-                center.y + offsetY,
-                center.z + offsetZ,
-                3,
-                0.2, 0.2, 0.2,
-                0.2
-            )
+            if (dev.yourname.obelisks.util.EffectLimiter.trySpawnParticles(3)) {
+                level.sendParticles(
+                    ParticleTypes.PORTAL,
+                    center.x + offsetX,
+                    center.y + offsetY,
+                    center.z + offsetZ,
+                    3,
+                    0.2, 0.2, 0.2,
+                    0.2
+                )
+            }
         }
     }
 
@@ -339,24 +349,28 @@ object DimensionCollapseHandler {
 
             val currentBlock = level.getBlockState(targetPos).block
 
-            // Don't remove important blocks
+            // Don't remove important blocks or fluids
             if (currentBlock != Blocks.AIR &&
                 currentBlock != Blocks.BEDROCK &&
                 currentBlock != Blocks.BARRIER &&
+                currentBlock != Blocks.WATER &&
+                currentBlock != Blocks.LAVA &&
                 !currentBlock.defaultBlockState().isAir) {
 
                 level.setBlock(targetPos, Blocks.AIR.defaultBlockState(), 3)
 
                 // Spawn particles at deletion site
-                level.sendParticles(
-                    ParticleTypes.SMOKE,
-                    targetPos.x + 0.5,
-                    targetPos.y + 0.5,
-                    targetPos.z + 0.5,
-                    3,
-                    0.2, 0.2, 0.2,
-                    0.01
-                )
+                if (dev.yourname.obelisks.util.EffectLimiter.trySpawnParticles(3)) {
+                    level.sendParticles(
+                        ParticleTypes.SMOKE,
+                        targetPos.x + 0.5,
+                        targetPos.y + 0.5,
+                        targetPos.z + 0.5,
+                        3,
+                        0.2, 0.2, 0.2,
+                        0.01
+                    )
+                }
             }
         }
     }
@@ -383,8 +397,10 @@ object DimensionCollapseHandler {
             val targetPos = BlockPos(columnBase.x, y, columnBase.z)
             val currentBlock = level.getBlockState(targetPos).block
 
-            // Don't remove bedrock or barrier blocks
-            if (currentBlock != Blocks.BEDROCK && currentBlock != Blocks.BARRIER) {
+            // Skip barrier blocks and fluids (bedrock should be removed)
+            if (currentBlock != Blocks.BARRIER &&
+                currentBlock != Blocks.WATER &&
+                currentBlock != Blocks.LAVA) {
                 level.setBlock(targetPos, Blocks.AIR.defaultBlockState(), 3)
             }
         }
@@ -393,26 +409,30 @@ object DimensionCollapseHandler {
         val effectPos = BlockPos(columnBase.x, center.y, columnBase.z)
 
         // Play sound
-        level.playSound(
-            null,
-            effectPos,
-            SoundEvents.PORTAL_TRAVEL,
-            SoundSource.AMBIENT,
-            1.2f,
-            0.6f
-        )
+        if (dev.yourname.obelisks.util.EffectLimiter.tryPlaySound()) {
+            level.playSound(
+                null,
+                effectPos,
+                SoundEvents.PORTAL_TRAVEL,
+                SoundSource.AMBIENT,
+                1.2f,
+                0.6f
+            )
+        }
 
         // Spawn particles along the column
         for (y in (center.y - 10)..(center.y + 10)) {
-            level.sendParticles(
-                ParticleTypes.LARGE_SMOKE,
-                columnBase.x + 0.5,
-                y.toDouble(),
-                columnBase.z + 0.5,
-                4,
-                0.1, 0.3, 0.1,
-                0.05
-            )
+            if (dev.yourname.obelisks.util.EffectLimiter.trySpawnParticles(4)) {
+                level.sendParticles(
+                    ParticleTypes.LARGE_SMOKE,
+                    columnBase.x + 0.5,
+                    y.toDouble(),
+                    columnBase.z + 0.5,
+                    4,
+                    0.1, 0.3, 0.1,
+                    0.05
+                )
+            }
         }
     }
 
@@ -521,15 +541,32 @@ object DimensionCollapseHandler {
 
                 // Occasional particle/sound
                 if (deleted % ObelisksConstants.DELETION_PARTICLE_INTERVAL == 0) {
-                    level.sendParticles(
-                        ParticleTypes.SMOKE,
-                        targetPos.x + 0.5,
-                        targetPos.y + 0.5,
-                        targetPos.z + 0.5,
-                        1,
-                        0.1, 0.1, 0.1,
-                        0.01
-                    )
+                    if (dev.yourname.obelisks.util.EffectLimiter.trySpawnParticles(1)) {
+                        level.sendParticles(
+                            ParticleTypes.SMOKE,
+                            targetPos.x + 0.5,
+                            targetPos.y + 0.5,
+                            targetPos.z + 0.5,
+                            1,
+                            0.1, 0.1, 0.1,
+                            0.01
+                        )
+                    }
+                }
+
+                // Block break sound chance
+                if (ObelisksConstants.COLLAPSE_BLOCK_BREAK_SOUND_ENABLED &&
+                    Random.nextDouble() < ObelisksConstants.COLLAPSE_BLOCK_BREAK_SOUND_CHANCE) {
+                    if (dev.yourname.obelisks.util.EffectLimiter.tryPlaySound()) {
+                        level.playSound(
+                            null,
+                            targetPos,
+                            currentBlock.defaultBlockState().getSoundType(level, targetPos, null).breakSound,
+                            net.minecraft.sounds.SoundSource.BLOCKS,
+                            0.5f,
+                            0.8f + Random.nextFloat() * 0.4f
+                        )
+                    }
                 }
             }
         }
@@ -567,8 +604,7 @@ object DimensionCollapseHandler {
                         val targetPos = BlockPos(x + dx, y, z + dz)
                         val currentBlock = level.getBlockState(targetPos).block
 
-                        if (currentBlock != Blocks.BEDROCK &&
-                            currentBlock != Blocks.BARRIER &&
+                        if (currentBlock != Blocks.BARRIER &&
                             currentBlock != Blocks.AIR &&
                             currentBlock != Blocks.WATER &&
                             currentBlock != Blocks.LAVA &&
@@ -585,28 +621,32 @@ object DimensionCollapseHandler {
                 totalDeleted += blocksDeleted
 
                 // Louder portal sound at center of 2x2
-                level.playSound(
-                    null,
-                    BlockPos(x + 1, (level.minBuildHeight + level.maxBuildHeight) / 2, z + 1),
-                    SoundEvents.PORTAL_TRAVEL,
-                    SoundSource.BLOCKS,
-                    1.5f,
-                    0.6f + Random.nextFloat() * 0.4f
-                )
+                if (dev.yourname.obelisks.util.EffectLimiter.tryPlaySound()) {
+                    level.playSound(
+                        null,
+                        BlockPos(x + 1, (level.minBuildHeight + level.maxBuildHeight) / 2, z + 1),
+                        SoundEvents.PORTAL_TRAVEL,
+                        SoundSource.BLOCKS,
+                        1.5f,
+                        0.6f + Random.nextFloat() * 0.4f
+                    )
+                }
 
                 // Portal particles at each corner of 2x2 column
                 for (y in level.minBuildHeight..level.maxBuildHeight step ObelisksConstants.COLUMN_PARTICLE_STEP) {
                     for (dx in 0..1) {
                         for (dz in 0..1) {
-                            level.sendParticles(
-                                ParticleTypes.PORTAL,
-                                x + dx + 0.5,
-                                y.toDouble(),
-                                z + dz + 0.5,
-                                5,
-                                0.2, 0.2, 0.2,
-                                0.1
-                            )
+                            if (dev.yourname.obelisks.util.EffectLimiter.trySpawnParticles(5)) {
+                                level.sendParticles(
+                                    ParticleTypes.PORTAL,
+                                    x + dx + 0.5,
+                                    y.toDouble(),
+                                    z + dz + 0.5,
+                                    5,
+                                    0.2, 0.2, 0.2,
+                                    0.1
+                                )
+                            }
                         }
                     }
                 }

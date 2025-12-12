@@ -1,7 +1,7 @@
 package dev.yourname.obelisks.content
 
 import dev.yourname.obelisks.registry.ModMenuTypes
-import dev.yourname.obelisks.run.RunManager
+import dev.yourname.obelisks.jaunt.RunManager
 import net.minecraft.core.BlockPos
 import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.world.entity.player.Inventory
@@ -9,7 +9,6 @@ import net.minecraft.world.entity.player.Player
 import net.minecraft.world.inventory.AbstractContainerMenu
 import net.minecraft.world.inventory.ContainerData
 import net.minecraft.world.inventory.SimpleContainerData
-import net.minecraft.world.level.block.entity.BlockEntity
 
 /**
  * Container menu for the Obelisk GUI.

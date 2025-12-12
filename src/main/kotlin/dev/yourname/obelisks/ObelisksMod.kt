@@ -1,27 +1,10 @@
 package dev.yourname.obelisks
 
-import com.mojang.brigadier.arguments.LongArgumentType
-import com.mojang.brigadier.arguments.StringArgumentType
-import com.mojang.brigadier.builder.LiteralArgumentBuilder
 import dev.yourname.obelisks.dimension.DimensionTeardownHandler
 import dev.yourname.obelisks.player.PlayerReturnHandler
 import dev.yourname.obelisks.player.PlayerRunCapabilityProvider
-import dev.yourname.obelisks.player.getRunInfo
-import dev.yourname.obelisks.registry.ModBlockEntities
-import dev.yourname.obelisks.registry.ModBlocks
-import dev.yourname.obelisks.registry.ModFeatures
-import dev.yourname.obelisks.registry.ModItems
-import dev.yourname.obelisks.run.RunEventHandlers
-import dev.yourname.obelisks.run.RunManager
-import net.minecraft.commands.Commands
-import net.minecraft.commands.arguments.EntityArgument
-import net.minecraft.core.BlockPos
-import net.minecraft.network.chat.Component
-import net.minecraft.server.level.ServerPlayer
-import net.minecraft.world.level.block.state.BlockState
+import dev.yourname.obelisks.jaunt.RunEventHandlers
 import net.minecraftforge.common.MinecraftForge
-import net.minecraftforge.event.RegisterCommandsEvent
-import net.minecraftforge.eventbus.api.SubscribeEvent
 import net.minecraftforge.fml.common.Mod
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext
 
@@ -55,6 +38,10 @@ class ObelisksMod {
                     dev.yourname.obelisks.client.ObeliskScreen(menu, inventory, title)
                 }
                 println("[$MOD_ID] Client screen registration complete")
+
+                // Register obelisk beam renderer
+                MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.client.ObeliskBeamRenderer)
+                println("[$MOD_ID] Obelisk beam renderer registered")
             }
         }
 
@@ -67,16 +54,19 @@ class ObelisksMod {
         MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.dimension.SlotDimensionInitializer)
 
         // Phase 3: FE System handlers
-        MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.run.InstanceTickHandler)
-        MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.run.RunBossBarManager)
+        MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.jaunt.InstanceTickHandler)
+        MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.jaunt.RunBossBarManager)
         MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.dimension.DimensionCollapseHandler)
-        MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.run.FERegenerationHandler)
+        MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.jaunt.FERegenerationHandler)
 
         // Monster kill tracking for emerald rewards
-        MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.run.MonsterKillHandler)
+        MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.jaunt.MonsterKillHandler)
 
         // Server lifecycle handler
         MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.server.ServerLifecycleHandler)
+
+        // Effect limiter for VFX/SFX
+        MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.util.EffectLimiterHandler)
     }
 
     // Command registration moved to ObeliskCommands

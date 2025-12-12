@@ -2,8 +2,8 @@ package dev.yourname.obelisks.worldgen
 
 import com.mojang.serialization.Codec
 import dev.yourname.obelisks.ObelisksConstants
+import dev.yourname.obelisks.config.ConfigManager
 import dev.yourname.obelisks.config.DimensionConfig
-import dev.yourname.obelisks.config.DimensionConfigLoader
 import dev.yourname.obelisks.config.ObeliskTypeRegistry
 import dev.yourname.obelisks.dimension.DimensionBaseType
 import dev.yourname.obelisks.registry.ModBlocks
@@ -25,6 +25,12 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         val level = context.level()
         val pos = context.origin()
         val random = context.random()
+
+        // Don't spawn obelisks in run dimensions (run_slot_X)
+        val dimensionLocation = level.level.dimension().location()
+        if (dimensionLocation.namespace == "obelisks" && dimensionLocation.path.startsWith("run_slot_")) {
+            return false
+        }
 
         // Find ground level at this position
         val groundPos = findGroundPosition(level, pos) ?: return false

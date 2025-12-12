@@ -19,7 +19,7 @@
     "minecraft:andesite",
     "minecraft:diorite"
   ],
-  "rarityMultiplier": 1.5,
+  "rarityMultiplier": 0.1,
   "slotCount": 5,
   "targetBlock": "minecraft:stone",
   "customProperties": {}
