@@ -90,6 +90,26 @@ class EnterDimensionCommand(
             return Result.failure("Player already in a run")
         }
 
+        // Check if joining existing run vs starting new run
+        val isJoiningExistingRun = obelisk.activeRunId != null && obelisk.isRunActive()
+
+        if (!isJoiningExistingRun) {
+            // Starting a NEW run - require full charge
+            val currentFE = obelisk.getEnergyStored()
+            val maxFE = obelisk.getMaxEnergyStored()
+            if (currentFE < maxFE) {
+                val percent = (currentFE.toDouble() / maxFE * 100).toInt()
+                return Result.failure("Obelisk not fully charged ($percent% - wait for 100%)")
+            }
+
+            // Check if obelisk is on cooldown
+            if (obelisk.isOnCooldown()) {
+                val remaining = obelisk.getCooldownRemainingSeconds()
+                return Result.failure("Obelisk on cooldown (${remaining}s remaining)")
+            }
+        }
+        // If joining existing run, skip FE and cooldown checks (multiplayer support)
+
         // Check slot availability
         val server = originLevel.server
         val hasSlot = (DimensionSlotManager.getUsedSlotCount() < DimensionSlotManager.getTotalSlotCount()) ||

@@ -150,6 +150,37 @@ object ObeliskCommands {
             }
         )
 
+        // check_modifiers (looks at the obelisk you're looking at)
+        root.then(
+            Commands.literal("check_modifiers").executes { ctx ->
+                val source = ctx.source
+                val player = source.playerOrException
+                val hitResult = player.pick(5.0, 0.0f, false)
+                if (hitResult is net.minecraft.world.phys.BlockHitResult) {
+                    val pos = hitResult.blockPos
+                    val be = player.level().getBlockEntity(pos) as? dev.yourname.obelisks.content.ObeliskBlockEntity
+                    if (be != null) {
+                        source.sendSuccess({ Component.literal("=== Obelisk Modifiers ===") }, false)
+                        be.modifiers.forEachIndexed { index, modifier ->
+                            source.sendSuccess({ Component.literal("${index + 1}. ${modifier.stat.name}: +${modifier.bonusPercent}%") }, false)
+                        }
+                        source.sendSuccess({ Component.literal("") }, false)
+                        source.sendSuccess({ Component.literal("=== Modified Stats ===") }, false)
+                        source.sendSuccess({ Component.literal("Max Storage: ${be.getModifiedMaxStorage()} FE") }, false)
+                        source.sendSuccess({ Component.literal("Regen Rate: ${be.getModifiedRegenRate()} FE/tick") }, false)
+                        source.sendSuccess({ Component.literal("Base Drain: ${be.getModifiedBaseDrain()} FE/tick") }, false)
+                        source.sendSuccess({ Component.literal("Player Drain: ${be.getModifiedPlayerDrain()} FE/tick") }, false)
+                        source.sendSuccess({ Component.literal("Drain Factor: ${String.format("%.4f", be.getModifiedDrainFactor())}") }, false)
+                    } else {
+                        source.sendFailure(Component.literal("Not looking at an obelisk!"))
+                    }
+                } else {
+                    source.sendFailure(Component.literal("Not looking at a block!"))
+                }
+                1
+            }
+        )
+
         event.dispatcher.register(root)
     }
 }

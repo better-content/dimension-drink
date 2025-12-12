@@ -42,11 +42,6 @@ object InstanceTickHandler {
                 runData.drainMultiplier = Math.exp(factor * runData.ticksElapsed)
             }
 
-            // Calculate FE drain for this tick with exponential multiplier
-            val baseDrain = ObelisksConstants.BASE_FE_DRAIN_PER_TICK +
-                           (playerCount * ObelisksConstants.PER_PLAYER_FE_DRAIN)
-            val drainAmount = (baseDrain * runData.drainMultiplier).toInt()
-
             // Get origin obelisk BlockEntity
             val originLevel = server.getLevel(runData.originDimension)
             if (originLevel == null) {
@@ -62,6 +57,12 @@ object InstanceTickHandler {
                 forceEndRun(server, runData)
                 continue
             }
+
+            // Calculate FE drain for this tick with exponential multiplier
+            // Use modified values from the obelisk's modifiers
+            val baseDrain = obeliskBE.getModifiedBaseDrain() +
+                           (playerCount * obeliskBE.getModifiedPlayerDrain())
+            val drainAmount = (baseDrain * runData.drainMultiplier).toInt()
 
             // Drain FE
             val success = obeliskBE.drainEnergy(drainAmount)

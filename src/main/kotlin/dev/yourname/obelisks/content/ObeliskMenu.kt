@@ -28,8 +28,12 @@ class ObeliskMenu(
         const val DATA_HAS_ACTIVE_RUN = 2
         const val DATA_BASE_TYPE_ORDINAL = 3
         const val DATA_DRAIN_MULTIPLIER_INT = 4  // Multiplier * 100 as int (e.g., 150 = 1.5x)
+        const val DATA_REGEN_RATE = 5  // Modified regen rate per tick
+        const val DATA_BASE_DRAIN = 6  // Modified base drain per tick
+        const val DATA_PLAYER_DRAIN = 7  // Modified per-player drain per tick
+        const val DATA_COOLDOWN_REMAINING = 8  // Cooldown remaining in seconds
 
-        const val DATA_COUNT = 5
+        const val DATA_COUNT = 9
 
         /**
          * Factory for creating menu from network packet (client-side)
@@ -60,6 +64,11 @@ class ObeliskMenu(
     fun hasActiveRun(): Boolean = data.get(DATA_HAS_ACTIVE_RUN) == 1
     fun getBaseTypeOrdinal(): Int = data.get(DATA_BASE_TYPE_ORDINAL)
     fun getDrainMultiplier(): Double = data.get(DATA_DRAIN_MULTIPLIER_INT) / 100.0
+    fun getRegenRate(): Int = data.get(DATA_REGEN_RATE)
+    fun getBaseDrain(): Int = data.get(DATA_BASE_DRAIN)
+    fun getPlayerDrain(): Int = data.get(DATA_PLAYER_DRAIN)
+    fun getCooldownRemaining(): Int = data.get(DATA_COOLDOWN_REMAINING)
+    fun isOnCooldown(): Boolean = getCooldownRemaining() > 0
 
     override fun quickMoveStack(player: Player, index: Int): net.minecraft.world.item.ItemStack {
         return net.minecraft.world.item.ItemStack.EMPTY
@@ -91,6 +100,22 @@ class ObeliskMenu(
         data.set(DATA_MAX_FE, be.getMaxEnergyStored())
         data.set(DATA_HAS_ACTIVE_RUN, if (be.isRunActive()) 1 else 0)
         data.set(DATA_BASE_TYPE_ORDINAL, be.baseType?.ordinal ?: -1)
+
+        // Sync modified FE stats
+        val regenRate = be.getModifiedRegenRate()
+        val baseDrain = be.getModifiedBaseDrain()
+        val playerDrain = be.getModifiedPlayerDrain()
+
+        data.set(DATA_REGEN_RATE, regenRate)
+        data.set(DATA_BASE_DRAIN, baseDrain)
+        data.set(DATA_PLAYER_DRAIN, playerDrain)
+        data.set(DATA_COOLDOWN_REMAINING, be.getCooldownRemainingSeconds())
+
+        // Debug logging
+        if (!level.isClientSide && be.modifiers.isNotEmpty()) {
+            println("[ObeliskMenu] Syncing stats - Regen: $regenRate, BaseDrain: $baseDrain, PlayerDrain: $playerDrain, Cooldown: ${be.getCooldownRemainingSeconds()}s")
+            println("[ObeliskMenu] Modifiers: ${be.modifiers.joinToString { "${it.stat}:${it.bonusPercent}%" }}")
+        }
 
         // Get drain multiplier from active run if available
         val multiplier = if (be.isRunActive() && !level.isClientSide) {

@@ -73,9 +73,14 @@ object DimensionTeardownHandler {
         val leftDim = event.from
         val runData = runManager.getRunByDimension(leftDim) ?: return
 
-        // If dimension is now empty, cancel any pending cleanup and restart timer
+        // If dimension is now empty, immediately end the run (don't wait for cleanup delay)
+        // This ensures re-entering creates a fresh run instead of rejoining the old one
         if (runData.activePlayers.isEmpty()) {
-            pendingCleanup[leftDim] = 0
+            println("[${ObelisksConstants.MOD_ID}] Last player left run ${runData.runId}, ending run immediately")
+            cleanupRunDimension(runData, server)
+            DimensionCollapseHandler.cleanupRun(runData.runId)
+            runManager.endRun(runData.obeliskId, runData.runId)
+            pendingCleanup.remove(leftDim)
         }
     }
 
@@ -97,10 +102,11 @@ object DimensionTeardownHandler {
                 // Spawn emerald rewards based on monsters killed
                 spawnEmeraldRewards(originLevel, runData.originObeliskPos, runData.monstersKilled)
 
-                // Clear active run ID so obelisk can be reused
+                // Clear active run ID and start cooldown
                 obeliskBE.activeRunId = null
+                obeliskBE.startCooldown(ObelisksConstants.RUN_CLEANUP_DELAY_TICKS)
                 obeliskBE.setChanged()
-                println("[$modId] Reset obelisk: cleared active run (FE will regenerate naturally at ${dev.yourname.obelisks.ObelisksConstants.FE_REGEN_PER_TICK} FE/tick)")
+                println("[$modId] Reset obelisk: cleared active run, started ${ObelisksConstants.RUN_CLEANUP_DELAY_TICKS} tick cooldown (FE will regenerate naturally at ${dev.yourname.obelisks.ObelisksConstants.FE_REGEN_PER_TICK} FE/tick)")
             } else {
                 println("[$modId] Warning: Could not find origin obelisk to reset")
             }

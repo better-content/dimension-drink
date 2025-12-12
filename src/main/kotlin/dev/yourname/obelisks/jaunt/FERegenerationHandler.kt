@@ -62,7 +62,8 @@ object FERegenerationHandler {
             } else {
                 // Regenerate FE if idle (method handles checks: not active, not full)
                 // Multiply by TICKS_PER_SECOND since we only check once per second
-                val regenAmount = ObelisksConstants.FE_REGEN_PER_TICK * ObelisksConstants.TICKS_PER_SECOND
+                // Use modified regen rate from the obelisk's modifiers
+                val regenAmount = obelisk.getModifiedRegenRate() * ObelisksConstants.TICKS_PER_SECOND
                 obelisk.regenerateEnergy(regenAmount)
             }
         }

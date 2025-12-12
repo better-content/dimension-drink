@@ -52,6 +52,41 @@ class ObeliskScreen(
         addRenderableWidget(teleportButton!!)
     }
 
+    override fun containerTick() {
+        super.containerTick()
+
+        // Check if joining existing run vs starting new
+        val hasActiveRun = menu.hasActiveRun()
+        val feStored = menu.getFEStored()
+        val maxFE = menu.getMaxFE()
+        val fePercent = if (maxFE > 0) (feStored.toDouble() / maxFE * 100).toInt() else 0
+        val cooldownRemaining = menu.getCooldownRemaining()
+
+        // Update button state
+        when {
+            cooldownRemaining > 0 -> {
+                // Obelisk on cooldown
+                teleportButton?.active = false
+                teleportButton?.message = Component.literal("Cooldown: ${cooldownRemaining}s")
+            }
+            hasActiveRun -> {
+                // Joining existing run - always allowed
+                teleportButton?.active = true
+                teleportButton?.message = Component.literal("Join Run")
+            }
+            fePercent < 100 -> {
+                // Starting new run but not fully charged
+                teleportButton?.active = false
+                teleportButton?.message = Component.literal("Charging: $fePercent%")
+            }
+            else -> {
+                // Ready to start new run
+                teleportButton?.active = true
+                teleportButton?.message = Component.literal("Start Run")
+            }
+        }
+    }
+
     private fun onTeleportPressed() {
         // Send packet to server to initiate teleport
         ModNetwork.sendToServer(TeleportButtonPacket(menu.getObeliskPos()))
@@ -155,21 +190,23 @@ class ObeliskScreen(
             false
         )
 
-        // FE Regeneration Rate
-        val regenPerTick = ObelisksConstants.FE_REGEN_PER_TICK
+        // FE Regeneration Rate (modified by obelisk modifiers)
+        val regenPerTick = menu.getRegenRate()
         val regenPerSecond = regenPerTick * ObelisksConstants.TICKS_PER_SECOND
         guiGraphics.drawString(
             font,
-            "Regen: +$regenPerSecond FE/s",
+            "Regen: +$regenPerSecond FE/s ($regenPerTick/t)",
             8,
             yStart + 52,
             0x00AA00, // Dark green
             false
         )
 
-        // FE Drain Rate (with multiplier if active)
+        // FE Drain Rate (modified by obelisk modifiers + multiplier if active)
         val drainMultiplier = menu.getDrainMultiplier()
-        val baseDrainRate = ObelisksConstants.BASE_FE_DRAIN_PER_TICK + ObelisksConstants.PER_PLAYER_FE_DRAIN
+        val modifiedBaseDrain = menu.getBaseDrain()
+        val modifiedPlayerDrain = menu.getPlayerDrain()
+        val baseDrainRate = modifiedBaseDrain + modifiedPlayerDrain
         val actualDrainRate = (baseDrainRate * drainMultiplier).toInt()
         val drainPerSecond = actualDrainRate * ObelisksConstants.TICKS_PER_SECOND
 
