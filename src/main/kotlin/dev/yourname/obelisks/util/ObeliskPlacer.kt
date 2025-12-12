@@ -1,5 +1,6 @@
 package dev.yourname.obelisks.util
 
+import dev.yourname.obelisks.ObelisksConstants
 import dev.yourname.obelisks.config.ObeliskTypeRegistry
 import dev.yourname.obelisks.content.ObeliskBlockEntity
 import dev.yourname.obelisks.dimension.DimensionBaseType
@@ -35,19 +36,20 @@ object ObeliskPlacer {
     /**
      * Places an obelisk at the given position with appropriate pillar support.
      * The obelisk is attuned to the specified dimension type.
-     * 
+     *
      * Structure:
      * 1. Finds ground below the given position
      * 2. Builds stem upward from ground
      * 3. Places obelisk cap on top of stem
-     * 
+     *
      * @param level The world to place in
      * @param pos The position to place at (will find ground below this)
      * @param baseType The dimension type to attune to
      * @return True if placement succeeded
      */
     fun placeObelisk(level: Level, pos: BlockPos, baseType: DimensionBaseType): Boolean {
-        val config = ObeliskTypeRegistry.getConfig(baseType)
+        val dimConfig = dev.yourname.obelisks.config.DimensionConfigLoader.getConfigForBaseType(baseType) ?: return false
+        val config = ObeliskTypeRegistry.getConfigForDimension(dimConfig)
 
         // Find ground below the given position
         val groundPos = findGroundBelow(level, pos) ?: return false
@@ -86,13 +88,13 @@ object ObeliskPlacer {
     private fun findGroundBelow(level: Level, startPos: BlockPos): BlockPos? {
         var currentPos = startPos
 
-        // Search down up to 64 blocks
-        for (i in 0..64) {
+        // Search down up to configured depth
+        for (i in 0..ObelisksConstants.GROUND_SEARCH_DEPTH_PLACER) {
             val blockAtPos = level.getBlockState(currentPos)
             val blockBelow = level.getBlockState(currentPos.below())
 
             // Found ground: current position is air (or replaceable), block below is solid
-            if ((blockAtPos.isAir || blockAtPos.canBeReplaced()) && 
+            if ((blockAtPos.isAir || blockAtPos.canBeReplaced()) &&
                 blockBelow.isSolidRender(level, currentPos.below()) &&
                 blockBelow.fluidState.isEmpty) {
                 return currentPos

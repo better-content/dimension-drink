@@ -3,6 +3,7 @@ package dev.yourname.obelisks.content
 import dev.yourname.obelisks.config.ObelisksConfig
 import dev.yourname.obelisks.dimension.DimensionBaseType
 import dev.yourname.obelisks.registry.ModBlockEntities
+import dev.yourname.obelisks.run.FERegenerationHandler
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.nbt.CompoundTag
@@ -19,6 +20,11 @@ class ObeliskBlockEntity(
     pos: BlockPos,
     state: BlockState
 ) : BlockEntity(ModBlockEntities.OBELISK.get(), pos, state) {
+
+    init {
+        // Register for FE regeneration tracking
+        FERegenerationHandler.registerObelisk(this)
+    }
 
     var feStored: Int = ObelisksConfig.MAX_FE_STORAGE
         private set
@@ -120,6 +126,12 @@ class ObeliskBlockEntity(
     override fun invalidateCaps() {
         super.invalidateCaps()
         energyCapability.invalidate()
+    }
+
+    override fun setRemoved() {
+        super.setRemoved()
+        // Unregister from FE regeneration tracking
+        FERegenerationHandler.unregisterObelisk(this)
     }
 
     override fun saveAdditional(tag: CompoundTag) {

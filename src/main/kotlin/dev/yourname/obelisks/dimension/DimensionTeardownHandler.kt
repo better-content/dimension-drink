@@ -1,8 +1,9 @@
 package dev.yourname.obelisks.dimension
 
-import dev.yourname.obelisks.MOD_ID
+import dev.yourname.obelisks.ObelisksConstants
 import dev.yourname.obelisks.run.RunData
 import dev.yourname.obelisks.run.RunManager
+import net.minecraft.core.BlockPos
 import net.minecraft.resources.ResourceKey
 import net.minecraft.server.MinecraftServer
 import net.minecraft.world.level.Level
@@ -16,8 +17,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent
 object DimensionTeardownHandler {
 
     // Map of dimension keys pending cleanup -> tick count
-    private val pendingCleanup = mutableMapOf<ResourceKey<Level>, Int>()
-    private const val CLEANUP_DELAY_TICKS = 100 // 5 seconds
+    private val pendingCleanup = mutableMapOf<ResourceKey<Level>, Int>() // 5 seconds
 
     @SubscribeEvent
     fun onServerTick(event: TickEvent.ServerTickEvent) {
@@ -43,7 +43,7 @@ object DimensionTeardownHandler {
         // Process pending cleanups
         val toCleanup = mutableListOf<ResourceKey<Level>>()
         pendingCleanup.forEach { (dimKey, ticks) ->
-            if (ticks >= CLEANUP_DELAY_TICKS) {
+            if (ticks >= ObelisksConstants.RUN_CLEANUP_DELAY_TICKS) {
                 toCleanup.add(dimKey)
             }
         }
@@ -53,6 +53,7 @@ object DimensionTeardownHandler {
             val runData = runManager.getRunByDimension(dimKey)
             if (runData != null) {
                 cleanupRunDimension(runData, server)
+                DimensionCollapseHandler.cleanupRun(runData.runId)
                 runManager.endRun(runData.obeliskId, runData.runId)
             }
             pendingCleanup.remove(dimKey)
@@ -84,20 +85,24 @@ object DimensionTeardownHandler {
      */
     private fun cleanupRunDimension(runData: RunData, server: MinecraftServer) {
         val dimKey = runData.runDimensionKey
+        val modId = ObelisksConstants.MOD_ID
 
-        println("[$MOD_ID] Cleaning up run for obelisk ${runData.obeliskId.toString().substring(0, 8)}: ${dimKey.location()}")
+        println("[$modId] Cleaning up run for obelisk ${runData.obeliskId.toString().substring(0, 8)}: ${dimKey.location()}")
 
-        // Reset origin obelisk state
+        // Reset origin obelisk state and spawn emerald rewards
         val originLevel = server.getLevel(runData.originDimension)
         if (originLevel != null) {
             val obeliskBE = originLevel.getBlockEntity(runData.originObeliskPos) as? dev.yourname.obelisks.content.ObeliskBlockEntity
             if (obeliskBE != null) {
+                // Spawn emerald rewards based on monsters killed
+                spawnEmeraldRewards(originLevel, runData.originObeliskPos, runData.monstersKilled)
+
                 // Clear active run ID so obelisk can be reused
                 obeliskBE.activeRunId = null
                 obeliskBE.setChanged()
-                println("[$MOD_ID] Reset obelisk: cleared active run (FE will regenerate naturally at ${dev.yourname.obelisks.config.ObelisksConfig.FE_REGEN_PER_TICK} FE/tick)")
+                println("[$modId] Reset obelisk: cleared active run (FE will regenerate naturally at ${dev.yourname.obelisks.config.ObelisksConfig.FE_REGEN_PER_TICK} FE/tick)")
             } else {
-                println("[$MOD_ID] Warning: Could not find origin obelisk to reset")
+                println("[$modId] Warning: Could not find origin obelisk to reset")
             }
         }
 
@@ -105,7 +110,67 @@ object DimensionTeardownHandler {
         DimensionSlotManager.releaseSlot(runData.obeliskId)
 
         // Note: We DON'T unload or delete slot dimensions - they persist and get reused
-        println("[$MOD_ID] Run cleanup complete - slot released for reuse")
+        println("[$modId] Run cleanup complete - slot released for reuse")
+    }
+
+    /**
+     * Spawns emerald rewards at the obelisk based on monsters killed during the run.
+     */
+    private fun spawnEmeraldRewards(level: net.minecraft.server.level.ServerLevel, pos: BlockPos, monstersKilled: Int) {
+        if (!ObelisksConstants.EMERALD_REWARDS_ENABLED) return
+        if (monstersKilled == 0) return
+
+        val minPerKill = ObelisksConstants.EMERALD_REWARD_MIN_PER_KILL
+        val maxPerKill = ObelisksConstants.EMERALD_REWARD_MAX_PER_KILL
+
+        var totalEmeralds = 0
+        repeat(monstersKilled) {
+            val emeraldsFromKill = kotlin.random.Random.nextInt(minPerKill, maxPerKill + 1)
+            totalEmeralds += emeraldsFromKill
+        }
+
+        if (totalEmeralds == 0) {
+            println("[${ObelisksConstants.MOD_ID}] Run complete: $monstersKilled monsters killed, no emeralds awarded")
+            return
+        }
+
+        // Spawn emeralds as item entities
+        val spawnPos = pos.above() // Spawn above the obelisk
+        val emeraldStack = net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.EMERALD, totalEmeralds)
+        val itemEntity = net.minecraft.world.entity.item.ItemEntity(
+            level,
+            spawnPos.x + 0.5,
+            spawnPos.y + 0.5,
+            spawnPos.z + 0.5,
+            emeraldStack
+        )
+
+        // Add upward velocity for dramatic effect
+        itemEntity.deltaMovement = itemEntity.deltaMovement.add(0.0, 0.3, 0.0)
+        level.addFreshEntity(itemEntity)
+
+        // Spawn particles
+        level.sendParticles(
+            net.minecraft.core.particles.ParticleTypes.HAPPY_VILLAGER,
+            spawnPos.x + 0.5,
+            spawnPos.y + 1.0,
+            spawnPos.z + 0.5,
+            20,
+            0.3, 0.3, 0.3,
+            0.1
+        )
+
+        // Play success sound
+        level.playSound(
+            null as net.minecraft.world.entity.player.Player?,
+            spawnPos,
+            net.minecraft.sounds.SoundEvents.PLAYER_LEVELUP,
+            net.minecraft.sounds.SoundSource.BLOCKS,
+            1.0f,
+            1.0f
+        )
+
+        println("[${ObelisksConstants.MOD_ID}] Run complete: $monstersKilled monsters killed, awarded $totalEmeralds emeralds")
     }
 
     // Note: The following methods are no longer needed with the slot-based dimension system.

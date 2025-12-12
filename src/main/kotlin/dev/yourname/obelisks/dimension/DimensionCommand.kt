@@ -1,5 +1,6 @@
 package dev.yourname.obelisks.dimension
 
+import dev.yourname.obelisks.ObelisksConstants
 import dev.yourname.obelisks.config.ObeliskTypeRegistry
 import dev.yourname.obelisks.content.ObeliskBlockEntity
 import dev.yourname.obelisks.player.PlayerRunInfo
@@ -134,23 +135,19 @@ class EnterDimensionCommand(
         }
         val baseType = obelisk.baseType!!
 
-        // Step 2: Allocate dimension slot
+        // Step 2: Allocate dimension slot and get prepared spawn platform
+        // Platform is generated on-demand and cached for the slot's lifetime
         val dimensionResult = DimensionSlotManager.getDimensionForRun(
             server, obelisk.obeliskId, baseType
         ) ?: return Result.failure("Failed to allocate dimension slot")
 
-        val (runDimension, randomSpawnPos) = dimensionResult
+        val (runDimension, spawnPos) = dimensionResult
         val allocatedSlot = DimensionSlotManager.getSlotForObelisk(obelisk.obeliskId)
             ?: return Result.failure("Slot allocation inconsistency")
 
         snapshot = snapshot!!.copy(allocatedSlot = allocatedSlot)
 
-        // Step 3: Generate spawn platform
-        val spawnPos = SpawnPlatformGenerator.generateSpawnPlatform(
-            runDimension, baseType, randomSpawnPos
-        )
-
-        // Step 4: Create run data
+        // Step 3: Create run data
         val slotDimensionKey = ResourceKey.create(
             Registries.DIMENSION,
             ResourceLocation("obelisks", "run_slot_$allocatedSlot")
@@ -173,11 +170,20 @@ class EnterDimensionCommand(
         val playerRunInfo = player.getRunInfo()
             ?: return Result.failure("Lost player run capability")
 
-        // Store the obelisk cap position as return location
-        // Player will spawn on top of the cap (safe and visible)
+        // Store the player's current position as return location
+        val playerOriginPos = player.blockPosition()
+        val safeOriginPos = if (playerOriginPos.y < ObelisksConstants.SAFE_Y_MIN || playerOriginPos.y > ObelisksConstants.SAFE_Y_MAX) {
+            // Player is in void or too high - use obelisk cap position as fallback
+            println("[Obelisks] WARNING: Player at unsafe Y=${playerOriginPos.y}, using obelisk position instead")
+            obeliskPos.above() // One block above obelisk cap
+        } else {
+            playerOriginPos
+        }
+        println("[Obelisks] Storing player origin position: $safeOriginPos")
+        
         playerRunInfo.apply {
             originObeliskId = obelisk.obeliskId
-            originPos = obeliskPos // Cap position - player will spawn on top
+            originPos = safeOriginPos // Player's exact position when entering (or safe fallback)
             originDimension = originLevel.dimension()
             runId = runData.runId
             runDimensionKey = runData.runDimensionKey
@@ -197,7 +203,7 @@ class EnterDimensionCommand(
             runDimension.chunkSource.addRegionTicket(
                 net.minecraft.server.level.TicketType.PORTAL,
                 chunkPos,
-                3,
+                ObelisksConstants.CHUNK_TICKET_LEVEL,
                 net.minecraft.core.BlockPos(chunkPos.x * 16, 64, chunkPos.z * 16)
             )
         }
@@ -223,8 +229,8 @@ class EnterDimensionCommand(
         val chunkX = spawnPos.x shr 4
         val chunkZ = spawnPos.z shr 4
 
-        for (x in -2..2) {
-            for (z in -2..2) {
+        for (x in -ObelisksConstants.ENTER_FORCE_LOAD_RADIUS..ObelisksConstants.ENTER_FORCE_LOAD_RADIUS) {
+            for (z in -ObelisksConstants.ENTER_FORCE_LOAD_RADIUS..ObelisksConstants.ENTER_FORCE_LOAD_RADIUS) {
                 val chunkPos = ChunkPos(chunkX + x, chunkZ + z)
                 level.setChunkForced(chunkPos.x, chunkPos.z, true)
                 chunks.add(chunkPos)
@@ -252,9 +258,9 @@ class EnterDimensionCommand(
                 repositionEntity: java.util.function.Function<Boolean, net.minecraft.world.entity.Entity>
             ): net.minecraft.world.entity.Entity {
                 val newEntity = repositionEntity.apply(false)
-                val targetX = spawnPos.x.toDouble() + 0.5
+                val targetX = spawnPos.x.toDouble() + ObelisksConstants.TELEPORT_CENTER_OFFSET
                 val targetY = spawnPos.y.toDouble()
-                val targetZ = spawnPos.z.toDouble() + 0.5
+                val targetZ = spawnPos.z.toDouble() + ObelisksConstants.TELEPORT_CENTER_OFFSET
                 
                 println("[Obelisks] ========================================")
                 println("[Obelisks] ITeleporter.placeEntity called")
@@ -329,7 +335,7 @@ class EnterDimensionCommand(
                 player.teleportTo(
                     originLevel,
                     originPos.x.toDouble() + 0.5,
-                    originPos.y.toDouble() + 1.0,
+                    originPos.y.toDouble(),
                     originPos.z.toDouble() + 0.5,
                     player.yRot,
                     player.xRot
@@ -366,6 +372,7 @@ class EnterDimensionCommand(
 
             // 4. End run if we created it and it's empty
             if (snap.createdRun != null && snap.createdRun.activePlayers.isEmpty()) {
+                DimensionCollapseHandler.cleanupRun(snap.createdRun.runId)
                 runManager.endRun(obelisk.obeliskId, snap.createdRun.runId)
             }
 
@@ -477,30 +484,19 @@ class ExitDimensionCommand(
         val originLevel = player.server.getLevel(originDim)
             ?: return Result.failure("Origin dimension not loaded")
 
+        val targetX = originPos.x.toDouble() + 0.5
+        val targetY = originPos.y.toDouble()
+        val targetZ = originPos.z.toDouble() + 0.5
+        
         if (player.level().dimension() != originDim) {
-            player.changeDimension(originLevel, object : net.minecraftforge.common.util.ITeleporter {
-                override fun placeEntity(
-                    entity: net.minecraft.world.entity.Entity,
-                    currentWorld: ServerLevel,
-                    destWorld: ServerLevel,
-                    yaw: Float,
-                    repositionEntity: java.util.function.Function<Boolean, net.minecraft.world.entity.Entity>
-                ): net.minecraft.world.entity.Entity {
-                    val newEntity = repositionEntity.apply(false)
-                    val targetX = originPos.x.toDouble() + 0.5
-                    val targetY = originPos.y.toDouble()
-                    val targetZ = originPos.z.toDouble() + 0.5
-                    println("[Obelisks] RETURN TELEPORT - Moving to: X=$targetX Y=$targetY Z=$targetZ")
-                    newEntity.moveTo(targetX, targetY, targetZ, yaw, entity.xRot)
-                    return newEntity
-                }
-
-                override fun isVanilla(): Boolean = false
-            })
+            println("[Obelisks] RETURN TELEPORT - Changing dimension to $originDim")
+            println("[Obelisks] RETURN TELEPORT - Target position: X=$targetX Y=$targetY Z=$targetZ")
+            
+            // Use teleportTo with level parameter for cross-dimension teleport
+            player.teleportTo(originLevel, targetX, targetY, targetZ, player.yRot, player.xRot)
+            
+            println("[Obelisks] RETURN TELEPORT - After teleportTo, player position: ${player.position()}")
         } else {
-            val targetX = originPos.x.toDouble() + 0.5
-            val targetY = originPos.y.toDouble()
-            val targetZ = originPos.z.toDouble() + 0.5
             println("[Obelisks] RETURN TELEPORT (same dimension) - Moving to: X=$targetX Y=$targetY Z=$targetZ")
             player.teleportTo(targetX, targetY, targetZ)
         }
@@ -552,9 +548,9 @@ class ExitDimensionCommand(
                     ): net.minecraft.world.entity.Entity {
                         val newEntity = repositionEntity.apply(false)
                         newEntity.moveTo(
-                            snap.runData.spawnPos.x.toDouble() + 0.5,
-                            snap.runData.spawnPos.y.toDouble() + 0.125,
-                            snap.runData.spawnPos.z.toDouble() + 0.5,
+                            snap.runData.spawnPos.x.toDouble() + ObelisksConstants.TELEPORT_CENTER_OFFSET,
+                            snap.runData.spawnPos.y.toDouble() + ObelisksConstants.TELEPORT_SPAWN_HEIGHT_OFFSET,
+                            snap.runData.spawnPos.z.toDouble() + ObelisksConstants.TELEPORT_CENTER_OFFSET,
                             yaw,
                             entity.xRot
                         )

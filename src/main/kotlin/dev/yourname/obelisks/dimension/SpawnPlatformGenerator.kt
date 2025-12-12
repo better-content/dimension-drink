@@ -1,9 +1,11 @@
 package dev.yourname.obelisks.dimension
 
+import dev.yourname.obelisks.ObelisksConstants
 import dev.yourname.obelisks.dimension.DimensionBaseType
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.server.level.ServerLevel
+import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.levelgen.Heightmap
 
@@ -16,23 +18,30 @@ object SpawnPlatformGenerator {
      * Generates a spawn platform at a suitable location in the dimension.
      * Returns the center spawn position (where players should teleport).
      *
-     * Strategy: Find 3x3x3 air cube, sweep down to solid ground, build platform there.
+     * Strategy: Search for location where platform mostly touches target block type.
      */
     fun generateSpawnPlatform(level: ServerLevel, baseType: DimensionBaseType, targetPos: BlockPos? = null): BlockPos {
-        val searchCenter = targetPos ?: BlockPos(0, 64, 0)
+        val searchCenter = targetPos ?: BlockPos(0, ObelisksConstants.PLATFORM_Y_LEVEL, 0)
+        val dimensionKey = level.dimension().location()
+        val targetBlock = DimensionProperties.getTargetBlock(dimensionKey)
 
         println("[Obelisks] === PLATFORM GENERATION STARTED ===")
-        println("[Obelisks] Level: ${level.dimension().location()}")
+        println("[Obelisks] Level: $dimensionKey")
         println("[Obelisks] Base type: ${baseType.name}")
-        println("[Obelisks] Target position: $searchCenter")
+        println("[Obelisks] Search center: $searchCenter")
+        println("[Obelisks] Target block: $targetBlock")
 
-        // Use a fixed Y level appropriate for the dimension type
-        val platformY = 64
-        val platformPos = BlockPos(searchCenter.x, platformY, searchCenter.z)
+        // Find a suitable location: open space with target block below
+        val platformPos = findSuitableLocation(level, searchCenter, targetBlock)
+            ?: run {
+                println("[Obelisks] WARNING: Could not find suitable location, using fallback")
+                // Fallback: just build at a reasonable height
+                BlockPos(searchCenter.x, 70, searchCenter.z)
+            }
 
-        println("[Obelisks] Building platform at FIXED position: $platformPos")
+        println("[Obelisks] Building platform at: $platformPos")
 
-        // Build the platform at the fixed position
+        // Build the platform at the found position
         buildPlatform(level, platformPos, baseType)
 
         // Post-build validation
@@ -61,8 +70,9 @@ object SpawnPlatformGenerator {
         val chunkX = returnPadPos.x shr 4
         val chunkZ = returnPadPos.z shr 4
 
-        for (cx in -2..2) {
-            for (cz in -2..2) {
+        val radius = ObelisksConstants.PLATFORM_CHUNK_LOAD_RADIUS
+        for (cx in -radius..radius) {
+            for (cz in -radius..radius) {
                 val chunk = level.getChunk(chunkX + cx, chunkZ + cz)
                 chunk.setUnsaved(true) // Mark chunk as needing to be saved/synced
             }
@@ -84,7 +94,7 @@ object SpawnPlatformGenerator {
         val platformMaterial = Blocks.OBSIDIAN
 
         // Create a 7x7 platform
-        val radius = 3
+        val radius = ObelisksConstants.PLATFORM_RADIUS
 
         println("[Obelisks] Building OBSIDIAN platform at ground level $center with radius $radius")
 
@@ -101,12 +111,13 @@ object SpawnPlatformGenerator {
         println("[Obelisks] Platform base complete, clearing air space...")
 
         // PHASE 2: Ensure air space above platform (for the 3x3x3 cube + extra clearance)
+        val airClearance = ObelisksConstants.PLATFORM_AIR_CLEARANCE
         for (x in -radius..radius) {
             for (z in -radius..radius) {
                 val pos = center.offset(x, 0, z)
 
-                // Clear 5 blocks above platform for safe breathing space
-                for (y in 1..5) {
+                // Clear blocks above platform for safe breathing space
+                for (y in 1..airClearance) {
                     level.setBlock(pos.above(y), Blocks.AIR.defaultBlockState(), 3)
                 }
             }
@@ -116,7 +127,7 @@ object SpawnPlatformGenerator {
 
         // PHASE 3: Create return pad structure at center
         // Return pad is at Y+1 (one block above platform ground)
-        val returnPadPos = center.above()
+        val returnPadPos = center.above(ObelisksConstants.RETURN_PAD_HEIGHT)
 
         // Place 3x3 obsidian ring around return pad position (at Y+1 level)
         for (x in -1..1) {
@@ -130,7 +141,8 @@ object SpawnPlatformGenerator {
         }
 
         // Ensure 3x3x3 air cube above return pad (Y+2, Y+3, Y+4)
-        for (y in 1..3) {
+        val airCubeHeight = ObelisksConstants.RETURN_PAD_AIR_CUBE_HEIGHT
+        for (y in 1..airCubeHeight) {
             for (x in -1..1) {
                 for (z in -1..1) {
                     val airPos = returnPadPos.offset(x, y, z)
@@ -146,10 +158,11 @@ object SpawnPlatformGenerator {
 
         // PHASE 4: Add lighting at corners (above obsidian ring level)
         val lightBlock = Blocks.GLOWSTONE
-        level.setBlock(center.offset(-radius, 2, -radius), lightBlock.defaultBlockState(), 3)
-        level.setBlock(center.offset(radius, 2, -radius), lightBlock.defaultBlockState(), 3)
-        level.setBlock(center.offset(-radius, 2, radius), lightBlock.defaultBlockState(), 3)
-        level.setBlock(center.offset(radius, 2, radius), lightBlock.defaultBlockState(), 3)
+        val lightHeight = ObelisksConstants.PLATFORM_LIGHT_HEIGHT
+        level.setBlock(center.offset(-radius, lightHeight, -radius), lightBlock.defaultBlockState(), 3)
+        level.setBlock(center.offset(radius, lightHeight, -radius), lightBlock.defaultBlockState(), 3)
+        level.setBlock(center.offset(-radius, lightHeight, radius), lightBlock.defaultBlockState(), 3)
+        level.setBlock(center.offset(radius, lightHeight, radius), lightBlock.defaultBlockState(), 3)
 
         println("[Obelisks] Platform construction complete!")
     }
@@ -187,7 +200,8 @@ object SpawnPlatformGenerator {
         }
 
         // Check 3: 3x3x3 air cube above return pad
-        for (dy in 1..3) {
+        val airCubeHeight = ObelisksConstants.RETURN_PAD_AIR_CUBE_HEIGHT
+        for (dy in 1..airCubeHeight) {
             for (dx in -1..1) {
                 for (dz in -1..1) {
                     val airPos = returnPadPos.offset(dx, dy, dz)
@@ -216,6 +230,105 @@ object SpawnPlatformGenerator {
 
         println("[Obelisks] Platform validation PASSED")
         return true
+    }
+
+    /**
+     * Finds a suitable location for a spawn platform.
+     * Searches for an open 3x3x3 air space with target block below.
+     * Returns the ground-level position where the platform should be built.
+     */
+    private fun findSuitableLocation(level: ServerLevel, searchCenter: BlockPos, targetBlock: Block?): BlockPos? {
+        val minY = level.minBuildHeight + 10
+        val maxY = level.maxBuildHeight - 15
+
+        // Search in expanding spiral pattern
+        val maxSearchRadius = 32
+        val searchStep = 8
+
+        for (radius in 0..maxSearchRadius step searchStep) {
+            for (angle in 0 until 360 step 45) {
+                val rad = Math.toRadians(angle.toDouble())
+                val x = searchCenter.x + (radius * Math.cos(rad)).toInt()
+                val z = searchCenter.z + (radius * Math.sin(rad)).toInt()
+
+                // Search vertically for suitable spot
+                for (y in minY until maxY) {
+                    val testPos = BlockPos(x, y, z)
+
+                    if (isSuitableForPlatform(level, testPos, targetBlock)) {
+                        println("[Obelisks] Found suitable location at $testPos (radius=$radius, angle=$angle)")
+                        return testPos
+                    }
+                }
+            }
+        }
+
+        println("[Obelisks] No suitable location found after searching ${maxSearchRadius} block radius")
+        return null
+    }
+
+    /**
+     * Checks if a position is suitable for building a platform.
+     * Requirements:
+     * - 7x7x3 air space above the position (full platform clearance)
+     * - Most of the 7x7 platform area must be touching target block below (within 5 blocks)
+     */
+    private fun isSuitableForPlatform(level: ServerLevel, groundPos: BlockPos, targetBlock: Block?): Boolean {
+        val radius = ObelisksConstants.PLATFORM_RADIUS
+
+        // Check for 7x7x3 air space above ground level (ensures no suffocation)
+        for (y in 1..3) {
+            for (x in -radius..radius) {
+                for (z in -radius..radius) {
+                    val checkPos = groundPos.offset(x, y, z)
+                    val state = level.getBlockState(checkPos)
+
+                    // Must be air only (no replaceable blocks like grass)
+                    if (!state.isAir) {
+                        return false
+                    }
+                }
+            }
+        }
+
+        // If no target block specified, just check for any solid ground
+        if (targetBlock == null) {
+            for (y in 0 downTo -5) {
+                val checkPos = groundPos.offset(0, y, 0)
+                val state = level.getBlockState(checkPos)
+
+                if (state.isSolidRender(level, checkPos)) {
+                    return true
+                }
+            }
+            return false
+        }
+
+        // Check that most of the 7x7 platform area touches target block within 5 blocks below
+        var touchingCount = 0
+        var totalChecked = 0
+
+        for (x in -radius..radius) {
+            for (z in -radius..radius) {
+                totalChecked++
+                val platformPos = groundPos.offset(x, 0, z)
+
+                // Check if target block exists within 5 blocks below this position
+                for (y in 0 downTo -5) {
+                    val checkPos = platformPos.offset(0, y, 0)
+                    val state = level.getBlockState(checkPos)
+
+                    if (state.block == targetBlock) {
+                        touchingCount++
+                        break
+                    }
+                }
+            }
+        }
+
+        // Require at least 60% of platform to touch target block
+        val touchingPercentage = touchingCount.toDouble() / totalChecked.toDouble()
+        return touchingPercentage >= 0.6
     }
 
     /**

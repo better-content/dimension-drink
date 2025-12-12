@@ -1,0 +1,25 @@
+{
+  "dimensionId": "minecraft:the_end",
+  "dimensionName": "The End",
+  "stemBlockType": "minecraft:end_stone",
+  "feMultiplier": 1.5,
+  "spawnY": 64,
+  "platformBlock": "minecraft:end_stone",
+  "glowBlock": "minecraft:end_rod",
+  "enabled": true,
+  "minFERequired": 5000,
+  "collapseSpeedMultiplier": 1.2,
+  "drainExponentialFactor": 0.0001,
+  "drainExponentialIntervalTicks": 20,
+  "flavorBlocks": [
+    "minecraft:end_stone",
+    "minecraft:end_stone_bricks",
+    "minecraft:purpur_block",
+    "minecraft:purpur_pillar",
+    "minecraft:obsidian"
+  ],
+  "rarityMultiplier": 0.5,
+  "slotCount": 5,
+  "targetBlock": "minecraft:end_stone",
+  "customProperties": {}
+}

@@ -42,6 +42,22 @@ class ObelisksMod {
         // Centralized registry wiring
         dev.yourname.obelisks.registry.ModRegistries.registerAll(modBus)
 
+        // Register network packets
+        dev.yourname.obelisks.network.ModNetwork.register()
+
+        // Client-side setup
+        modBus.addListener { event: net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent ->
+            event.enqueueWork {
+                println("[$MOD_ID] Registering client screens")
+                net.minecraft.client.gui.screens.MenuScreens.register(
+                    dev.yourname.obelisks.registry.ModMenuTypes.OBELISK_MENU.get()
+                ) { menu, inventory, title ->
+                    dev.yourname.obelisks.client.ObeliskScreen(menu, inventory, title)
+                }
+                println("[$MOD_ID] Client screen registration complete")
+            }
+        }
+
         // Register event handlers
         MinecraftForge.EVENT_BUS.register(this)
         MinecraftForge.EVENT_BUS.register(PlayerRunCapabilityProvider.Companion)
@@ -49,12 +65,18 @@ class ObelisksMod {
         MinecraftForge.EVENT_BUS.register(DimensionTeardownHandler)
         MinecraftForge.EVENT_BUS.register(RunEventHandlers)
         MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.dimension.SlotDimensionInitializer)
-        
+
         // Phase 3: FE System handlers
         MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.run.InstanceTickHandler)
         MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.run.RunBossBarManager)
         MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.dimension.DimensionCollapseHandler)
         MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.run.FERegenerationHandler)
+
+        // Monster kill tracking for emerald rewards
+        MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.run.MonsterKillHandler)
+
+        // Server lifecycle handler
+        MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.server.ServerLifecycleHandler)
     }
 
     // Command registration moved to ObeliskCommands

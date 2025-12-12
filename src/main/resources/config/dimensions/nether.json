@@ -1,0 +1,27 @@
+{
+  "dimensionId": "minecraft:the_nether",
+  "dimensionName": "The Nether",
+  "stemBlockType": "minecraft:netherrack",
+  "feMultiplier": 1.0,
+  "spawnY": 100,
+  "platformBlock": "minecraft:netherrack",
+  "glowBlock": "minecraft:glowstone",
+  "enabled": true,
+  "minFERequired": 0,
+  "collapseSpeedMultiplier": 1.0,
+  "drainExponentialFactor": 0.00008,
+  "drainExponentialIntervalTicks": 20,
+  "flavorBlocks": [
+    "minecraft:netherrack",
+    "minecraft:nether_bricks",
+    "minecraft:red_nether_bricks",
+    "minecraft:magma_block",
+    "minecraft:soul_sand",
+    "minecraft:soul_soil",
+    "minecraft:blackstone"
+  ],
+  "rarityMultiplier": 1.0,
+  "slotCount": 5,
+  "targetBlock": "minecraft:netherrack",
+  "customProperties": {}
+}

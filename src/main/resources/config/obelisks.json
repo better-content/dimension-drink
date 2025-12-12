@@ -1,0 +1,189 @@
+{
+  "_comment": "Obelisks Mod Configuration - All magic numbers and configurable values",
+
+  "modIdentity": {
+    "modId": "obelisks"
+  },
+
+  "dimensionSpawnPlatform": {
+    "platformYLevel": 64,
+    "platformRadius": 3,
+    "platformAirClearance": 5,
+    "platformChunkLoadRadius": 2,
+    "returnPadHeight": 1,
+    "returnPadAirCubeHeight": 3,
+    "platformLightHeight": 2
+  },
+
+  "dimensionCollapseSystem": {
+    "targetDeletionAtZeroFE": 0.9,
+    "bossBarShowThreshold": 0.90,
+    "decayPhaseThreshold": 0.90,
+    "criticalCollapseThreshold": 0.10,
+
+    "deletionRates": {
+      "initialDeletionRate": 100,
+      "initialCriticalDeletionRate": 500,
+      "minDeletionRate": 50,
+      "maxDeletionRate": 5000,
+      "maxCriticalDeletionRate": 10000,
+      "minCriticalDeletionRate": 200
+    },
+
+    "deletionAdjustmentThresholds": {
+      "deletionDiffHuge": 10000,
+      "deletionDiffLarge": 5000,
+      "deletionDiffMedium": 1000,
+      "deletionDiffSmall": -1000
+    },
+
+    "rateMultipliers": {
+      "rateIncreaseHuge": 1.5,
+      "rateIncreaseLarge": 1.2,
+      "rateDecreaseSmall": 0.9,
+      "rateDecreaseLarge": 0.7,
+      "rateIncreaseCriticalHuge": 2.0,
+      "rateIncreaseCriticalLarge": 1.5,
+      "rateIncreaseCriticalMedium": 1.2,
+      "rateDecreaseCritical": 0.8
+    },
+
+    "columnDeletion": {
+      "decayExtraColumnsMin": 2,
+      "decayExtraColumnsMax": 6,
+      "decayGuaranteedColumnsPerPlayer": 1,
+      "criticalExtraColumnsMin": 5,
+      "criticalExtraColumnsMax": 15,
+      "criticalGuaranteedColumnsPerPlayer": 2,
+      "columnWidth": 2,
+      "columnPlacementRadius": 32,
+      "columnParticleStep": 15
+    },
+
+    "blockDeletion": {
+      "randomDeletionRadius": 128,
+      "randomDeletionYMin": -64,
+      "randomDeletionYMax": 65,
+      "deletionParticleInterval": 50
+    },
+
+    "blockCounting": {
+      "estimatedBlocksPerSection": 2048,
+      "minEstimatedBlocks": 10000,
+      "blockCountViewDistance": 10
+    },
+
+    "effectIntervals": {
+      "collapseLogInterval": 20
+    },
+
+    "voidHole": {
+      "voidHoleRadius": 2,
+      "voidPortalParticleCount": 30
+    },
+
+    "legacyEffects": {
+      "blockSwapRadius": 5,
+      "blockSwapYOffset": 3,
+      "blockSwapAttempts": 3,
+      "blockRemovalRadius": 8,
+      "blockRemovalYOffset": 5,
+      "blockRemovalAttempts": 100,
+      "individualDeletionRadius": 6,
+      "individualDeletionYOffset": 4,
+      "individualDeletionAttempts": 60,
+      "randomColumnRadius": 10
+    },
+
+    "particles": {
+      "smokeParticleCount": 5,
+      "largeSmokeParticleCount": 4,
+      "portalParticleCount": 5,
+      "particleSpeed": 0.02,
+      "particleSpread": 0.3,
+      "portalParticleSpeed": 0.2
+    },
+
+    "sounds": {
+      "portalTravelVolume": 1.0,
+      "portalTravelPitchBase": 0.5,
+      "portalTravelPitchCritical": 0.6,
+      "portalTravelPitchVariation": 0.4,
+      "voidHoleSoundVolume": 1.0,
+      "voidHoleSoundPitch": 0.5,
+      "columnDeletionSoundVolume": 1.5
+    }
+  },
+
+  "feSystem": {
+    "maxFEStorage": 1800,
+    "baseFEDrainPerTick": 1,
+    "perPlayerFEDrain": 2,
+    "feRegenPerTick": 1,
+    "drainExponentialFactor": 0.00005,
+    "drainExponentialIntervalTicks": 20
+  },
+
+  "runManagement": {
+    "maxConcurrentRunsPerObelisk": 1,
+    "runCleanupDelayTicks": 100,
+    "allowBreakWhileActive": false,
+    "resumeRunsOnLogin": false
+  },
+
+  "playerSafety": {
+    "voidFallYThreshold": -64.0,
+    "safeYMin": -50,
+    "safeYMax": 320
+  },
+
+  "obeliskPlacement": {
+    "groundSearchDepthPlacer": 64,
+    "groundSearchDepthWorldgen": 32
+  },
+
+  "dimensionCommandSystem": {
+    "enterForceLoadRadius": 2,
+    "chunkTicketLevel": 3
+  },
+
+  "bossBarColors": {
+    "bossBarGreenThreshold": 0.30,
+    "bossBarYellowThreshold": 0.10
+  },
+
+  "teleportSystem": {
+    "teleportCenterOffset": 0.5,
+    "teleportSpawnHeightOffset": 0.125
+  },
+
+  "configurationMode": {
+    "baseTypeSelectionMode": "random"
+  },
+
+  "gameConstants": {
+    "_comment": "Minecraft game constants - ticks per second, etc.",
+    "ticksPerSecond": 20
+  },
+
+  "dimensionSlotSystem": {
+    "_comment": "Persistent dimension slot allocation for run instances",
+    "netherSlotCount": 5,
+    "endSlotCount": 5,
+    "spawnPositionRange": {
+      "xMin": -5000,
+      "xMax": 5000,
+      "zMin": -5000,
+      "zMax": 5000,
+      "netherY": 64,
+      "endY": 64
+    }
+  },
+
+  "emeraldRewardSystem": {
+    "_comment": "Emerald rewards based on monsters killed during run",
+    "emeraldRewardMinPerKill": 0,
+    "emeraldRewardMaxPerKill": 3,
+    "emeraldRewardsEnabled": true
+  }
+}

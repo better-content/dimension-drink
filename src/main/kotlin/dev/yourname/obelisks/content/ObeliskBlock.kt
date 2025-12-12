@@ -1,6 +1,5 @@
 package dev.yourname.obelisks.content
 
-import dev.yourname.obelisks.dimension.DimensionCoordinator
 import dev.yourname.obelisks.player.getRunInfo
 import dev.yourname.obelisks.registry.ModBlockEntities
 import net.minecraft.core.BlockPos
@@ -9,7 +8,11 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.InteractionResult
+import net.minecraft.world.MenuProvider
+import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.entity.player.Player
+import net.minecraft.world.inventory.AbstractContainerMenu
+import net.minecraft.world.inventory.SimpleContainerData
 import net.minecraft.world.level.BlockGetter
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Block
@@ -39,7 +42,6 @@ class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
             return InteractionResult.SUCCESS
         }
 
-        val serverLevel = level as ServerLevel
         val serverPlayer = player as ServerPlayer
         val be = level.getBlockEntity(pos) as? ObeliskBlockEntity ?: return InteractionResult.PASS
 
@@ -51,13 +53,26 @@ class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
             return InteractionResult.SUCCESS
         }
 
-        // Use DimensionCoordinator for ACID-like transaction
-        val result = DimensionCoordinator.enterDimension(serverPlayer, be, pos, serverLevel)
+        // Open GUI menu with extra data
+        net.minecraftforge.network.NetworkHooks.openScreen(
+            serverPlayer,
+            object : MenuProvider {
+                override fun createMenu(
+                    containerId: Int,
+                    playerInventory: Inventory,
+                    player: Player
+                ): AbstractContainerMenu {
+                    val menu = ObeliskMenu(containerId, playerInventory, pos, SimpleContainerData(ObeliskMenu.DATA_COUNT))
+                    menu.updateData() // Initial data sync
+                    return menu
+                }
 
-        result.onFailure { error, _ ->
-            player.sendSystemMessage(Component.literal("Failed to activate obelisk: $error"))
-            return InteractionResult.FAIL
-        }
+                override fun getDisplayName(): Component {
+                    return Component.literal("Obelisk")
+                }
+            },
+            pos // Extra data - position will be written to buffer
+        )
 
         return InteractionResult.SUCCESS
     }
