@@ -1,13 +1,9 @@
 package dev.yourname.obelisks.dimension
 
 import dev.yourname.obelisks.ObelisksConstants
-import dev.yourname.obelisks.dimension.DimensionBaseType
 import net.minecraft.core.BlockPos
-import net.minecraft.core.Direction
 import net.minecraft.server.level.ServerLevel
-import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.Blocks
-import net.minecraft.world.level.levelgen.Heightmap
 
 /**
  * Generates safe spawn platforms in run dimensions.
@@ -20,51 +16,34 @@ object SpawnPlatformGenerator {
      *
      * Strategy: Search for location where platform mostly touches target block type.
      */
-    fun generateSpawnPlatform(level: ServerLevel, baseType: DimensionBaseType, targetPos: BlockPos? = null): BlockPos {
+    fun generateSpawnPlatform(level: ServerLevel, dimensionId: String, targetPos: BlockPos? = null): BlockPos {
         val searchCenter = targetPos ?: BlockPos(0, ObelisksConstants.PLATFORM_Y_LEVEL, 0)
-        val dimensionKey = level.dimension().location()
-        val targetBlock = DimensionProperties.getTargetBlock(dimensionKey)
 
-        println("[Obelisks] === PLATFORM GENERATION STARTED ===")
-        println("[Obelisks] Level: $dimensionKey")
-        println("[Obelisks] Base type: ${baseType.name}")
-        println("[Obelisks] Search center: $searchCenter")
-        println("[Obelisks] Target block: $targetBlock")
-
-        // Find a suitable location: open space with target block below
-        val platformPos = findSuitableLocation(level, searchCenter, targetBlock)
+        // Find a suitable location: open air space
+        val platformPos = findSuitableLocation(level, searchCenter)
             ?: run {
-                println("[Obelisks] WARNING: Could not find suitable location, using fallback")
                 // Fallback: just build at a reasonable height
                 BlockPos(searchCenter.x, 70, searchCenter.z)
             }
 
-        println("[Obelisks] Building platform at: $platformPos")
 
         // Build the platform at the found position
-        buildPlatform(level, platformPos, baseType)
+        buildPlatform(level, platformPos)
 
         // Post-build validation
         if (!validatePlatform(level, platformPos)) {
-            println("[Obelisks] WARNING: Platform validation failed, attempting rebuild")
-            buildPlatform(level, platformPos, baseType)
-            
+            buildPlatform(level, platformPos)
+
             if (!validatePlatform(level, platformPos)) {
-                println("[Obelisks] CRITICAL ERROR: Platform validation failed even after rebuild!")
             }
         }
 
         // Log platform generation for debugging
-        println("[Obelisks] Generated spawn platform at $platformPos in ${baseType.name} dimension")
         
         // CRITICAL DEBUG: Verify blocks are actually there immediately after placement
         val returnPadPos = platformPos.above()
         val returnPadBlock = level.getBlockState(returnPadPos).block
         val platformBlock = level.getBlockState(platformPos).block
-        println("[Obelisks] POST-GENERATION VERIFICATION:")
-        println("[Obelisks]   Return pad block at $returnPadPos: $returnPadBlock")
-        println("[Obelisks]   Platform block at $platformPos: $platformBlock")
-        println("[Obelisks]   Expected return pad: ${dev.yourname.obelisks.registry.ModBlocks.RETURN_PAD.get()}")
 
         // CRITICAL: Mark chunks as dirty to ensure they're saved and synced to clients
         val chunkX = returnPadPos.x shr 4
@@ -78,7 +57,6 @@ object SpawnPlatformGenerator {
             }
         }
 
-        println("[Obelisks] Marked platform chunks for sync")
 
         return returnPadPos.above() // Players spawn on top of the return pad (Y+2 above platform ground)
     }
@@ -89,14 +67,13 @@ object SpawnPlatformGenerator {
      *
      * @param center The ground-level position (Y=ground) where platform will be built
      */
-    private fun buildPlatform(level: ServerLevel, center: BlockPos, baseType: DimensionBaseType) {
-        // USE OBSIDIAN FOR ALL PLATFORMS - highly visible in both Nether and End
+    private fun buildPlatform(level: ServerLevel, center: BlockPos) {
+        // USE OBSIDIAN FOR ALL PLATFORMS - highly visible in all dimensions
         val platformMaterial = Blocks.OBSIDIAN
 
         // Create a 7x7 platform
         val radius = ObelisksConstants.PLATFORM_RADIUS
 
-        println("[Obelisks] Building OBSIDIAN platform at ground level $center with radius $radius")
 
         // PHASE 1: Clear area and build obsidian platform base
         for (x in -radius..radius) {
@@ -108,7 +85,6 @@ object SpawnPlatformGenerator {
             }
         }
 
-        println("[Obelisks] Platform base complete, clearing air space...")
 
         // PHASE 2: Ensure air space above platform (for the 3x3x3 cube + extra clearance)
         val airClearance = ObelisksConstants.PLATFORM_AIR_CLEARANCE
@@ -123,7 +99,6 @@ object SpawnPlatformGenerator {
             }
         }
 
-        println("[Obelisks] Air space cleared, building return pad structure...")
 
         // PHASE 3: Create return pad structure at center
         // Return pad is at Y+1 (one block above platform ground)
@@ -154,7 +129,6 @@ object SpawnPlatformGenerator {
         // Place return pad at center, Y+1
         level.setBlock(returnPadPos, dev.yourname.obelisks.registry.ModBlocks.RETURN_PAD.get().defaultBlockState(), 11)
 
-        println("[Obelisks] Return pad placed at $returnPadPos")
 
         // PHASE 4: Add lighting at corners (above obsidian ring level)
         val lightBlock = Blocks.GLOWSTONE
@@ -164,7 +138,6 @@ object SpawnPlatformGenerator {
         level.setBlock(center.offset(-radius, lightHeight, radius), lightBlock.defaultBlockState(), 3)
         level.setBlock(center.offset(radius, lightHeight, radius), lightBlock.defaultBlockState(), 3)
 
-        println("[Obelisks] Platform construction complete!")
     }
 
     /**
@@ -180,7 +153,6 @@ object SpawnPlatformGenerator {
         // Check 1: Return pad exists
         val returnPadBlock = level.getBlockState(returnPadPos).block
         if (returnPadBlock != dev.yourname.obelisks.registry.ModBlocks.RETURN_PAD.get()) {
-            println("[Obelisks] Validation FAILED: Return pad missing at $returnPadPos")
             return false
         }
 
@@ -193,7 +165,6 @@ object SpawnPlatformGenerator {
                 val ringBlock = level.getBlockState(ringPos).block
 
                 if (ringBlock != Blocks.OBSIDIAN) {
-                    println("[Obelisks] Validation FAILED: Obsidian ring incomplete at $ringPos")
                     return false
                 }
             }
@@ -208,7 +179,6 @@ object SpawnPlatformGenerator {
                     val state = level.getBlockState(airPos)
 
                     if (!state.isAir || !state.fluidState.isEmpty) {
-                        println("[Obelisks] Validation FAILED: Air cube obstructed at $airPos")
                         return false
                     }
                 }
@@ -222,24 +192,25 @@ object SpawnPlatformGenerator {
                 val floorState = level.getBlockState(floorPos)
 
                 if (!floorState.isSolidRender(level, floorPos)) {
-                    println("[Obelisks] Validation FAILED: Platform floor missing at $floorPos")
                     return false
                 }
             }
         }
 
-        println("[Obelisks] Platform validation PASSED")
         return true
     }
 
     /**
      * Finds a suitable location for a spawn platform.
-     * Searches for an open 3x3x3 air space with target block below.
+     * Searches for an open 3x3x3 air space with most solid ground below.
      * Returns the ground-level position where the platform should be built.
      */
-    private fun findSuitableLocation(level: ServerLevel, searchCenter: BlockPos, targetBlock: Block?): BlockPos? {
+    private fun findSuitableLocation(level: ServerLevel, searchCenter: BlockPos): BlockPos? {
         val minY = level.minBuildHeight + 10
         val maxY = level.maxBuildHeight - 15
+
+        // Collect candidate locations (at least 3, or all suitable ones found)
+        val candidates = mutableListOf<Pair<BlockPos, Int>>() // Pair of (position, solid ground score)
 
         // Search in expanding spiral pattern
         val maxSearchRadius = 32
@@ -255,16 +226,53 @@ object SpawnPlatformGenerator {
                 for (y in minY until maxY) {
                     val testPos = BlockPos(x, y, z)
 
-                    if (isSuitableForPlatform(level, testPos, targetBlock)) {
-                        println("[Obelisks] Found suitable location at $testPos (radius=$radius, angle=$angle)")
-                        return testPos
+                    if (isSuitableForPlatform(level, testPos)) {
+                        // Calculate solid ground score for this location
+                        val solidGroundScore = calculateSolidGroundScore(level, testPos)
+                        candidates.add(Pair(testPos, solidGroundScore))
+
+                        // Once we have at least 3 candidates, we can start being selective
+                        if (candidates.size >= 3) {
+                            // Return best candidate so far if we've searched enough
+                            if (radius > 16 || candidates.size >= 10) {
+                                return candidates.maxByOrNull { it.second }?.first
+                            }
+                        }
                     }
                 }
             }
         }
 
-        println("[Obelisks] No suitable location found after searching ${maxSearchRadius} block radius")
-        return null
+        // Return the best candidate we found, or null if none
+        return candidates.maxByOrNull { it.second }?.first
+    }
+
+    /**
+     * Calculates a score representing how much solid ground exists below a platform position.
+     * Higher score = more solid ground = better stability.
+     * Checks a 7x7 area up to 5 blocks below the platform.
+     */
+    private fun calculateSolidGroundScore(level: ServerLevel, groundPos: BlockPos): Int {
+        val radius = ObelisksConstants.PLATFORM_RADIUS
+        var solidBlockCount = 0
+
+        // Check 7x7 area at multiple depths below platform
+        for (y in 0 downTo -5) {
+            for (x in -radius..radius) {
+                for (z in -radius..radius) {
+                    val checkPos = groundPos.offset(x, y, z)
+                    val state = level.getBlockState(checkPos)
+
+                    if (state.isSolidRender(level, checkPos)) {
+                        // Weight blocks closer to the platform more heavily
+                        val depthWeight = 6 + y // y ranges from 0 to -5, so weight is 6 to 1
+                        solidBlockCount += depthWeight
+                    }
+                }
+            }
+        }
+
+        return solidBlockCount
     }
 
     /**
@@ -274,7 +282,7 @@ object SpawnPlatformGenerator {
      * - No bedrock within platform area or 5 blocks below
      * - Solid ground nearby (within 5 blocks below center)
      */
-    private fun isSuitableForPlatform(level: ServerLevel, groundPos: BlockPos, targetBlock: Block?): Boolean {
+    private fun isSuitableForPlatform(level: ServerLevel, groundPos: BlockPos): Boolean {
         val radius = ObelisksConstants.PLATFORM_RADIUS
 
         // Check that platform ground level doesn't contain bedrock

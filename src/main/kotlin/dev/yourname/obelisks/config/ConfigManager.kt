@@ -39,10 +39,7 @@ object ConfigManager {
             // Load loot table config
             lootTableConfig = loadLootTableConfig()
 
-            println("[Obelisks] All configurations loaded successfully")
-
         } catch (e: Exception) {
-            println("[Obelisks] ERROR: Failed to load configuration: ${e.message}")
             e.printStackTrace()
             throw e
         }
@@ -144,24 +141,10 @@ object ConfigManager {
         return dimensionConfigs[dimensionKey.toString()]?.feMultiplier ?: 1.0
     }
 
-    /**
-     * Get configuration for a specific DimensionBaseType.
-     * Maps base types to their corresponding dimension IDs.
-     */
-    fun getConfigForBaseType(baseType: dev.yourname.obelisks.dimension.DimensionBaseType): DimensionConfig? {
-        val dimensionId = when (baseType) {
-            dev.yourname.obelisks.dimension.DimensionBaseType.NETHER -> "minecraft:the_nether"
-            dev.yourname.obelisks.dimension.DimensionBaseType.END -> "minecraft:the_end"
-            dev.yourname.obelisks.dimension.DimensionBaseType.OVERWORLD -> "minecraft:overworld"
-        }
-        return getDimensionConfig(dimensionId)
-    }
-
     private fun loadMainConfig(): MainConfig {
         val configPath = configRoot.resolve("obelisks.json")
 
         if (!Files.exists(configPath)) {
-            println("[Obelisks] Main config not found, creating default at: $configPath")
             copyDefaultResource("/config/obelisks.json.default", configPath)
         }
 
@@ -174,12 +157,23 @@ object ConfigManager {
 
         if (!Files.exists(dimensionsDir)) {
             Files.createDirectories(dimensionsDir)
-            println("[Obelisks] Dimensions config directory created")
+        }
 
-            // Copy default dimension configs
-            copyDefaultResource("/config/dimensions/overworld.json.default", dimensionsDir.resolve("overworld.json"))
-            copyDefaultResource("/config/dimensions/nether.json.default", dimensionsDir.resolve("nether.json"))
-            copyDefaultResource("/config/dimensions/end.json.default", dimensionsDir.resolve("end.json"))
+        // Auto-copy dimension configs if their template exists and the file doesn't exist yet
+        val dimensionTemplates = listOf(
+            "overworld", "nether", "end",
+            "aether", "twilight", "everbright", "everdawn", "fallout", "otherside"
+        )
+
+        for (templateName in dimensionTemplates) {
+            val targetFile = dimensionsDir.resolve("$templateName.json")
+            if (!Files.exists(targetFile)) {
+                try {
+                    copyDefaultResource("/config/dimensions/$templateName.json.default", targetFile)
+                } catch (e: Exception) {
+                    // Template doesn't exist in resources, skip
+                }
+            }
         }
 
         val configs = mutableMapOf<String, DimensionConfig>()
@@ -191,20 +185,49 @@ object ConfigManager {
                     val json = Files.readString(file)
                     val config = gson.fromJson(json, DimensionConfig::class.java)
 
-                    if (config.isValid() && validateDimensionConfig(config)) {
-                        configs[config.dimensionId] = config
-                        val status = if (config.enabled) "ENABLED" else "DISABLED"
-                        println("[Obelisks] Loaded dimension config: ${config.dimensionName} ($status)")
-                    } else {
-                        println("[Obelisks] Skipping invalid/unloadable dimension config: ${file.fileName}")
+                    // Load all configs initially without validation
+                    // Validation will be done lazily when blocks are actually accessed
+                    if (config.isValid()) {
+                        // Only check if mod is loaded, not if blocks exist yet
+                        if (checkModsLoaded(config)) {
+                            configs[config.dimensionId] = config
+                        }
                     }
                 } catch (e: Exception) {
-                    println("[Obelisks] Error loading dimension config from ${file.fileName}: ${e.message}")
+                    // Silently skip configs that fail to load
                 }
             }
 
-        println("[Obelisks] Loaded ${configs.size} dimension configurations")
         return configs
+    }
+
+    /**
+     * Checks if all required mods for a dimension config are loaded.
+     * Does NOT validate that blocks exist in registry (that happens too early).
+     */
+    private fun checkModsLoaded(config: DimensionConfig): Boolean {
+        val blocksToCheck = listOf(
+            config.stemBlockType,
+            config.platformBlock,
+            config.glowBlock,
+            config.targetBlock
+        ) + config.flavorBlocks
+
+        for (blockId in blocksToCheck) {
+            try {
+                val resourceLocation = ResourceLocation(blockId)
+                val namespace = resourceLocation.namespace
+
+                // Only check if mod is loaded, not if block exists
+                if (namespace != "minecraft" && !ModList.get().isLoaded(namespace)) {
+                    return false
+                }
+            } catch (e: Exception) {
+                return false
+            }
+        }
+
+        return true
     }
 
     /**
@@ -225,17 +248,14 @@ object ConfigManager {
                 // Check if the mod is loaded
                 val namespace = resourceLocation.namespace
                 if (namespace != "minecraft" && !ModList.get().isLoaded(namespace)) {
-                    println("[Obelisks] Config ${config.dimensionName}: Mod '$namespace' not loaded (required for block '$blockId')")
                     return false
                 }
 
                 // Check if the block exists in registry
                 if (!BuiltInRegistries.BLOCK.containsKey(resourceLocation)) {
-                    println("[Obelisks] Config ${config.dimensionName}: Block '$blockId' not found in registry")
                     return false
                 }
             } catch (e: Exception) {
-                println("[Obelisks] Config ${config.dimensionName}: Invalid block ID '$blockId': ${e.message}")
                 return false
             }
         }
@@ -247,7 +267,6 @@ object ConfigManager {
         val lootTablePath = configRoot.resolve("loot_tables/run_completion.json")
 
         if (!Files.exists(lootTablePath)) {
-            println("[Obelisks] Loot table not found, creating default at: $lootTablePath")
             Files.createDirectories(lootTablePath.parent)
 
             val defaultTable = LootTableConfig(
@@ -293,18 +312,15 @@ object ConfigManager {
                     // Check if the mod is loaded
                     val namespace = resourceLocation.namespace
                     if (namespace != "minecraft" && !ModList.get().isLoaded(namespace)) {
-                        println("[Obelisks] Loot table pool '${pool.name}': Mod '$namespace' not loaded (item '${entry.item}' will be skipped)")
                         invalidEntries.add(entry)
                         continue
                     }
 
                     // Check if the item exists in registry
                     if (!BuiltInRegistries.ITEM.containsKey(resourceLocation)) {
-                        println("[Obelisks] Loot table pool '${pool.name}': Item '${entry.item}' not found in registry (will be skipped)")
                         invalidEntries.add(entry)
                     }
                 } catch (e: Exception) {
-                    println("[Obelisks] Loot table pool '${pool.name}': Invalid item ID '${entry.item}' (will be skipped): ${e.message}")
                     invalidEntries.add(entry)
                 }
             }
@@ -312,7 +328,6 @@ object ConfigManager {
             // Remove invalid entries from the pool
             if (invalidEntries.isNotEmpty()) {
                 (pool.entries as MutableList).removeAll(invalidEntries)
-                println("[Obelisks] Removed ${invalidEntries.size} invalid entries from loot pool '${pool.name}'")
             }
         }
     }
@@ -324,7 +339,6 @@ object ConfigManager {
         inputStream.use { input ->
             Files.copy(input, destination)
         }
-        println("[Obelisks] Created default config from template: $destination")
     }
 
     private fun checkInitialized() {

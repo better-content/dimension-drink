@@ -11,8 +11,6 @@ object ObelisksConstants {
     // Load configuration on initialization
     init {
         ConfigManager.load()
-        // Initialize dimension slots based on loaded configs
-        dev.yourname.obelisks.dimension.DimensionSlotManager.initializeSlots()
     }
 
     private val config get() = ConfigManager.getMainConfig()

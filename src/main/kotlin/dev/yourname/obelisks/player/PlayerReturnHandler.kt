@@ -25,7 +25,6 @@ object PlayerReturnHandler {
         val playerRunInfo = entity.getRunInfo() ?: return
         if (!playerRunInfo.isInRun()) return
 
-        println("[Obelisks] Player ${entity.gameProfile.name} died in run dimension, cleaning up...")
 
         // Clean up run info
         val server = entity.server
@@ -35,7 +34,6 @@ object PlayerReturnHandler {
         // Clear capability data
         playerRunInfo.clear()
 
-        println("[Obelisks] Cleaned up run info for ${entity.gameProfile.name}")
     }
 
     @SubscribeEvent
@@ -56,7 +54,6 @@ object PlayerReturnHandler {
 
         if (runData == null) {
             // Run no longer exists but player still has run info - clear it
-            println("[Obelisks] Clearing stale run info for player ${player.gameProfile.name}")
             playerRunInfo.clear()
             return
         }
@@ -64,7 +61,6 @@ object PlayerReturnHandler {
         // CRITICAL: Verify player is actually in the run dimension
         if (player.level().dimension() != runData.runDimensionKey) {
             // Player is not in run dimension but has run info - they've already been returned
-            println("[Obelisks] Player ${player.gameProfile.name} not in run dimension, clearing stale run info")
             playerRunInfo.clear()
             runManager.removePlayerFromRun(player.uuid)
             return
@@ -83,7 +79,6 @@ object PlayerReturnHandler {
     fun returnPlayerToOrigin(player: ServerPlayer, reason: String) {
         DimensionCoordinator.exitDimension(player, reason)
             .onFailure { error, _ ->
-                println("[Obelisks] Failed to return player ${player.gameProfile.name}: $error")
                 // Fallback: clear their run info to prevent stuck state
                 player.getRunInfo()?.clear()
             }

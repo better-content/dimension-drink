@@ -3,7 +3,6 @@ package dev.yourname.obelisks.client
 import com.mojang.blaze3d.systems.RenderSystem
 import dev.yourname.obelisks.ObelisksConstants
 import dev.yourname.obelisks.content.ObeliskMenu
-import dev.yourname.obelisks.dimension.DimensionBaseType
 import dev.yourname.obelisks.network.ModNetwork
 import dev.yourname.obelisks.network.TeleportButtonPacket
 import net.minecraft.client.gui.GuiGraphics
@@ -159,17 +158,14 @@ class ObeliskScreen(
             false
         )
 
-        // Dimension Type
-        val baseTypeOrdinal = menu.getBaseTypeOrdinal()
-        val baseTypeName = if (baseTypeOrdinal >= 0 && baseTypeOrdinal < DimensionBaseType.values().size) {
-            DimensionBaseType.values()[baseTypeOrdinal].name
-        } else {
-            "Unknown"
-        }
+        // Dimension Type - use display name if available, otherwise fall back to dimensionId
+        val dimensionName = menu.getObeliskBlockEntity()?.dimensionDisplayName
+            ?: menu.getObeliskBlockEntity()?.targetDimensionId
+            ?: "Unknown"
 
         guiGraphics.drawString(
             font,
-            "Dimension: $baseTypeName",
+            "Dimension: $dimensionName",
             8,
             yStart + 28,
             0x404040,

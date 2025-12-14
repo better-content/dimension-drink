@@ -99,7 +99,7 @@ class ObeliskMenu(
         data.set(DATA_FE_STORED, be.feStored)
         data.set(DATA_MAX_FE, be.getMaxEnergyStored())
         data.set(DATA_HAS_ACTIVE_RUN, if (be.isRunActive()) 1 else 0)
-        data.set(DATA_BASE_TYPE_ORDINAL, be.baseType?.ordinal ?: -1)
+        data.set(DATA_BASE_TYPE_ORDINAL, -1) // Legacy field, no longer used
 
         // Sync modified FE stats
         val regenRate = be.getModifiedRegenRate()
@@ -113,8 +113,6 @@ class ObeliskMenu(
 
         // Debug logging
         if (!level.isClientSide && be.modifiers.isNotEmpty()) {
-            println("[ObeliskMenu] Syncing stats - Regen: $regenRate, BaseDrain: $baseDrain, PlayerDrain: $playerDrain, Cooldown: ${be.getCooldownRemainingSeconds()}s")
-            println("[ObeliskMenu] Modifiers: ${be.modifiers.joinToString { "${it.stat}:${it.bonusPercent}%" }}")
         }
 
         // Get drain multiplier from active run if available

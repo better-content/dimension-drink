@@ -41,7 +41,6 @@ object MonsterKillHandler {
 
         // Debug logging
         if (runData.monstersKilled % 10 == 0) {
-            println("[Obelisks] Run ${runData.runId}: ${runData.monstersKilled} monsters killed")
         }
     }
 }

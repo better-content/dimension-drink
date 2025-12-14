@@ -23,5 +23,6 @@
   "rarityMultiplier": 1.0,
   "slotCount": 5,
   "targetBlock": "minecraft:netherrack",
+  "dimensionTemplate": "nether",
   "customProperties": {}
 }

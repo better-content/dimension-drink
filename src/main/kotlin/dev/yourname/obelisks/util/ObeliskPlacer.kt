@@ -1,9 +1,9 @@
 package dev.yourname.obelisks.util
 
 import dev.yourname.obelisks.ObelisksConstants
+import dev.yourname.obelisks.config.ConfigManager
 import dev.yourname.obelisks.config.ObeliskTypeRegistry
 import dev.yourname.obelisks.content.ObeliskBlockEntity
-import dev.yourname.obelisks.dimension.DimensionBaseType
 import dev.yourname.obelisks.registry.ModBlocks
 import net.minecraft.core.BlockPos
 import net.minecraft.world.level.Level
@@ -20,35 +20,21 @@ object ObeliskPlacer {
 
     /**
      * Places an obelisk at the given position with appropriate pillar support.
-     * The obelisk is automatically attuned to a random dimension type.
-     * 
+     * The obelisk is automatically attuned to a random enabled dimension.
+     *
      * @param level The world to place in
      * @param pos The position to place at (will find ground below this)
      * @return True if placement succeeded
      */
     fun placeObelisk(level: Level, pos: BlockPos): Boolean {
-        // Choose random dimension type
-        val baseType = DimensionBaseType.random()
+        // Choose random enabled dimension
+        val enabledDims = ConfigManager.getEnabledDimensionConfigs()
+        if (enabledDims.isEmpty()) return false
 
-        return placeObelisk(level, pos, baseType)
-    }
+        val randomDim = enabledDims.entries.random()
+        val dimensionId = randomDim.key
+        val dimConfig = randomDim.value
 
-    /**
-     * Places an obelisk at the given position with appropriate pillar support.
-     * The obelisk is attuned to the specified dimension type.
-     *
-     * Structure:
-     * 1. Finds ground below the given position
-     * 2. Builds stem upward from ground
-     * 3. Places obelisk cap on top of stem
-     *
-     * @param level The world to place in
-     * @param pos The position to place at (will find ground below this)
-     * @param baseType The dimension type to attune to
-     * @return True if placement succeeded
-     */
-    fun placeObelisk(level: Level, pos: BlockPos, baseType: DimensionBaseType): Boolean {
-        val dimConfig = dev.yourname.obelisks.config.ConfigManager.getConfigForBaseType(baseType) ?: return false
         val config = ObeliskTypeRegistry.getConfigForDimension(dimConfig)
 
         // Find ground below the given position
@@ -69,8 +55,9 @@ object ObeliskPlacer {
         // Configure the block entity
         val blockEntity = level.getBlockEntity(capPos) as? ObeliskBlockEntity
         if (blockEntity != null) {
-            blockEntity.baseType = baseType
-            blockEntity.setChanged()
+            blockEntity.targetDimensionId = dimensionId
+            blockEntity.dimensionDisplayName = dimConfig.dimensionName
+            blockEntity.syncToClients()
             return true
         }
 

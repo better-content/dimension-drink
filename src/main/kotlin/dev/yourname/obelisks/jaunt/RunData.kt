@@ -1,6 +1,5 @@
 package dev.yourname.obelisks.jaunt
 
-import dev.yourname.obelisks.dimension.DimensionBaseType
 import net.minecraft.core.BlockPos
 import net.minecraft.nbt.CompoundTag
 import net.minecraft.resources.ResourceKey
@@ -14,7 +13,7 @@ import java.util.*
 data class RunData(
     val obeliskId: UUID,
     val runId: Long,
-    val baseType: DimensionBaseType,
+    val dimensionId: String,  // Now stores dimension ID directly (e.g., "minecraft:the_nether")
     val runDimensionKey: ResourceKey<Level>,
     val spawnPos: BlockPos,
     val originObeliskPos: BlockPos,  // Phase 3: Link back to origin obelisk for FE drain
@@ -28,7 +27,7 @@ data class RunData(
         val tag = CompoundTag()
         tag.putUUID("ObeliskId", obeliskId)
         tag.putLong("RunId", runId)
-        tag.putString("BaseType", baseType.name)
+        tag.putString("DimensionId", dimensionId)
         tag.putString("RunDimKey", runDimensionKey.location().toString())
         tag.putLong("SpawnPos", spawnPos.asLong())
         tag.putLong("OriginObeliskPos", originObeliskPos.asLong())
@@ -51,7 +50,7 @@ data class RunData(
         fun fromNbt(tag: CompoundTag, dimKey: ResourceKey<Level>): RunData {
             val obeliskId = tag.getUUID("ObeliskId")
             val runId = tag.getLong("RunId")
-            val baseType = DimensionBaseType.valueOf(tag.getString("BaseType"))
+            val dimensionId = tag.getString("DimensionId")
             val spawnPos = BlockPos.of(tag.getLong("SpawnPos"))
             val originObeliskPos = BlockPos.of(tag.getLong("OriginObeliskPos"))
             val originDimension = ResourceKey.create(
@@ -71,7 +70,7 @@ data class RunData(
                 }
             }
 
-            return RunData(obeliskId, runId, baseType, dimKey, spawnPos, originObeliskPos, originDimension, activePlayers, ticksElapsed, drainMultiplier, monstersKilled)
+            return RunData(obeliskId, runId, dimensionId, dimKey, spawnPos, originObeliskPos, originDimension, activePlayers, ticksElapsed, drainMultiplier, monstersKilled)
         }
     }
 }

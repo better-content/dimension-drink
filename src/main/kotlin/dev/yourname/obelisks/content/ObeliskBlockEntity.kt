@@ -1,13 +1,11 @@
 package dev.yourname.obelisks.content
 
 import dev.yourname.obelisks.ObelisksConstants
-import dev.yourname.obelisks.dimension.DimensionBaseType
 import dev.yourname.obelisks.registry.ModBlockEntities
 import dev.yourname.obelisks.jaunt.FERegenerationHandler
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.nbt.CompoundTag
-import net.minecraft.resources.ResourceLocation
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraftforge.common.capabilities.Capability
@@ -29,12 +27,12 @@ class ObeliskBlockEntity(
 
     var feStored: Int = getModifiedMaxStorage()
         private set
-    var targetDimensionId: ResourceLocation? = null
+    var targetDimensionId: String? = null // Now stores dimension ID directly (e.g., "minecraft:the_nether")
+    var dimensionDisplayName: String? = null // Display name for the dimension (from config)
 
     // New fields for temporary dimension system
     var obeliskId: UUID = UUID.randomUUID()
         private set
-    var baseType: DimensionBaseType? = null
     var activeRunId: Long? = null
     var cooldownEndTime: Long = 0 // Server time when cooldown ends (0 = no cooldown)
 
@@ -43,14 +41,6 @@ class ObeliskBlockEntity(
         FERegenerationHandler.registerObelisk(this)
 
         // Debug logging for modifiers
-        println("[ObeliskBlockEntity] Created new obelisk at $blockPos")
-        println("[ObeliskBlockEntity] Modifiers: ${modifiers.joinToString { "${it.stat.name}:+${it.bonusPercent}%" }}")
-        println("[ObeliskBlockEntity] Modified Stats:")
-        println("  - Max Storage: ${getModifiedMaxStorage()} FE (base: ${dev.yourname.obelisks.ObelisksConstants.MAX_FE_STORAGE})")
-        println("  - Regen Rate: ${getModifiedRegenRate()} FE/tick (base: ${dev.yourname.obelisks.ObelisksConstants.FE_REGEN_PER_TICK})")
-        println("  - Base Drain: ${getModifiedBaseDrain()} FE/tick (base: ${dev.yourname.obelisks.ObelisksConstants.BASE_FE_DRAIN_PER_TICK})")
-        println("  - Player Drain: ${getModifiedPlayerDrain()} FE/tick (base: ${dev.yourname.obelisks.ObelisksConstants.PER_PLAYER_FE_DRAIN})")
-        println("  - Drain Factor: ${String.format("%.4f", getModifiedDrainFactor())} (base: ${dev.yourname.obelisks.ObelisksConstants.DRAIN_EXPONENTIAL_FACTOR})")
     }
 
     fun isRunActive(): Boolean = activeRunId != null
@@ -234,12 +224,14 @@ class ObeliskBlockEntity(
         super.saveAdditional(tag)
         tag.putInt("FeStored", feStored)
         targetDimensionId?.let {
-            tag.putString("TargetDimension", it.toString())
+            tag.putString("TargetDimension", it)
+        }
+        dimensionDisplayName?.let {
+            tag.putString("DimensionDisplayName", it)
         }
 
         // Save new fields
         tag.putUUID("ObeliskId", obeliskId)
-        baseType?.let { tag.putString("BaseType", it.name) }
         activeRunId?.let { tag.putLong("ActiveRunId", it) }
         tag.putLong("CooldownEndTime", cooldownEndTime)
 
@@ -259,9 +251,6 @@ class ObeliskBlockEntity(
         if (tag.contains("ObeliskId")) {
             obeliskId = tag.getUUID("ObeliskId")
         }
-        baseType = if (tag.contains("BaseType")) {
-            DimensionBaseType.valueOf(tag.getString("BaseType"))
-        } else null
         activeRunId = if (tag.contains("ActiveRunId")) {
             tag.getLong("ActiveRunId")
         } else null
@@ -288,7 +277,37 @@ class ObeliskBlockEntity(
 
         feStored = tag.getInt("FeStored")
         targetDimensionId =
-            if (tag.contains("TargetDimension")) ResourceLocation(tag.getString("TargetDimension"))
+            if (tag.contains("TargetDimension")) tag.getString("TargetDimension")
             else null
+        dimensionDisplayName =
+            if (tag.contains("DimensionDisplayName")) tag.getString("DimensionDisplayName")
+            else {
+                // Migration: backfill display name from config for old obelisks
+                targetDimensionId?.let { dimId ->
+                    dev.yourname.obelisks.config.ConfigManager.getDimensionConfig(dimId)?.dimensionName
+                }
+            }
+    }
+
+    // Client sync methods
+    override fun getUpdateTag(): CompoundTag {
+        val tag = super.getUpdateTag()
+        saveAdditional(tag)
+        return tag
+    }
+
+    override fun getUpdatePacket(): net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket {
+        return net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket.create(this)
+    }
+
+    /**
+     * Helper to mark changed and sync to clients.
+     * Call this instead of setChanged() when you want clients to be notified.
+     */
+    fun syncToClients() {
+        setChanged()
+        if (level != null && !level!!.isClientSide) {
+            level!!.sendBlockUpdated(blockPos, blockState, blockState, 3)
+        }
     }
 }

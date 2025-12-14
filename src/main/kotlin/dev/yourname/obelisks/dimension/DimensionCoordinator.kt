@@ -33,7 +33,6 @@ object DimensionCoordinator {
                 logEvent(event)
             }
             .onFailure { error, cause ->
-                println("[Obelisks] EnterDimension failed: $error")
                 cause?.printStackTrace()
             }
             .map { } // Convert Result<DimensionEvent> to Result<Unit>
@@ -50,7 +49,6 @@ object DimensionCoordinator {
                 logEvent(event)
             }
             .onFailure { error, cause ->
-                println("[Obelisks] ExitDimension failed: $error")
                 cause?.printStackTrace()
             }
             .map { } // Convert Result<DimensionEvent> to Result<Unit>
@@ -71,7 +69,6 @@ object DimensionCoordinator {
             if (player != null) {
                 exitDimension(player, reason)
                     .onFailure { error, _ ->
-                        println("[Obelisks] Failed to force return player ${player.gameProfile.name}: $error")
                     }
             }
         }
@@ -98,6 +95,5 @@ object DimensionCoordinator {
         }
 
         // Log to console
-        println("[Obelisks] ${event.commandType}: ${event.playerName} - ${event.details}")
     }
 }

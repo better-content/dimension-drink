@@ -31,17 +31,14 @@ class ObelisksMod {
         // Client-side setup
         modBus.addListener { event: net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent ->
             event.enqueueWork {
-                println("[$MOD_ID] Registering client screens")
                 net.minecraft.client.gui.screens.MenuScreens.register(
                     dev.yourname.obelisks.registry.ModMenuTypes.OBELISK_MENU.get()
                 ) { menu, inventory, title ->
                     dev.yourname.obelisks.client.ObeliskScreen(menu, inventory, title)
                 }
-                println("[$MOD_ID] Client screen registration complete")
 
                 // Register obelisk beam renderer
                 MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.client.ObeliskBeamRenderer)
-                println("[$MOD_ID] Obelisk beam renderer registered")
             }
         }
 
@@ -51,7 +48,6 @@ class ObelisksMod {
         MinecraftForge.EVENT_BUS.register(PlayerReturnHandler)
         MinecraftForge.EVENT_BUS.register(DimensionTeardownHandler)
         MinecraftForge.EVENT_BUS.register(RunEventHandlers)
-        MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.dimension.SlotDimensionInitializer)
 
         // Phase 3: FE System handlers
         MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.jaunt.InstanceTickHandler)
@@ -67,6 +63,9 @@ class ObelisksMod {
 
         // Effect limiter for VFX/SFX
         MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.util.EffectLimiterHandler)
+
+        // Block vanilla portals (Nether/End) to enforce obelisk-only travel
+        MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.portal.PortalBlocker)
     }
 
     // Command registration moved to ObeliskCommands

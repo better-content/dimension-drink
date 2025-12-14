@@ -76,7 +76,6 @@ object DimensionTeardownHandler {
         // If dimension is now empty, immediately end the run (don't wait for cleanup delay)
         // This ensures re-entering creates a fresh run instead of rejoining the old one
         if (runData.activePlayers.isEmpty()) {
-            println("[${ObelisksConstants.MOD_ID}] Last player left run ${runData.runId}, ending run immediately")
             cleanupRunDimension(runData, server)
             DimensionCollapseHandler.cleanupRun(runData.runId)
             runManager.endRun(runData.obeliskId, runData.runId)
@@ -92,7 +91,6 @@ object DimensionTeardownHandler {
         val dimKey = runData.runDimensionKey
         val modId = ObelisksConstants.MOD_ID
 
-        println("[$modId] Cleaning up run for obelisk ${runData.obeliskId.toString().substring(0, 8)}: ${dimKey.location()}")
 
         // Reset origin obelisk state and spawn emerald rewards
         val originLevel = server.getLevel(runData.originDimension)
@@ -106,17 +104,15 @@ object DimensionTeardownHandler {
                 obeliskBE.activeRunId = null
                 obeliskBE.startCooldown(ObelisksConstants.RUN_CLEANUP_DELAY_TICKS)
                 obeliskBE.setChanged()
-                println("[$modId] Reset obelisk: cleared active run, started ${ObelisksConstants.RUN_CLEANUP_DELAY_TICKS} tick cooldown (FE will regenerate naturally at ${dev.yourname.obelisks.ObelisksConstants.FE_REGEN_PER_TICK} FE/tick)")
             } else {
-                println("[$modId] Warning: Could not find origin obelisk to reset")
             }
         }
 
-        // Release the slot assignment
-        DimensionSlotManager.releaseSlot(runData.obeliskId)
+        // Release the coordinate assignment
+        RunCoordinateManager.releaseRun(runData.obeliskId, runData.runId)
 
-        // Note: We DON'T unload or delete slot dimensions - they persist and get reused
-        println("[$modId] Run cleanup complete - slot released for reuse")
+        // Note: With direct dimension teleport, we don't need to clean up anything
+        // The platforms stay in the actual dimension at their random coordinates (far from spawn)
     }
 
     /**
@@ -134,7 +130,6 @@ object DimensionTeardownHandler {
         }
 
         if (allLoot.isEmpty()) {
-            println("[${ObelisksConstants.MOD_ID}] Run complete: $monstersKilled monsters killed, no loot generated")
             return
         }
 
@@ -189,13 +184,7 @@ object DimensionTeardownHandler {
         val lootSummary = consolidatedLoot.entries.joinToString(", ") { (item, count) ->
             "$count x ${item.description.string}"
         }
-        println("[${ObelisksConstants.MOD_ID}] Run complete: $monstersKilled monsters killed, awarded: $lootSummary")
     }
-
-    // Note: The following methods are no longer needed with the slot-based dimension system.
-    // Slot dimensions are persistent and never unloaded or deleted - they are simply released
-    // for reuse by other obelisks. This greatly simplifies cleanup and avoids the complexity
-    // of dynamic dimension management.
 
     /**
      * Cancel cleanup if a player rejoins an empty dimension.

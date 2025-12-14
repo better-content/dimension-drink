@@ -33,7 +33,7 @@ object InstanceTickHandler {
 
             // Update drain multiplier based on exponential growth (dimension-specific)
             // Get dimension-specific config
-            val dimConfig = dev.yourname.obelisks.config.ConfigManager.getConfigForBaseType(runData.baseType)
+            val dimConfig = dev.yourname.obelisks.config.ConfigManager.getDimensionConfig(runData.dimensionId)
             val exponentialInterval = dimConfig?.drainExponentialIntervalTicks ?: ObelisksConstants.DRAIN_EXPONENTIAL_INTERVAL_TICKS
 
             if (runData.ticksElapsed % exponentialInterval == 0L) {
@@ -46,14 +46,12 @@ object InstanceTickHandler {
             val originLevel = server.getLevel(runData.originDimension)
             if (originLevel == null) {
                 // Origin dimension not loaded - this shouldn't happen for overworld
-                println("[Obelisks] Warning: Origin dimension ${runData.originDimension.location()} not loaded for run ${runData.runId}")
                 continue
             }
 
             val obeliskBE = originLevel.getBlockEntity(runData.originObeliskPos) as? ObeliskBlockEntity
             if (obeliskBE == null) {
                 // Obelisk no longer exists - force end the run
-                println("[Obelisks] Warning: Origin obelisk at ${runData.originObeliskPos} no longer exists! Ending run ${runData.runId}")
                 forceEndRun(server, runData)
                 continue
             }
@@ -69,7 +67,6 @@ object InstanceTickHandler {
 
             if (!success) {
                 // FE depleted to 0% - trigger forced collapse
-                println("[Obelisks] Run ${runData.runId} has depleted all FE! Forcing collapse...")
                 forceCollapseRun(server, runData)
             }
         }
@@ -111,10 +108,8 @@ object InstanceTickHandler {
         val runManager = RunManager.get(server)
         runManager.endRun(runData.obeliskId, runData.runId)
 
-        // Release the dimension slot
-        dev.yourname.obelisks.dimension.DimensionSlotManager.releaseSlot(runData.obeliskId)
-
-        println("[Obelisks] Force collapsed run ${runData.runId} - run ended and slot released")
+        // Release the coordinate assignment
+        dev.yourname.obelisks.dimension.RunCoordinateManager.releaseRun(runData.obeliskId, runData.runId)
     }
 
     /**
@@ -138,10 +133,8 @@ object InstanceTickHandler {
         val runManager = RunManager.get(server)
         runManager.endRun(runData.obeliskId, runData.runId)
 
-        // Release the dimension slot
-        dev.yourname.obelisks.dimension.DimensionSlotManager.releaseSlot(runData.obeliskId)
-
-        println("[Obelisks] Force ended run ${runData.runId} - origin obelisk destroyed, slot released")
+        // Release the coordinate assignment
+        dev.yourname.obelisks.dimension.RunCoordinateManager.releaseRun(runData.obeliskId, runData.runId)
     }
 
     /**
@@ -159,7 +152,6 @@ object InstanceTickHandler {
         }
 
         if (allLoot.isEmpty()) {
-            println("[${ObelisksConstants.MOD_ID}] Run complete: $monstersKilled monsters killed, no loot generated")
             return
         }
 
@@ -210,10 +202,5 @@ object InstanceTickHandler {
                 1.0f
             )
         }
-
-        val lootSummary = consolidatedLoot.entries.joinToString(", ") { (item, count) ->
-            "$count x ${item.description.string}"
-        }
-        println("[${ObelisksConstants.MOD_ID}] Run complete (force collapse): $monstersKilled monsters killed, awarded: $lootSummary")
     }
 }

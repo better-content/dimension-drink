@@ -93,7 +93,6 @@ object LootGenerator {
             val location = ResourceLocation(itemId)
             BuiltInRegistries.ITEM.get(location)
         } catch (e: Exception) {
-            println("[Obelisks] Invalid item in loot table: $itemId")
             null
         }
     }

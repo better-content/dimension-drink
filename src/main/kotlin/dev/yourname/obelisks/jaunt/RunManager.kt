@@ -1,6 +1,5 @@
 package dev.yourname.obelisks.jaunt
 
-import dev.yourname.obelisks.dimension.DimensionBaseType
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.Registries
 import net.minecraft.nbt.CompoundTag
@@ -23,6 +22,11 @@ class RunManager private constructor() : SavedData() {
     private val activeRuns = mutableMapOf<RunKey, RunData>()
     private val playerToRun = mutableMapOf<UUID, RunKey>()
 
+    /**
+     * Gets the next available run ID without incrementing the counter.
+     */
+    fun getNextRunId(): Long = nextRunId
+
     data class RunKey(val obeliskId: UUID, val runId: Long) {
         override fun toString(): String = "${obeliskId}_${runId}"
 
@@ -36,39 +40,11 @@ class RunManager private constructor() : SavedData() {
 
     /**
      * Creates or retrieves an existing run for the given obelisk.
-     */
-    fun getOrCreateRun(
-        obeliskId: UUID,
-        baseType: DimensionBaseType,
-        spawnPos: BlockPos,
-        originObeliskPos: BlockPos,
-        originDimension: ResourceKey<Level>,
-        existingRunId: Long?
-    ): RunData {
-        // If there's an existing active run, return it
-        if (existingRunId != null) {
-            val key = RunKey(obeliskId, existingRunId)
-            activeRuns[key]?.let { return it }
-        }
-
-        // Create new run
-        val runId = nextRunId++
-        val key = RunKey(obeliskId, runId)
-        val dimKey = getDimensionKey(obeliskId, runId, baseType)
-        val runData = RunData(obeliskId, runId, baseType, dimKey, spawnPos, originObeliskPos, originDimension)
-
-        activeRuns[key] = runData
-        setDirty()
-
-        return runData
-    }
-
-    /**
-     * Creates or retrieves an existing run with a custom dimension key (for slot-based dims).
+     * Now uses dimensionId directly instead of baseType.
      */
     fun getOrCreateRunWithDimension(
         obeliskId: UUID,
-        baseType: DimensionBaseType,
+        dimensionId: String,
         dimensionKey: ResourceKey<Level>,
         spawnPos: BlockPos,
         originObeliskPos: BlockPos,
@@ -84,7 +60,7 @@ class RunManager private constructor() : SavedData() {
         // Create new run with custom dimension key
         val runId = nextRunId++
         val key = RunKey(obeliskId, runId)
-        val runData = RunData(obeliskId, runId, baseType, dimensionKey, spawnPos, originObeliskPos, originDimension)
+        val runData = RunData(obeliskId, runId, dimensionId, dimensionKey, spawnPos, originObeliskPos, originDimension)
 
         activeRuns[key] = runData
         setDirty()
@@ -237,14 +213,5 @@ class RunManager private constructor() : SavedData() {
             return manager
         }
 
-        /**
-         * Generates a dimension key for a run instance.
-         */
-        fun getDimensionKey(obeliskId: UUID, runId: Long, baseType: DimensionBaseType): ResourceKey<Level> {
-            val typePrefix = baseType.name.lowercase()
-            val shortId = obeliskId.toString().substring(0, 8)
-            val name = "${typePrefix}_run_${shortId}_${runId}"
-            return ResourceKey.create(Registries.DIMENSION, ResourceLocation("obelisks", name))
-        }
     }
 }

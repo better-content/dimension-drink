@@ -4,7 +4,7 @@
   "stemBlockType": "blue_skies:everbright_grass",
   "feMultiplier": 0.9,
   "spawnY": 80,
-  "platformBlock": "blue_skies:everbright_stone",
+  "platformBlock": "blue_skies:bluebright_log",
   "glowBlock": "blue_skies:bright_shroom",
   "enabled": true,
   "minFERequired": 500,
@@ -21,5 +21,6 @@
   "rarityMultiplier": 1.2,
   "slotCount": 5,
   "targetBlock": "blue_skies:everbright_stone",
+  "dimensionTemplate": "overworld",
   "customProperties": {}
 }

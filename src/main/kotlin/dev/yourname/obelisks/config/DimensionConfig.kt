@@ -55,8 +55,11 @@ data class DimensionConfig(
     /** Target block that the platform must spawn mostly touching (e.g., "minecraft:netherrack") */
     val targetBlock: String,
 
+    /** Template dimension type for slot generation: "overworld", "nether", or "end" (defaults to "overworld") */
+    val dimensionTemplate: String = "overworld",
+
     /** Custom properties for future extensibility */
-    val customProperties: Map<String, Any>
+    val customProperties: Map<String, Any> = mapOf()
 ) {
     /** Get the dimension as a ResourceLocation */
     fun getDimensionKey(): ResourceLocation = ResourceLocation(dimensionId)

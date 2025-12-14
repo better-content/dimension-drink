@@ -22,5 +22,6 @@
   "rarityMultiplier": 0.1,
   "slotCount": 5,
   "targetBlock": "minecraft:stone",
+  "dimensionTemplate": "overworld",
   "customProperties": {}
 }

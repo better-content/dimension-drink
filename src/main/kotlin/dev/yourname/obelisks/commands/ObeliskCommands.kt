@@ -51,8 +51,8 @@ object ObeliskCommands {
                     }
                     if (obeliskPos != null) {
                         val blockEntity = level.getBlockEntity(obeliskPos) as? dev.yourname.obelisks.content.ObeliskBlockEntity
-                        val type = blockEntity?.baseType?.name ?: "UNKNOWN"
-                        source.sendSuccess({ Component.literal("Spawned $type obelisk at $obeliskPos (stem built upward from ground)") }, true)
+                        val type = blockEntity?.targetDimensionId ?: "UNKNOWN"
+                        source.sendSuccess({ Component.literal("Spawned obelisk for $type at $obeliskPos (stem built upward from ground)") }, true)
                     } else {
                         source.sendSuccess({ Component.literal("Spawned obelisk (search nearby if not visible)") }, true)
                     }
@@ -74,7 +74,7 @@ object ObeliskCommands {
                 } else {
                     source.sendSuccess({ Component.literal("Active runs (${runs.size}):") }, false)
                     runs.forEach { run ->
-                        source.sendSuccess({ Component.literal("  Run #${run.runId}: ${run.baseType} (${run.activePlayers.size} players)") }, false)
+                        source.sendSuccess({ Component.literal("  Run #${run.runId}: ${run.dimensionId} (${run.activePlayers.size} players)") }, false)
                     }
                 }
                 1

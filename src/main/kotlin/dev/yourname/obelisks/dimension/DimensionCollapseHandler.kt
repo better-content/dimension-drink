@@ -86,7 +86,6 @@ object DimensionCollapseHandler {
             initialBlockCount[runId] = count
             totalBlocksDeleted[runId] = 0
             deletionRate[runId] = ObelisksConstants.INITIAL_DELETION_RATE
-            println("[Collapse] Run $runId: counted $count total blocks in loaded chunks")
         }
 
         val initial = initialBlockCount[runId] ?: return
@@ -125,7 +124,6 @@ object DimensionCollapseHandler {
         if (tickCounter % ObelisksConstants.COLLAPSE_LOG_INTERVAL == 0) { // Log every second
             val currentPercent = ((deleted.toDouble() / initial) * 100).toInt()
             val targetPercent = (targetDeletionPercent * 100).toInt()
-            println("[Collapse] FE: ${(fePercent*100).toInt()}% | Target: $targetPercent% | Current: $currentPercent% | Rate: $newRate/tick | Diff: $difference")
         }
     }
 
@@ -152,7 +150,6 @@ object DimensionCollapseHandler {
             initialBlockCount[runId] = count
             totalBlocksDeleted[runId] = 0
             deletionRate[runId] = ObelisksConstants.INITIAL_CRITICAL_DELETION_RATE
-            println("[Collapse] CRITICAL - Run $runId: counted $count total blocks")
         }
 
         val initial = initialBlockCount[runId] ?: return
@@ -185,7 +182,6 @@ object DimensionCollapseHandler {
         if (tickCounter % ObelisksConstants.COLLAPSE_LOG_INTERVAL == 0) {
             val currentPercent = ((deleted.toDouble() / initial) * 100).toInt()
             val targetPercent = (targetDeletionPercent * 100).toInt()
-            println("[Collapse] CRITICAL FE: ${(fePercent*100).toInt()}% | Target: $targetPercent% | Current: $currentPercent% | Rate: $newRate/tick")
         }
     }
 
@@ -250,6 +246,7 @@ object DimensionCollapseHandler {
                 currentBlock != Blocks.BARRIER &&
                 currentBlock != Blocks.WATER &&
                 currentBlock != Blocks.LAVA &&
+                currentBlock != dev.yourname.obelisks.registry.ModBlocks.RETURN_PAD.get() &&
                 !currentBlock.defaultBlockState().isAir) {
 
                 level.setBlock(targetPos, Blocks.AIR.defaultBlockState(), 3)
@@ -289,7 +286,8 @@ object DimensionCollapseHandler {
                         if (currentBlock != Blocks.BEDROCK &&
                             currentBlock != Blocks.BARRIER &&
                             currentBlock != Blocks.WATER &&
-                            currentBlock != Blocks.LAVA) {
+                            currentBlock != Blocks.LAVA &&
+                            currentBlock != dev.yourname.obelisks.registry.ModBlocks.RETURN_PAD.get()) {
                             level.setBlock(targetPos, Blocks.AIR.defaultBlockState(), 3)
                         }
                     }
@@ -355,6 +353,7 @@ object DimensionCollapseHandler {
                 currentBlock != Blocks.BARRIER &&
                 currentBlock != Blocks.WATER &&
                 currentBlock != Blocks.LAVA &&
+                currentBlock != dev.yourname.obelisks.registry.ModBlocks.RETURN_PAD.get() &&
                 !currentBlock.defaultBlockState().isAir) {
 
                 level.setBlock(targetPos, Blocks.AIR.defaultBlockState(), 3)
@@ -400,7 +399,8 @@ object DimensionCollapseHandler {
             // Skip barrier blocks and fluids (bedrock should be removed)
             if (currentBlock != Blocks.BARRIER &&
                 currentBlock != Blocks.WATER &&
-                currentBlock != Blocks.LAVA) {
+                currentBlock != Blocks.LAVA &&
+                currentBlock != dev.yourname.obelisks.registry.ModBlocks.RETURN_PAD.get()) {
                 level.setBlock(targetPos, Blocks.AIR.defaultBlockState(), 3)
             }
         }
@@ -408,17 +408,7 @@ object DimensionCollapseHandler {
         // Create dramatic effect at the top of the column
         val effectPos = BlockPos(columnBase.x, center.y, columnBase.z)
 
-        // Play sound
-        if (dev.yourname.obelisks.util.EffectLimiter.tryPlaySound()) {
-            level.playSound(
-                null,
-                effectPos,
-                SoundEvents.PORTAL_TRAVEL,
-                SoundSource.AMBIENT,
-                1.2f,
-                0.6f
-            )
-        }
+        // No sound for column deletion - too annoying
 
         // Spawn particles along the column
         for (y in (center.y - 10)..(center.y + 10)) {
@@ -534,6 +524,7 @@ object DimensionCollapseHandler {
                 currentBlock != Blocks.LAVA &&
                 currentBlock != Blocks.OBSIDIAN &&
                 currentBlock != Blocks.CRYING_OBSIDIAN &&
+                currentBlock != dev.yourname.obelisks.registry.ModBlocks.RETURN_PAD.get() &&
                 !currentBlock.defaultBlockState().isAir) {
 
                 level.setBlock(targetPos, Blocks.AIR.defaultBlockState(), 3)
@@ -609,7 +600,8 @@ object DimensionCollapseHandler {
                             currentBlock != Blocks.WATER &&
                             currentBlock != Blocks.LAVA &&
                             currentBlock != Blocks.OBSIDIAN &&
-                            currentBlock != Blocks.CRYING_OBSIDIAN) {
+                            currentBlock != Blocks.CRYING_OBSIDIAN &&
+                            currentBlock != dev.yourname.obelisks.registry.ModBlocks.RETURN_PAD.get()) {
                             level.setBlock(targetPos, Blocks.AIR.defaultBlockState(), 3)
                             blocksDeleted++
                         }
@@ -620,25 +612,15 @@ object DimensionCollapseHandler {
             if (blocksDeleted > 0) {
                 totalDeleted += blocksDeleted
 
-                // Louder portal sound at center of 2x2
-                if (dev.yourname.obelisks.util.EffectLimiter.tryPlaySound()) {
-                    level.playSound(
-                        null,
-                        BlockPos(x + 1, (level.minBuildHeight + level.maxBuildHeight) / 2, z + 1),
-                        SoundEvents.PORTAL_TRAVEL,
-                        SoundSource.BLOCKS,
-                        1.5f,
-                        0.6f + Random.nextFloat() * 0.4f
-                    )
-                }
+                // No sound for column deletion - too annoying
 
-                // Portal particles at each corner of 2x2 column
+                // Smoke particles at each corner of 2x2 column
                 for (y in level.minBuildHeight..level.maxBuildHeight step ObelisksConstants.COLUMN_PARTICLE_STEP) {
                     for (dx in 0..1) {
                         for (dz in 0..1) {
                             if (dev.yourname.obelisks.util.EffectLimiter.trySpawnParticles(5)) {
                                 level.sendParticles(
-                                    ParticleTypes.PORTAL,
+                                    ParticleTypes.LARGE_SMOKE,
                                     x + dx + 0.5,
                                     y.toDouble(),
                                     z + dz + 0.5,

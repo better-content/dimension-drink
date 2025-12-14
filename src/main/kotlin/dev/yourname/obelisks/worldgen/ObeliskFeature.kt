@@ -5,7 +5,6 @@ import dev.yourname.obelisks.ObelisksConstants
 import dev.yourname.obelisks.config.ConfigManager
 import dev.yourname.obelisks.config.DimensionConfig
 import dev.yourname.obelisks.config.ObeliskTypeRegistry
-import dev.yourname.obelisks.dimension.DimensionBaseType
 import dev.yourname.obelisks.registry.ModBlocks
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
@@ -57,17 +56,12 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         level.setBlock(capPos, obeliskState, 3)
 
         // Configure the block entity with the chosen dimension
-        // Note: Block entity still uses baseType temporarily, but config comes from JSON
         val blockEntity = level.getBlockEntity(capPos) as? dev.yourname.obelisks.content.ObeliskBlockEntity
         if (blockEntity != null) {
-            // Map dimension ID back to baseType for now (until block entity is refactored)
-            blockEntity.baseType = when (config.dimensionConfig.dimensionId) {
-                "minecraft:the_nether" -> DimensionBaseType.NETHER
-                "minecraft:the_end" -> DimensionBaseType.END
-                "minecraft:overworld" -> DimensionBaseType.OVERWORLD
-                else -> null
-            }
-            blockEntity.setChanged()
+            // Store dimension ID and display name
+            blockEntity.targetDimensionId = config.dimensionConfig.dimensionId
+            blockEntity.dimensionDisplayName = config.dimensionConfig.dimensionName
+            blockEntity.syncToClients()
         }
 
         // Scatter flavor blocks around the obelisk for decoration

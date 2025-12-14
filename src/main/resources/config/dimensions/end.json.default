@@ -21,5 +21,6 @@
   "rarityMultiplier": 0.5,
   "slotCount": 5,
   "targetBlock": "minecraft:end_stone",
+  "dimensionTemplate": "end",
   "customProperties": {}
 }
