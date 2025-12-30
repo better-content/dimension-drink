@@ -29,8 +29,10 @@ object RunEventHandlers {
                 Component.literal("Your previous run has ended. Returning to origin...")
             )
 
-            // Return player to their origin
-            PlayerReturnHandler.returnPlayerToOrigin(player, "Session expired")
+            // Important: Wait 1 tick before teleporting to ensure player is fully loaded
+            server.execute {
+                PlayerReturnHandler.returnPlayerToOrigin(player, "Session expired")
+            }
         }
     }
 

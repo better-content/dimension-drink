@@ -140,6 +140,15 @@ class EnterDimensionCommand(
         val dimensionId = obelisk.targetDimensionId
             ?: return Result.failure("Obelisk has no dimension configured")
 
+        // Step 1.5: Check if dimension is being cleaned (chunks being deleted)
+        val targetDimKey = net.minecraft.resources.ResourceKey.create(
+            net.minecraft.core.registries.Registries.DIMENSION,
+            net.minecraft.resources.ResourceLocation(dimensionId)
+        )
+        if (DimensionTeardownHandler.isDimensionBeingCleaned(targetDimKey)) {
+            return Result.failure("Dimension is being cleaned - please wait a moment and try again")
+        }
+
         // Step 2: Get or create run data first (to get runId)
         val existingRun = obelisk.activeRunId?.let { runManager.getRun(obelisk.obeliskId, it) }
         val runId = existingRun?.runId ?: runManager.getNextRunId()
@@ -162,16 +171,32 @@ class EnterDimensionCommand(
         // Step 5: Update obelisk
         if (obelisk.activeRunId == null) {
             obelisk.activeRunId = runData.runId
-            obelisk.setChanged()
+            obelisk.syncToClients() // Sync to clients so beam appears
+        }
+
+        // Step 5.5: Play activation sound at obelisk
+        if (dev.yourname.obelisks.ObelisksConstants.OBELISK_ACTIVATION_SOUND_ENABLED) {
+            if (dev.yourname.obelisks.util.EffectLimiter.tryPlaySound()) {
+                originLevel.playSound(
+                    null,
+                    obeliskPos,
+                    net.minecraft.sounds.SoundEvents.END_PORTAL_SPAWN,
+                    net.minecraft.sounds.SoundSource.BLOCKS,
+                    1.0f,
+                    1.0f
+                )
+            }
         }
 
         // Step 6: Update player run info
         val playerRunInfo = player.getRunInfo()
             ?: return Result.failure("Lost player run capability")
 
-        // Store obelisk position as return location (on top of obelisk)
-        // This ensures player always returns to exactly where they used the obelisk
+        // Store position on top of obelisk as return location
+        // This ensures player returns to a safe, consistent location at the obelisk
         val returnPos = obeliskPos.above() // One block above obelisk cap
+
+        println("[Obelisks] Storing return position for ${player.name.string}: $returnPos (obelisk at $obeliskPos)")
 
         playerRunInfo.originObeliskId = obelisk.obeliskId
         playerRunInfo.originPos = returnPos // Return to top of obelisk
@@ -201,21 +226,7 @@ class EnterDimensionCommand(
         // Step 9: Teleport player
         teleportPlayer(player, runDimension, spawnPos)
 
-        // Step 10: Play activation sound/VFX
-        if (dev.yourname.obelisks.ObelisksConstants.OBELISK_ACTIVATION_SOUND_ENABLED) {
-            if (dev.yourname.obelisks.util.EffectLimiter.tryPlaySound()) {
-                originLevel.playSound(
-                    null,
-                    obeliskPos,
-                    net.minecraft.sounds.SoundEvents.END_PORTAL_SPAWN,
-                    net.minecraft.sounds.SoundSource.BLOCKS,
-                    1.0f,
-                    1.0f
-                )
-            }
-        }
-
-        // Notify player
+        // Step 10: Notify player
         val dimConfig = dev.yourname.obelisks.config.ConfigManager.getDimensionConfig(dimensionId)
         val dimName = dimConfig?.dimensionName ?: dimensionId
         player.sendSystemMessage(
@@ -521,6 +532,7 @@ class ExitDimensionCommand(
         val originPos = snap.playerRunInfo.originPos
             ?: return Result.failure("No origin position in player run info")
 
+        println("[Obelisks] Returning ${player.name.string} to position: $originPos in dimension $originDim")
 
         val originLevel = player.server.getLevel(originDim)
             ?: return Result.failure("Origin dimension not loaded")
@@ -530,16 +542,33 @@ class ExitDimensionCommand(
         val targetZ = originPos.z.toDouble() + 0.5
         
         if (player.level().dimension() != originDim) {
-            
+
             // Use teleportTo with level parameter for cross-dimension teleport
             player.teleportTo(originLevel, targetX, targetY, targetZ, player.yRot, player.xRot)
-            
+
         } else {
             player.teleportTo(targetX, targetY, targetZ)
         }
 
+        // Step 2.5: Reset fall damage to prevent death on return
+        player.fallDistance = 0.0f
+
         // Step 3: Clear player data AFTER successful teleport
         playerRunInfo.clear()
+
+        // Step 3.5: Play return sound effect at origin location
+        if (dev.yourname.obelisks.ObelisksConstants.OBELISK_ACTIVATION_SOUND_ENABLED) {
+            if (dev.yourname.obelisks.util.EffectLimiter.tryPlaySound()) {
+                originLevel.playSound(
+                    null,
+                    BlockPos(targetX.toInt(), targetY.toInt(), targetZ.toInt()),
+                    net.minecraft.sounds.SoundEvents.ENDERMAN_TELEPORT,
+                    net.minecraft.sounds.SoundSource.PLAYERS,
+                    1.0f,
+                    1.0f
+                )
+            }
+        }
 
         // Step 4: Notify player
         player.sendSystemMessage(Component.literal("Returned to origin ($reason)"))

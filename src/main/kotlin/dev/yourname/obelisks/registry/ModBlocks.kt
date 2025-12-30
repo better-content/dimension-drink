@@ -19,26 +19,28 @@ object ModBlocks {
 
     /**
      * The primary interactive obelisk block. Acts as the entry to run instances.
+     * Has obsidian-level hardness and blast resistance.
      */
     val OBELISK: RegistryObject<Block> = REGISTRY.register("obelisk") {
         ObeliskBlock(
             BlockBehaviour.Properties
                 .of()
                 .mapColor(MapColor.STONE)
-                .strength(3.0f, 6.0f)
+                .strength(50.0f, 1200.0f) // Obsidian hardness
                 .requiresCorrectToolForDrops()
         )
     }
 
     /**
      * The return pad block. Teleports players back to their origin obelisk when used.
+     * Has obsidian-level hardness and blast resistance.
      */
     val RETURN_PAD: RegistryObject<Block> = REGISTRY.register("return_pad") {
         ReturnPadBlock(
             BlockBehaviour.Properties
                 .of()
                 .mapColor(MapColor.METAL)
-                .strength(3.0f, 6.0f)
+                .strength(50.0f, 1200.0f) // Obsidian hardness
                 .requiresCorrectToolForDrops()
                 .noOcclusion()
         )

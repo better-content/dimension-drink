@@ -1,16 +1,11 @@
 {
   "dimensionId": "blue_skies:everbright",
   "dimensionName": "Everbright",
-  "stemBlockType": "blue_skies:everbright_grass",
   "feMultiplier": 0.9,
-  "spawnY": 80,
   "platformBlock": "blue_skies:bluebright_log",
   "glowBlock": "blue_skies:bright_shroom",
   "enabled": true,
   "minFERequired": 500,
-  "collapseSpeedMultiplier": 0.9,
-  "drainExponentialFactor": 0.00006,
-  "drainExponentialIntervalTicks": 20,
   "flavorBlocks": [
     "blue_skies:everbright_grass",
     "blue_skies:everbright_dirt",
@@ -19,8 +14,19 @@
     "blue_skies:lunar_stone"
   ],
   "rarityMultiplier": 1.2,
-  "slotCount": 5,
-  "targetBlock": "blue_skies:everbright_stone",
-  "dimensionTemplate": "overworld",
-  "customProperties": {}
+  "lootTable": null,
+  "equipmentLootTable": null,
+  "customProperties": {},
+  "difficultySettings": {
+    "spawnRateMultiplier": 8.5,
+    "healthMultiplier": 0.9,
+    "damageMultiplier": 0.9,
+    "mobEffects": [],
+    "armorChance": 0.05,
+    "weaponChance": 0.05,
+    "speedMultiplier": 1.0,
+    "canPickupLoot": false,
+    "bonusArmorPoints": 0.0,
+    "babyChance": 0.0
+  }
 }

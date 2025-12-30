@@ -1,16 +1,11 @@
 {
   "dimensionId": "blue_skies:everdawn",
   "dimensionName": "Everdawn",
-  "stemBlockType": "blue_skies:everdawn_grass",
   "feMultiplier": 1.0,
-  "spawnY": 80,
   "platformBlock": "blue_skies:starlit_log",
   "glowBlock": "blue_skies:sun_bloom",
   "enabled": true,
   "minFERequired": 600,
-  "collapseSpeedMultiplier": 1.0,
-  "drainExponentialFactor": 0.000065,
-  "drainExponentialIntervalTicks": 20,
   "flavorBlocks": [
     "blue_skies:everdawn_grass",
     "blue_skies:everdawn_dirt",
@@ -19,8 +14,19 @@
     "blue_skies:rune_stone"
   ],
   "rarityMultiplier": 1.2,
-  "slotCount": 5,
-  "targetBlock": "blue_skies:everdawn_stone",
-  "dimensionTemplate": "overworld",
-  "customProperties": {}
+  "lootTable": null,
+  "equipmentLootTable": null,
+  "customProperties": {},
+  "difficultySettings": {
+    "spawnRateMultiplier": 10.0,
+    "healthMultiplier": 1.0,
+    "damageMultiplier": 1.0,
+    "mobEffects": [],
+    "armorChance": 0.1,
+    "weaponChance": 0.1,
+    "speedMultiplier": 1.0,
+    "canPickupLoot": false,
+    "bonusArmorPoints": 0.0,
+    "babyChance": 0.0
+  }
 }

@@ -39,8 +39,28 @@ object MonsterKillHandler {
         runData.monstersKilled++
         runManager.setDirty()
 
+        // Restore 2% of obelisk FE capacity per kill
+        restoreObeliskEnergy(server, runData)
+
         // Debug logging
         if (runData.monstersKilled % 10 == 0) {
         }
+    }
+
+    /**
+     * Restores 2% of the obelisk's FE capacity per kill.
+     */
+    private fun restoreObeliskEnergy(server: net.minecraft.server.MinecraftServer, runData: RunData) {
+        // Get the origin obelisk
+        val originLevel = server.getLevel(runData.originDimension) ?: return
+        val obeliskBE = originLevel.getBlockEntity(runData.originObeliskPos) as? dev.yourname.obelisks.content.ObeliskBlockEntity ?: return
+
+        // Calculate 2% of capacity
+        val maxCapacity = obeliskBE.getMaxEnergyStored()
+        val restoreAmount = (maxCapacity * 0.02).toInt()
+
+        // Add energy using the public regenerateEnergy method
+        obeliskBE.regenerateEnergy(restoreAmount)
+        obeliskBE.setChanged()
     }
 }

@@ -1,0 +1,17 @@
+  "stemBlockType": "blue_skies:turquoise_stonebrick",
+  "feMultiplier": 0.9,
+  "spawnY": 80,
+  "platformBlock": "blue_skies:bluebright_log",
+  "glowBlock": "blue_skies:bright_shroom",
+  "enabled": true,
+  "minFERequired": 500,
+  "collapseSpeedMultiplier": 0.9,
+  "drainExponentialFactor": 0.00006,
+  "drainExponentialIntervalTicks": 20,
+  "flavorBlocks": [
+    "blue_skies:turquoise_stonebrick",
+    "blue_skies:polished_taratite",
+    "blue_skies:polished_rimestone",
+    "blue_skies:chiseled_turquoise_stonebrick",
+    "blue_skies:crystal_sandstone"
+  ],

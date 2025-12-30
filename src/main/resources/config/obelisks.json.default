@@ -18,7 +18,7 @@
   "dimensionCollapseSystem": {
     "targetDeletionAtZeroFE": 0.9,
     "bossBarShowThreshold": 0.90,
-    "decayPhaseThreshold": 0.90,
+    "decayPhaseThreshold": 0.30,
     "criticalCollapseThreshold": 0.10,
 
     "deletionRates": {
@@ -116,7 +116,7 @@
   },
 
   "feSystem": {
-    "maxFEStorage": 1800,
+    "maxFEStorage": 3600,
     "baseFEDrainPerTick": 1,
     "perPlayerFEDrain": 2,
     "feRegenPerTick": 1,
@@ -166,18 +166,12 @@
     "ticksPerSecond": 20
   },
 
-  "dimensionSlotSystem": {
-    "_comment": "Persistent dimension slot allocation for run instances",
-    "netherSlotCount": 5,
-    "endSlotCount": 5,
-    "spawnPositionRange": {
-      "xMin": -5000,
-      "xMax": 5000,
-      "zMin": -5000,
-      "zMax": 5000,
-      "netherY": 64,
-      "endY": 64
-    }
+  "spawnPositionRange": {
+    "_comment": "Random spawn position range for run isolation",
+    "xMin": -100000,
+    "xMax": 100000,
+    "zMin": -100000,
+    "zMax": 100000
   },
 
   "emeraldRewardSystem": {

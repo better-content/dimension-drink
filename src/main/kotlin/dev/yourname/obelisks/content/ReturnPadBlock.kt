@@ -123,12 +123,7 @@ class ReturnPadBlock(properties: Properties) : Block(properties) {
         if (level.isClientSide) return InteractionResult.SUCCESS
         if (player !is ServerPlayer) return InteractionResult.PASS
 
-        // Validate structure is still intact
-        if (!isValidPlacement(level, pos)) {
-            player.sendSystemMessage(Component.literal("Return pad structure is damaged! Rebuild the obsidian ring and clear the air space above."))
-            return InteractionResult.FAIL
-        }
-
+        // No validation required - return pad works regardless of structure state
         // Use PlayerReturnHandler to return player
         PlayerReturnHandler.returnPlayer(player)
         return InteractionResult.SUCCESS
@@ -144,10 +139,6 @@ class ReturnPadBlock(properties: Properties) : Block(properties) {
     ) {
         super.neighborChanged(state, level, pos, block, fromPos, isMoving)
 
-        // Validate structure on neighbor change
-        if (!level.isClientSide && !isValidPlacement(level, pos)) {
-            // Structure is broken - destroy the return pad
-            level.destroyBlock(pos, true)
-        }
+        // No longer validate structure on neighbor change - return pad persists regardless of structure
     }
 }

@@ -5,7 +5,9 @@ import dev.yourname.obelisks.registry.ModBlockEntities
 import dev.yourname.obelisks.jaunt.FERegenerationHandler
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
+import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.nbt.CompoundTag
+import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraftforge.common.capabilities.Capability
@@ -35,6 +37,15 @@ class ObeliskBlockEntity(
         private set
     var activeRunId: Long? = null
     var cooldownEndTime: Long = 0 // Server time when cooldown ends (0 = no cooldown)
+    var beamVisible: Boolean = true // Whether the beam is visible (player-controlled)
+
+    // Beam color (RGB, each 0-255) - randomized per obelisk for unique visual identity
+    var beamColorRed: Int = Random.nextInt(256)
+        private set
+    var beamColorGreen: Int = Random.nextInt(256)
+        private set
+    var beamColorBlue: Int = Random.nextInt(256)
+        private set
 
     init {
         // Register for FE regeneration tracking
@@ -43,7 +54,42 @@ class ObeliskBlockEntity(
         // Debug logging for modifiers
     }
 
+    /**
+     * Returns the beam color as a packed RGB integer (0xRRGGBB).
+     */
+    fun getBeamColor(): Int {
+        return (beamColorRed shl 16) or (beamColorGreen shl 8) or beamColorBlue
+    }
+
+    /**
+     * Returns the beam color components as a float array [r, g, b] in range 0.0-1.0.
+     */
+    fun getBeamColorFloats(): FloatArray {
+        return floatArrayOf(
+            beamColorRed / 255f,
+            beamColorGreen / 255f,
+            beamColorBlue / 255f
+        )
+    }
+
     fun isRunActive(): Boolean = activeRunId != null
+
+    /**
+     * Returns true if the beam should be rendered.
+     * Beam shows when: beam is enabled AND (obelisk is fully charged OR has an active run).
+     */
+    fun shouldShowBeam(): Boolean {
+        return beamVisible && (isRunActive() || (feStored >= getModifiedMaxStorage()))
+    }
+
+    /**
+     * Toggles beam visibility and syncs to clients.
+     */
+    fun toggleBeamVisibility() {
+        beamVisible = !beamVisible
+        setChanged()
+        syncToClients()
+    }
 
     fun isOnCooldown(): Boolean {
         if (cooldownEndTime == 0L) return false
@@ -234,6 +280,10 @@ class ObeliskBlockEntity(
         tag.putUUID("ObeliskId", obeliskId)
         activeRunId?.let { tag.putLong("ActiveRunId", it) }
         tag.putLong("CooldownEndTime", cooldownEndTime)
+        tag.putBoolean("BeamVisible", beamVisible)
+        tag.putInt("BeamColorRed", beamColorRed)
+        tag.putInt("BeamColorGreen", beamColorGreen)
+        tag.putInt("BeamColorBlue", beamColorBlue)
 
         // Save modifiers
         tag.putInt("ModifierCount", modifiers.size)
@@ -258,6 +308,23 @@ class ObeliskBlockEntity(
         cooldownEndTime = if (tag.contains("CooldownEndTime")) {
             tag.getLong("CooldownEndTime")
         } else 0L
+
+        beamVisible = if (tag.contains("BeamVisible")) {
+            tag.getBoolean("BeamVisible")
+        } else true // Default to visible for backwards compatibility
+
+        // Load beam colors (with random defaults for backwards compatibility)
+        beamColorRed = if (tag.contains("BeamColorRed")) {
+            tag.getInt("BeamColorRed")
+        } else Random.nextInt(256)
+
+        beamColorGreen = if (tag.contains("BeamColorGreen")) {
+            tag.getInt("BeamColorGreen")
+        } else Random.nextInt(256)
+
+        beamColorBlue = if (tag.contains("BeamColorBlue")) {
+            tag.getInt("BeamColorBlue")
+        } else Random.nextInt(256)
 
         // Load modifiers (must load before feStored since feStored initialization uses getModifiedMaxStorage)
         if (tag.contains("ModifierCount")) {
@@ -308,6 +375,105 @@ class ObeliskBlockEntity(
         setChanged()
         if (level != null && !level!!.isClientSide) {
             level!!.sendBlockUpdated(blockPos, blockState, blockState, 3)
+        }
+    }
+
+    companion object {
+        // Cache for particle spawn positions to avoid recalculating every tick
+        private val particleSpawnCache = mutableMapOf<BlockPos, List<BlockPos>>()
+
+        /**
+         * Client-side tick method for spawning ambient particles from nearby ground blocks.
+         */
+        fun clientTick(level: Level, pos: BlockPos, state: BlockState, blockEntity: ObeliskBlockEntity) {
+            if (!level.isClientSide) return
+
+            val energyPercent = blockEntity.getEnergyPercent()
+
+            // Spawn particles from nearby ground blocks
+            if (level.random.nextFloat() > 0.4f) return
+
+            // Get or generate particle spawn positions
+            val spawnPositions = particleSpawnCache.getOrPut(pos) {
+                findNearbyGroundBlocks(level, pos)
+            }
+
+            if (spawnPositions.isEmpty()) return
+
+            // Pick random ground block positions to spawn particles from
+            val particleCount = if (energyPercent > 0.75) 3 else if (energyPercent > 0.25) 2 else 1
+
+            for (i in 0 until particleCount) {
+                val groundPos = spawnPositions.random()
+
+                // Spawn particle from this ground block
+                val x = groundPos.x + 0.3 + level.random.nextDouble() * 0.4
+                val y = groundPos.y + 1.0 + level.random.nextDouble() * 0.2
+                val z = groundPos.z + 0.3 + level.random.nextDouble() * 0.4
+
+                // Velocity - particles drift upward
+                val xSpeed = (level.random.nextDouble() - 0.5) * 0.015
+                val ySpeed = level.random.nextDouble() * 0.06 + 0.03
+                val zSpeed = (level.random.nextDouble() - 0.5) * 0.015
+
+                // Choose particle type based on state
+                val particleType = when {
+                    blockEntity.isRunActive() -> ParticleTypes.PORTAL // Purple particles when run is active
+                    energyPercent > 0.5 -> ParticleTypes.END_ROD // White particles when charged
+                    energyPercent > 0.25 -> ParticleTypes.ENCHANT // Enchantment particles
+                    else -> ParticleTypes.SMOKE // Smoke when low energy
+                }
+
+                level.addParticle(particleType, x, y, z, xSpeed, ySpeed, zSpeed)
+            }
+
+            // Extra effect when on cooldown - flame particles from random ground blocks
+            if (blockEntity.isOnCooldown() && level.random.nextFloat() > 0.6f) {
+                val groundPos = spawnPositions.random()
+                val x = groundPos.x + 0.3 + level.random.nextDouble() * 0.4
+                val y = groundPos.y + 1.0
+                val z = groundPos.z + 0.3 + level.random.nextDouble() * 0.4
+                level.addParticle(ParticleTypes.FLAME, x, y, z, 0.0, 0.02, 0.0)
+            }
+        }
+
+        /**
+         * Finds solid ground blocks near the obelisk for particle spawning.
+         * Looks in a radius around the obelisk and finds blocks that are solid with air above.
+         */
+        private fun findNearbyGroundBlocks(level: Level, obeliskPos: BlockPos): List<BlockPos> {
+            val groundBlocks = mutableListOf<BlockPos>()
+            val radius = 8
+            val searchHeight = 10
+
+            for (dx in -radius..radius) {
+                for (dz in -radius..radius) {
+                    // Skip if too close to obelisk center
+                    if (dx * dx + dz * dz < 4) continue
+
+                    // Search down from obelisk level to find ground
+                    for (dy in 2 downTo -searchHeight) {
+                        val checkPos = obeliskPos.offset(dx, dy, dz)
+                        val blockState = level.getBlockState(checkPos)
+                        val aboveState = level.getBlockState(checkPos.above())
+
+                        // Found a solid block with air above it
+                        if (blockState.isSolidRender(level, checkPos) && 
+                            aboveState.isAir && 
+                            blockState.fluidState.isEmpty) {
+                            groundBlocks.add(checkPos)
+                            break
+                        }
+                    }
+                }
+            }
+
+            // If we found no ground blocks, use the obelisk position as fallback
+            if (groundBlocks.isEmpty()) {
+                groundBlocks.add(obeliskPos.below(2))
+            }
+
+            return groundBlocks
         }
     }
 }

@@ -2,5 +2,5 @@
   "type": "forge:add_features",
   "biomes": "#minecraft:is_overworld",
   "features": "obelisks:obelisk_block_placed",
-  "step": "surface_structures"
+  "step": "top_layer_modification"
 }

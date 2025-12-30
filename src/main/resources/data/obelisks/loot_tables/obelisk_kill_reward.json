@@ -1,0 +1,58 @@
+{
+  "type": "minecraft:generic",
+  "pools": [
+    {
+      "name": "emeralds",
+      "rolls": {
+        "min": 0,
+        "max": 3
+      },
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "minecraft:emerald"
+        }
+      ]
+    },
+    {
+      "name": "gunpowder",
+      "rolls": {
+        "min": 0,
+        "max": 4
+      },
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "minecraft:gunpowder"
+        }
+      ]
+    },
+    {
+      "name": "bonus_materials",
+      "rolls": 1,
+      "conditions": [
+        {
+          "condition": "minecraft:random_chance",
+          "chance": 0.1
+        }
+      ],
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "minecraft:diamond",
+          "weight": 10
+        },
+        {
+          "type": "minecraft:item",
+          "name": "minecraft:gold_ingot",
+          "weight": 30
+        },
+        {
+          "type": "minecraft:item",
+          "name": "minecraft:iron_ingot",
+          "weight": 60
+        }
+      ]
+    }
+  ]
+}

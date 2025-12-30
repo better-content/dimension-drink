@@ -17,7 +17,7 @@ data class MainConfig(
     val teleportSystem: TeleportSystem,
     val configurationMode: ConfigurationMode,
     val gameConstants: GameConstants,
-    val dimensionSlotSystem: DimensionSlotSystem,
+    val spawnPositionRange: SpawnPositionRange,
     val emeraldRewardSystem: EmeraldRewardSystem,
     val visualAndAudioEffects: VisualAndAudioEffects
 )
@@ -197,19 +197,11 @@ data class GameConstants(
     val ticksPerSecond: Int
 )
 
-data class DimensionSlotSystem(
-    val netherSlotCount: Int,
-    val endSlotCount: Int,
-    val spawnPositionRange: SpawnPositionRange
-)
-
 data class SpawnPositionRange(
     val xMin: Int,
     val xMax: Int,
     val zMin: Int,
-    val zMax: Int,
-    val netherY: Int,
-    val endY: Int
+    val zMax: Int
 )
 
 data class EmeraldRewardSystem(

@@ -21,6 +21,9 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext
 @Mod(MOD_ID)
 class ObelisksMod {
     init {
+        // Load configuration files FIRST
+        dev.yourname.obelisks.config.ConfigManager.load()
+
         val modBus = FMLJavaModLoadingContext.get().modEventBus
         // Centralized registry wiring
         dev.yourname.obelisks.registry.ModRegistries.registerAll(modBus)
@@ -37,8 +40,12 @@ class ObelisksMod {
                     dev.yourname.obelisks.client.ObeliskScreen(menu, inventory, title)
                 }
 
-                // Register obelisk beam renderer
-                MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.client.ObeliskBeamRenderer)
+                // Register block entity renderer for beam rendering
+                net.minecraft.client.renderer.blockentity.BlockEntityRenderers.register(
+                    dev.yourname.obelisks.registry.ModBlockEntities.OBELISK.get()
+                ) { context ->
+                    dev.yourname.obelisks.client.ObeliskBlockEntityRenderer(context)
+                }
             }
         }
 
@@ -48,6 +55,7 @@ class ObelisksMod {
         MinecraftForge.EVENT_BUS.register(PlayerReturnHandler)
         MinecraftForge.EVENT_BUS.register(DimensionTeardownHandler)
         MinecraftForge.EVENT_BUS.register(RunEventHandlers)
+        MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.dimension.MobDifficultyHandler)
 
         // Phase 3: FE System handlers
         MinecraftForge.EVENT_BUS.register(dev.yourname.obelisks.jaunt.InstanceTickHandler)

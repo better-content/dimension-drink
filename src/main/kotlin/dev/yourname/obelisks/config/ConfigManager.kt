@@ -27,19 +27,27 @@ object ConfigManager {
      * Call this once during mod initialization.
      */
     fun load() {
+        println("[ConfigManager] ===== STARTING CONFIG LOAD =====")
+        println("[ConfigManager] Config root: $configRoot")
         try {
             Files.createDirectories(configRoot)
+            println("[ConfigManager] Config directory ensured")
 
             // Load main config
             mainConfig = loadMainConfig()
+            println("[ConfigManager] Main config loaded")
 
             // Load dimension configs
             dimensionConfigs = loadDimensionConfigs()
+            println("[ConfigManager] Dimension configs loaded: ${dimensionConfigs.size} total, ${dimensionConfigs.filterValues { it.enabled }.size} enabled")
 
             // Load loot table config
             lootTableConfig = loadLootTableConfig()
+            println("[ConfigManager] Loot table config loaded")
 
+            println("[ConfigManager] ===== CONFIG LOAD COMPLETE =====")
         } catch (e: Exception) {
+            println("[ConfigManager] ===== CONFIG LOAD FAILED =====")
             e.printStackTrace()
             throw e
         }
@@ -191,10 +199,16 @@ object ConfigManager {
                         // Only check if mod is loaded, not if blocks exist yet
                         if (checkModsLoaded(config)) {
                             configs[config.dimensionId] = config
+                            println("[ConfigManager] Loaded dimension config: ${config.dimensionId} (enabled=${config.enabled})")
+                        } else {
+                            println("[ConfigManager] Skipped ${config.dimensionId}: required mods not loaded")
                         }
+                    } else {
+                        println("[ConfigManager] Skipped ${file.fileName}: invalid config (enabled=${config.enabled}, id='${config.dimensionId}')")
                     }
                 } catch (e: Exception) {
-                    // Silently skip configs that fail to load
+                    println("[ConfigManager] Failed to load ${file.fileName}: ${e.message}")
+                    e.printStackTrace()
                 }
             }
 
@@ -206,12 +220,12 @@ object ConfigManager {
      * Does NOT validate that blocks exist in registry (that happens too early).
      */
     private fun checkModsLoaded(config: DimensionConfig): Boolean {
-        val blocksToCheck = listOf(
+        val blocksToCheck = listOfNotNull(
             config.stemBlockType,
             config.platformBlock,
             config.glowBlock,
             config.targetBlock
-        ) + config.flavorBlocks
+        ) + config.flavorBlocks.filterNotNull()
 
         for (blockId in blocksToCheck) {
             try {
@@ -220,9 +234,12 @@ object ConfigManager {
 
                 // Only check if mod is loaded, not if block exists
                 if (namespace != "minecraft" && !ModList.get().isLoaded(namespace)) {
+                    println("[ConfigManager] ${config.dimensionId}: Missing mod '$namespace' for block '$blockId'")
                     return false
                 }
             } catch (e: Exception) {
+                println("[ConfigManager] ${config.dimensionId}: Exception checking block '$blockId': ${e.message}")
+                e.printStackTrace()
                 return false
             }
         }
@@ -234,12 +251,12 @@ object ConfigManager {
      * Validates that all blocks/items referenced in a dimension config exist and their mods are loaded.
      */
     private fun validateDimensionConfig(config: DimensionConfig): Boolean {
-        val blocksToCheck = listOf(
+        val blocksToCheck = listOfNotNull(
             config.stemBlockType,
             config.platformBlock,
             config.glowBlock,
             config.targetBlock
-        ) + config.flavorBlocks
+        ) + config.flavorBlocks.filterNotNull()
 
         for (blockId in blocksToCheck) {
             try {
@@ -256,6 +273,8 @@ object ConfigManager {
                     return false
                 }
             } catch (e: Exception) {
+                println("[ConfigManager] ${config.dimensionId}: Exception checking block '$blockId': ${e.message}")
+                e.printStackTrace()
                 return false
             }
         }

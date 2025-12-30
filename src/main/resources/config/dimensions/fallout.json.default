@@ -1,16 +1,11 @@
 {
   "dimensionId": "fallout_wastelands_:wastelands",
   "dimensionName": "Wasteland",
-  "stemBlockType": "fallout_wastelands_:wasteland_dirt",
   "feMultiplier": 1.3,
-  "spawnY": 70,
   "platformBlock": "fallout_wastelands_:wasteland_stone",
   "glowBlock": "minecraft:torch",
   "enabled": true,
   "minFERequired": 1500,
-  "collapseSpeedMultiplier": 1.1,
-  "drainExponentialFactor": 0.00007,
-  "drainExponentialIntervalTicks": 20,
   "flavorBlocks": [
     "fallout_wastelands_:wasteland_dirt",
     "fallout_wastelands_:wasteland_sand",
@@ -19,8 +14,19 @@
     "minecraft:gravel"
   ],
   "rarityMultiplier": 1.0,
-  "slotCount": 5,
-  "targetBlock": "fallout_wastelands_:wasteland_stone",
-  "dimensionTemplate": "overworld",
-  "customProperties": {}
+  "lootTable": null,
+  "equipmentLootTable": null,
+  "customProperties": {},
+  "difficultySettings": {
+    "spawnRateMultiplier": 12.0,
+    "healthMultiplier": 1.2,
+    "damageMultiplier": 1.2,
+    "mobEffects": ["minecraft:speed:0:999999"],
+    "armorChance": 0.25,
+    "weaponChance": 0.25,
+    "speedMultiplier": 1.1,
+    "canPickupLoot": true,
+    "bonusArmorPoints": 2.0,
+    "babyChance": 0.0
+  }
 }

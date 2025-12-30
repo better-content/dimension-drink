@@ -1,0 +1,17 @@
+  "stemBlockType": "blue_skies:lunar_stonebrick",
+  "feMultiplier": 1.0,
+  "spawnY": 80,
+  "platformBlock": "blue_skies:starlit_log",
+  "glowBlock": "blue_skies:sun_bloom",
+  "enabled": true,
+  "minFERequired": 600,
+  "collapseSpeedMultiplier": 1.0,
+  "drainExponentialFactor": 0.000065,
+  "drainExponentialIntervalTicks": 20,
+  "flavorBlocks": [
+    "blue_skies:lunar_stonebrick",
+    "blue_skies:polished_umber",
+    "blue_skies:polished_cinderstone",
+    "blue_skies:chiseled_lunar_stonebrick",
+    "blue_skies:midnight_sandstone"
+  ],

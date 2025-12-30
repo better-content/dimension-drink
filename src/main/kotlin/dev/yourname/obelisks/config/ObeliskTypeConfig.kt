@@ -29,9 +29,17 @@ object ObeliskTypeRegistry {
      * @return ObeliskTypeConfig or null if no enabled dimensions exist
      */
     fun getRandomWeightedConfig(random: RandomSource): ObeliskTypeConfig? {
-        val enabledConfigs = ConfigManager.getEnabledDimensionConfigs()
+        val enabledConfigs = try {
+            ConfigManager.getEnabledDimensionConfigs()
+        } catch (e: Exception) {
+            org.slf4j.LoggerFactory.getLogger(ObeliskTypeRegistry::class.java)
+                .error("Failed to get enabled dimension configs during worldgen", e)
+            return null
+        }
 
         if (enabledConfigs.isEmpty()) {
+            org.slf4j.LoggerFactory.getLogger(ObeliskTypeRegistry::class.java)
+                .warn("No enabled dimension configs found. All: ${ConfigManager.getAllDimensionConfigs().keys}")
             return null
         }
 
@@ -73,11 +81,41 @@ object ObeliskTypeRegistry {
     }
 
     /**
+     * Gets the configuration for a specific dimension ID.
+     * Returns null if the dimension is not enabled or doesn't exist.
+     */
+    fun getConfigForDimensionId(dimensionId: String): ObeliskTypeConfig? {
+        val dimConfig = try {
+            ConfigManager.getDimensionConfig(dimensionId)
+        } catch (e: Exception) {
+            org.slf4j.LoggerFactory.getLogger(ObeliskTypeRegistry::class.java)
+                .error("Failed to get dimension config for $dimensionId", e)
+            return null
+        }
+
+        // Check if dimension is enabled
+        if (dimConfig == null || !dimConfig.enabled) {
+            return null
+        }
+
+        return buildConfig(dimConfig)
+    }
+
+    /**
      * Builds an ObeliskTypeConfig from a DimensionConfig.
      */
     private fun buildConfig(dimConfig: DimensionConfig): ObeliskTypeConfig {
-        val pillarBlock = BuiltInRegistries.BLOCK.get(ResourceLocation(dimConfig.stemBlockType)) ?: Blocks.STONE
-        val platformBlock = BuiltInRegistries.BLOCK.get(ResourceLocation(dimConfig.platformBlock)) ?: Blocks.STONE
+        val pillarBlock = if (dimConfig.stemBlockType != null) {
+            BuiltInRegistries.BLOCK.get(ResourceLocation(dimConfig.stemBlockType)) ?: Blocks.OBSIDIAN
+        } else {
+            Blocks.OBSIDIAN
+        }
+
+        val platformBlock = if (dimConfig.platformBlock != null) {
+            BuiltInRegistries.BLOCK.get(ResourceLocation(dimConfig.platformBlock)) ?: Blocks.STONE
+        } else {
+            Blocks.STONE
+        }
 
         return ObeliskTypeConfig(
             dimensionConfig = dimConfig,

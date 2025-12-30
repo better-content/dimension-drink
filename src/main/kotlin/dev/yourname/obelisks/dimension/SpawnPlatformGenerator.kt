@@ -62,82 +62,67 @@ object SpawnPlatformGenerator {
     }
 
     /**
-     * Builds a safe platform at the given location with a return pad in the center.
-     * OVERRIDES existing ground blocks to create a stable platform.
+     * Builds a safe flat obsidian bunker with a return pad in the center.
+     * Creates a 7x7x4 enclosed bunker with 2x1 doorways on N/S/E/W sides.
      *
-     * @param center The ground-level position (Y=ground) where platform will be built
+     * @param center The ground-level position (Y=ground) where bunker will be built
      */
     private fun buildPlatform(level: ServerLevel, center: BlockPos) {
-        // USE OBSIDIAN FOR ALL PLATFORMS - highly visible in all dimensions
-        val platformMaterial = Blocks.OBSIDIAN
+        val radius = ObelisksConstants.PLATFORM_RADIUS // 3 (creates 7x7)
 
-        // Create a 7x7 platform
-        val radius = ObelisksConstants.PLATFORM_RADIUS
-
-
-        // PHASE 1: Clear area and build obsidian platform base
+        // PHASE 1: Build flat 7x7 obsidian floor
         for (x in -radius..radius) {
             for (z in -radius..radius) {
-                val platformPos = center.offset(x, 0, z)
-
-                // Place OBSIDIAN for entire platform
-                level.setBlock(platformPos, platformMaterial.defaultBlockState(), 11)
+                val floorPos = center.offset(x, 0, z)
+                level.setBlock(floorPos, Blocks.OBSIDIAN.defaultBlockState(), 11)
             }
         }
 
+        // PHASE 2: Build 7x7x4 obsidian walls (hollow interior)
+        for (y in 1..4) {
+            for (x in -radius..radius) {
+                for (z in -radius..radius) {
+                    val pos = center.offset(x, y, z)
 
-        // PHASE 2: Ensure air space above platform (for the 3x3x3 cube + extra clearance)
-        val airClearance = ObelisksConstants.PLATFORM_AIR_CLEARANCE
-        for (x in -radius..radius) {
-            for (z in -radius..radius) {
-                val pos = center.offset(x, 0, z)
+                    // Check if this is a wall position (edge of 7x7)
+                    val isWall = x == -radius || x == radius || z == -radius || z == radius
 
-                // Clear blocks above platform for safe breathing space
-                for (y in 1..airClearance) {
-                    level.setBlock(pos.above(y), Blocks.AIR.defaultBlockState(), 3)
+                    if (isWall) {
+                        // Check for doorway positions (2x1 on each cardinal direction)
+                        val isDoorway =
+                            // North doorway (z = -radius, x = 0, y = 1-2)
+                            (z == -radius && x == 0 && y in 1..2) ||
+                            // South doorway (z = radius, x = 0, y = 1-2)
+                            (z == radius && x == 0 && y in 1..2) ||
+                            // East doorway (x = radius, z = 0, y = 1-2)
+                            (x == radius && z == 0 && y in 1..2) ||
+                            // West doorway (x = -radius, z = 0, y = 1-2)
+                            (x == -radius && z == 0 && y in 1..2)
+
+                        if (isDoorway) {
+                            level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3)
+                        } else {
+                            level.setBlock(pos, Blocks.OBSIDIAN.defaultBlockState(), 3)
+                        }
+                    } else {
+                        // Interior - fill with air
+                        level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3)
+                    }
                 }
             }
         }
 
-
-        // PHASE 3: Create return pad structure at center
-        // Return pad is at Y+1 (one block above platform ground)
-        val returnPadPos = center.above(ObelisksConstants.RETURN_PAD_HEIGHT)
-
-        // Place 3x3 obsidian ring around return pad position (at Y+1 level)
-        for (x in -1..1) {
-            for (z in -1..1) {
-                // Skip center - that's where return pad goes
-                if (x == 0 && z == 0) continue
-
-                val ringPos = returnPadPos.offset(x, 0, z)
-                level.setBlock(ringPos, Blocks.OBSIDIAN.defaultBlockState(), 3)
+        // PHASE 3: Build flat obsidian roof
+        for (x in -radius..radius) {
+            for (z in -radius..radius) {
+                val roofPos = center.offset(x, 5, z)
+                level.setBlock(roofPos, Blocks.OBSIDIAN.defaultBlockState(), 11)
             }
         }
 
-        // Ensure 3x3x3 air cube above return pad (Y+2, Y+3, Y+4)
-        val airCubeHeight = ObelisksConstants.RETURN_PAD_AIR_CUBE_HEIGHT
-        for (y in 1..airCubeHeight) {
-            for (x in -1..1) {
-                for (z in -1..1) {
-                    val airPos = returnPadPos.offset(x, y, z)
-                    level.setBlock(airPos, Blocks.AIR.defaultBlockState(), 3)
-                }
-            }
-        }
-
-        // Place return pad at center, Y+1
+        // PHASE 4: Place return pad at center, Y+1 (on the floor)
+        val returnPadPos = center.above(1)
         level.setBlock(returnPadPos, dev.yourname.obelisks.registry.ModBlocks.RETURN_PAD.get().defaultBlockState(), 11)
-
-
-        // PHASE 4: Add lighting at corners (above obsidian ring level)
-        val lightBlock = Blocks.GLOWSTONE
-        val lightHeight = ObelisksConstants.PLATFORM_LIGHT_HEIGHT
-        level.setBlock(center.offset(-radius, lightHeight, -radius), lightBlock.defaultBlockState(), 3)
-        level.setBlock(center.offset(radius, lightHeight, -radius), lightBlock.defaultBlockState(), 3)
-        level.setBlock(center.offset(-radius, lightHeight, radius), lightBlock.defaultBlockState(), 3)
-        level.setBlock(center.offset(radius, lightHeight, radius), lightBlock.defaultBlockState(), 3)
-
     }
 
     /**

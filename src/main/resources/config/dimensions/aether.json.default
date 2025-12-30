@@ -1,16 +1,11 @@
 {
   "dimensionId": "aether:the_aether",
   "dimensionName": "The Aether",
-  "stemBlockType": "aether:holystone",
   "feMultiplier": 0.7,
-  "spawnY": 128,
   "platformBlock": "aether:holystone",
   "glowBlock": "aether:ambrosium_torch",
   "enabled": true,
   "minFERequired": 1000,
-  "collapseSpeedMultiplier": 0.8,
-  "drainExponentialFactor": 0.000045,
-  "drainExponentialIntervalTicks": 20,
   "flavorBlocks": [
     "aether:holystone",
     "aether:aether_grass_block",
@@ -19,7 +14,19 @@
     "aether:icestone"
   ],
   "rarityMultiplier": 1.4,
-  "slotCount": 5,
-  "targetBlock": "aether:holystone",
-  "customProperties": {}
+  "lootTable": null,
+  "equipmentLootTable": null,
+  "customProperties": {},
+  "difficultySettings": {
+    "spawnRateMultiplier": 8.0,
+    "healthMultiplier": 0.9,
+    "damageMultiplier": 0.9,
+    "mobEffects": [],
+    "armorChance": 0.05,
+    "weaponChance": 0.05,
+    "speedMultiplier": 1.0,
+    "canPickupLoot": false,
+    "bonusArmorPoints": 0.0,
+    "babyChance": 0.0
+  }
 }

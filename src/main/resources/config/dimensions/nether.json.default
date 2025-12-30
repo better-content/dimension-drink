@@ -1,16 +1,11 @@
 {
   "dimensionId": "minecraft:the_nether",
   "dimensionName": "The Nether",
-  "stemBlockType": "minecraft:netherrack",
   "feMultiplier": 1.0,
-  "spawnY": 100,
   "platformBlock": "minecraft:netherrack",
   "glowBlock": "minecraft:glowstone",
   "enabled": true,
   "minFERequired": 0,
-  "collapseSpeedMultiplier": 1.0,
-  "drainExponentialFactor": 0.00008,
-  "drainExponentialIntervalTicks": 20,
   "flavorBlocks": [
     "minecraft:netherrack",
     "minecraft:nether_bricks",
@@ -20,9 +15,20 @@
     "minecraft:soul_soil",
     "minecraft:blackstone"
   ],
-  "rarityMultiplier": 1.0,
-  "slotCount": 5,
-  "targetBlock": "minecraft:netherrack",
-  "dimensionTemplate": "nether",
-  "customProperties": {}
+  "rarityMultiplier": 2.0,
+  "lootTable": null,
+  "equipmentLootTable": null,
+  "customProperties": {},
+  "difficultySettings": {
+    "spawnRateMultiplier": 10.0,
+    "healthMultiplier": 1.0,
+    "damageMultiplier": 1.0,
+    "mobEffects": [],
+    "armorChance": 0.1,
+    "weaponChance": 0.1,
+    "speedMultiplier": 1.0,
+    "canPickupLoot": false,
+    "bonusArmorPoints": 0.0,
+    "babyChance": 0.0
+  }
 }

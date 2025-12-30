@@ -34,10 +34,18 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         // Find ground level at this position
         val groundPos = findGroundPosition(level, pos) ?: return false
 
-        // Check if ground is water - don't spawn
+        // Check if ground is water or underwater - don't spawn
         val groundBlock = level.getBlockState(groundPos.below())
         if (!groundBlock.fluidState.isEmpty) {
             return false
+        }
+
+        // Check if there's water above the ground position (0..10 blocks up)
+        for (i in 0..10) {
+            val checkPos = groundPos.above(i)
+            if (!level.getBlockState(checkPos).fluidState.isEmpty) {
+                return false // Water above, would spawn underwater
+            }
         }
 
         // Choose random obelisk config with weighted rarity
@@ -66,6 +74,9 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
         // Scatter flavor blocks around the obelisk for decoration
         scatterFlavorBlocks(level, groundPos, config.dimensionConfig, random)
+
+        // Scatter gravel around obelisk base
+        scatterGravel(level, groundPos, random)
 
         return true
     }
@@ -108,6 +119,40 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
             if (block != null && block != net.minecraft.world.level.block.Blocks.AIR) {
                 // Replace whatever was there
+                level.setBlock(targetPos, block.defaultBlockState(), 3)
+            }
+        }
+    }
+
+    /**
+     * Scatters gravel around the obelisk base for a natural "excavation" look.
+     */
+    private fun scatterGravel(level: WorldGenLevel, centerPos: BlockPos, random: RandomSource) {
+        val radius = 4
+        val blockCount = 15 + random.nextInt(10) // 15-25 gravel blocks
+
+        for (i in 0 until blockCount) {
+            val xOffset = random.nextInt(radius * 2 + 1) - radius
+            val zOffset = random.nextInt(radius * 2 + 1) - radius
+
+            // Skip if too close to obelisk center (within 1 block)
+            if (Math.abs(xOffset) <= 1 && Math.abs(zOffset) <= 1) continue
+
+            val targetPos = centerPos.offset(xOffset, -1, zOffset) // Place on ground level
+
+            val currentBlock = level.getBlockState(targetPos)
+
+            // Only replace natural blocks (dirt, grass, stone, etc.)
+            if (currentBlock.isSolidRender(level, targetPos) &&
+                !currentBlock.fluidState.isEmpty.not()) {
+
+                // 80% gravel, 20% coarse dirt for variation
+                val block = if (random.nextFloat() < 0.8f) {
+                    net.minecraft.world.level.block.Blocks.GRAVEL
+                } else {
+                    net.minecraft.world.level.block.Blocks.COARSE_DIRT
+                }
+
                 level.setBlock(targetPos, block.defaultBlockState(), 3)
             }
         }

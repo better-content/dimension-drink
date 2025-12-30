@@ -214,23 +214,15 @@ object ObelisksConstants {
     /** Minecraft ticks per second */
     val TICKS_PER_SECOND: Int get() = config.gameConstants.ticksPerSecond
 
-    // ===== DIMENSION SLOT SYSTEM =====
-    /** Number of NETHER-type dimension slots available */
-    val NETHER_SLOT_COUNT: Int get() = config.dimensionSlotSystem.netherSlotCount
-    /** Number of END-type dimension slots available */
-    val END_SLOT_COUNT: Int get() = config.dimensionSlotSystem.endSlotCount
+    // ===== SPAWN POSITION SYSTEM =====
     /** Minimum X coordinate for random spawn positions */
-    val SPAWN_POS_X_MIN: Int get() = config.dimensionSlotSystem.spawnPositionRange.xMin
+    val SPAWN_POS_X_MIN: Int get() = config.spawnPositionRange.xMin
     /** Maximum X coordinate for random spawn positions */
-    val SPAWN_POS_X_MAX: Int get() = config.dimensionSlotSystem.spawnPositionRange.xMax
+    val SPAWN_POS_X_MAX: Int get() = config.spawnPositionRange.xMax
     /** Minimum Z coordinate for random spawn positions */
-    val SPAWN_POS_Z_MIN: Int get() = config.dimensionSlotSystem.spawnPositionRange.zMin
+    val SPAWN_POS_Z_MIN: Int get() = config.spawnPositionRange.zMin
     /** Maximum Z coordinate for random spawn positions */
-    val SPAWN_POS_Z_MAX: Int get() = config.dimensionSlotSystem.spawnPositionRange.zMax
-    /** Y coordinate for NETHER spawn positions */
-    val SPAWN_POS_NETHER_Y: Int get() = config.dimensionSlotSystem.spawnPositionRange.netherY
-    /** Y coordinate for END spawn positions */
-    val SPAWN_POS_END_Y: Int get() = config.dimensionSlotSystem.spawnPositionRange.endY
+    val SPAWN_POS_Z_MAX: Int get() = config.spawnPositionRange.zMax
 
     // ===== EMERALD REWARD SYSTEM =====
     /** Minimum emeralds dropped per monster killed */

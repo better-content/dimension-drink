@@ -40,11 +40,11 @@ object ObeliskPlacer {
         // Find ground below the given position
         val groundPos = findGroundBelow(level, pos) ?: return false
 
-        // Build stem UPWARD from ground
+        // Build stem UPWARD from ground (always obsidian)
         // Stem goes from ground level to (ground + pillarHeight)
         for (i in 0 until config.pillarHeight) {
             val stemPos = groundPos.above(i)
-            level.setBlock(stemPos, config.pillarBlock.defaultBlockState(), 3)
+            level.setBlock(stemPos, net.minecraft.world.level.block.Blocks.OBSIDIAN.defaultBlockState(), 3)
         }
 
         // Place obelisk cap on TOP of stem

@@ -1,16 +1,11 @@
 {
   "dimensionId": "minecraft:the_end",
   "dimensionName": "The End",
-  "stemBlockType": "minecraft:end_stone",
   "feMultiplier": 1.5,
-  "spawnY": 64,
   "platformBlock": "minecraft:end_stone",
   "glowBlock": "minecraft:end_rod",
   "enabled": true,
   "minFERequired": 5000,
-  "collapseSpeedMultiplier": 1.2,
-  "drainExponentialFactor": 0.0001,
-  "drainExponentialIntervalTicks": 20,
   "flavorBlocks": [
     "minecraft:end_stone",
     "minecraft:end_stone_bricks",
@@ -19,8 +14,19 @@
     "minecraft:obsidian"
   ],
   "rarityMultiplier": 0.5,
-  "slotCount": 5,
-  "targetBlock": "minecraft:end_stone",
-  "dimensionTemplate": "end",
-  "customProperties": {}
+  "lootTable": null,
+  "equipmentLootTable": null,
+  "customProperties": {},
+  "difficultySettings": {
+    "spawnRateMultiplier": 12.0,
+    "healthMultiplier": 1.3,
+    "damageMultiplier": 1.2,
+    "mobEffects": ["minecraft:resistance:0:999999"],
+    "armorChance": 0.2,
+    "weaponChance": 0.2,
+    "speedMultiplier": 1.1,
+    "canPickupLoot": false,
+    "bonusArmorPoints": 2.0,
+    "babyChance": 0.0
+  }
 }

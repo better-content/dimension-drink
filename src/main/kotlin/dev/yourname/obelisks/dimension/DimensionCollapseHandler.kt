@@ -602,6 +602,10 @@ object DimensionCollapseHandler {
                             currentBlock != Blocks.OBSIDIAN &&
                             currentBlock != Blocks.CRYING_OBSIDIAN &&
                             currentBlock != dev.yourname.obelisks.registry.ModBlocks.RETURN_PAD.get()) {
+
+                            // Seal adjacent fluids before removing block
+                            sealAdjacentFluids(level, targetPos)
+
                             level.setBlock(targetPos, Blocks.AIR.defaultBlockState(), 3)
                             blocksDeleted++
                         }
@@ -636,5 +640,35 @@ object DimensionCollapseHandler {
         }
 
         return totalDeleted
+    }
+
+    /**
+     * Seals adjacent fluids before removing a block during collapse.
+     * Uses cobblestone for simple, fast sealing.
+     */
+    private fun sealAdjacentFluids(level: ServerLevel, pos: BlockPos) {
+        val directions = arrayOf(
+            net.minecraft.core.Direction.NORTH,
+            net.minecraft.core.Direction.SOUTH,
+            net.minecraft.core.Direction.EAST,
+            net.minecraft.core.Direction.WEST,
+            net.minecraft.core.Direction.UP,
+            net.minecraft.core.Direction.DOWN
+        )
+
+        // Check and seal adjacent fluids with cobblestone
+        for (dir in directions) {
+            val adjacentPos = pos.relative(dir)
+            val adjacentState = level.getBlockState(adjacentPos)
+
+            // Only seal water and lava source blocks
+            if (!adjacentState.fluidState.isEmpty && adjacentState.fluidState.isSource) {
+                val block = adjacentState.block
+                if (block == Blocks.WATER || block == Blocks.LAVA) {
+                    // Use cobblestone for sealing
+                    level.setBlock(adjacentPos, Blocks.COBBLESTONE.defaultBlockState(), 3)
+                }
+            }
+        }
     }
 }

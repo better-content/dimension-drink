@@ -6,6 +6,7 @@ import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerPlayer
 import net.minecraftforge.event.TickEvent
 import net.minecraftforge.event.entity.living.LivingDeathEvent
+import net.minecraftforge.eventbus.api.EventPriority
 import net.minecraftforge.eventbus.api.SubscribeEvent
 
 /**
@@ -36,7 +37,7 @@ object PlayerReturnHandler {
 
     }
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
     fun onPlayerTick(event: TickEvent.PlayerTickEvent) {
         if (event.phase != TickEvent.Phase.END) return
         if (event.player.level().isClientSide) return
