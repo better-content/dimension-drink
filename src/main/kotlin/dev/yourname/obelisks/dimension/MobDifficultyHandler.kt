@@ -37,17 +37,17 @@ object MobDifficultyHandler {
 
     // Track spawn statistics for debugging
     private val totalSpawnsPerDimension = mutableMapOf<net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>, Int>()
-    private var lastLogTick = 0
 
-    // Hard mob cap per dimension - we'll aggressively spawn to maintain this
-    private const val DIMENSION_MOB_CAP = 20
+    // Per-player mob cap - each player gets their own bubble of mobs
+    private const val PER_PLAYER_MOB_CAP = 20
+    private const val PLAYER_MOB_RADIUS = 128.0
 
     // Track flying mobs we've spawned per dimension (UUID -> spawn tick)
     private val spawnedFlyingMobs = mutableMapOf<net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>, MutableSet<java.util.UUID>>()
 
     /**
-     * Dramatically increases spawn rates by forcing additional spawn attempts EVERY TICK.
-     * The multiplier determines how many extra spawn attempts happen per tick per player.
+     * Spawns mobs to maintain density around each player independently.
+     * Runs every second (20 ticks) instead of every tick for performance.
      */
     @SubscribeEvent
     fun onServerTick(event: TickEvent.ServerTickEvent) {
@@ -55,6 +55,9 @@ object MobDifficultyHandler {
 
         val server = event.server
         val runManager = RunManager.get(server)
+
+        // Only run every 20 ticks (once per second)
+        if (server.tickCount % 20 != 0) return
 
         // For each active run dimension
         for (runData in runManager.getAllRuns()) {
@@ -77,63 +80,65 @@ object MobDifficultyHandler {
                 println("[Obelisks] Starting mob spawner for dimension ${runData.dimensionId}")
             }
 
-            // Increment dimension-specific ticker
+            // Increment dimension-specific ticker (now tracks seconds)
             dimensionSpawnTickers[dimKey] = dimensionSpawnTickers[dimKey]!! + 1
 
             val playersInDimension = runData.activePlayers.mapNotNull { server.playerList.getPlayer(it) }
             if (playersInDimension.isEmpty()) continue
 
-            // Log every 100 ticks (5 seconds)
+            // Log every 5 seconds
             val ticker = dimensionSpawnTickers[dimKey]!!
 
-            // Clean up dead flying mobs from tracking
+            // Clean up dead flying mobs from tracking (per-dimension tracking)
             val flyingMobSet = spawnedFlyingMobs.getOrPut(dimKey) { mutableSetOf() }
             val allEntities = runLevel.entities.getAll()
             flyingMobSet.removeIf { uuid ->
                 allEntities.none { it.uuid == uuid && it.isAlive && !it.isRemoved }
             }
 
-            // Process each player individually - each gets their own 20 mob cap
+            // Cache all monsters in dimension to avoid repeated queries
+            val allMonsters = allEntities.filterIsInstance<Monster>()
+                .filter { it.isAlive && !it.isRemoved }
+
+            // Process each player individually - each gets their own bubble
             for (player in playersInDimension) {
                 val playerPos = player.blockPosition()
 
-                // Count monsters near THIS player (within 128 blocks)
-                val nearbyMobsList = runLevel.entities.getAll()
-                    .filterIsInstance<Monster>()
-                    .filter { it.isAlive && !it.isRemoved && it.blockPosition().closerThan(playerPos, 128.0) }
+                // Count monsters near THIS player only (within radius)
+                val nearbyMobs = allMonsters.filter {
+                    it.blockPosition().closerThan(playerPos, PLAYER_MOB_RADIUS)
+                }
 
-                // Count flying mobs we've spawned that are still alive
-                val flyingMobsNearPlayer = flyingMobSet.size.coerceAtMost(4) // Cap at 4
-                val groundMobsNearPlayer = nearbyMobsList.size - flyingMobsNearPlayer
-                val totalMobsNearPlayer = groundMobsNearPlayer + flyingMobsNearPlayer
+                // Count flying vs ground mobs near this player
+                val flyingMobsNearPlayer = nearbyMobs.count { mob ->
+                    val typeName = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(mob.type).toString()
+                    typeName.contains("ghast") || typeName.contains("phantom") ||
+                    typeName.contains("wither") || mob is net.minecraft.world.entity.FlyingMob
+                }
+                val groundMobsNearPlayer = nearbyMobs.size - flyingMobsNearPlayer
 
                 // Calculate quotas: 80% ground mobs (16), 20% flying mobs (4)
-                val groundMobCap = (DIMENSION_MOB_CAP * 0.8).toInt()
-                val flyingMobCap = DIMENSION_MOB_CAP - groundMobCap
+                val groundMobCap = (PER_PLAYER_MOB_CAP * 0.8).toInt()
+                val flyingMobCap = PER_PLAYER_MOB_CAP - groundMobCap
 
                 val groundMobsNeeded = (groundMobCap - groundMobsNearPlayer).coerceAtLeast(0)
                 val flyingMobsNeeded = (flyingMobCap - flyingMobsNearPlayer).coerceAtLeast(0)
 
-                // Log for this player
-                if (ticker % 100 == 0) {
-                    val mobInfo = nearbyMobsList.take(5).joinToString("\n  ") { mob ->
-                        val mobPos = mob.blockPosition()
-                        val dist = mobPos.distSqr(playerPos)
-                        val mobType = if (mob is net.minecraft.world.entity.FlyingMob) "[FLY]" else "[GND]"
-                        "$mobType ${mob.type.description.string} @ ${Math.sqrt(dist).toInt()}m (${mobPos.x}, ${mobPos.y}, ${mobPos.z})"
-                    }
-
-                    println("[Obelisks] ${player.name.string}: ${totalMobsNearPlayer}/$DIMENSION_MOB_CAP total (${groundMobsNearPlayer}/${groundMobCap} ground, ${flyingMobsNearPlayer}/${flyingMobCap} flying)")
+                // Log every 5 seconds
+                if (ticker % 5 == 0) {
+                    println("[Obelisks] ${player.name.string}: ${nearbyMobs.size}/$PER_PLAYER_MOB_CAP total (${groundMobsNearPlayer}/${groundMobCap} ground, ${flyingMobsNearPlayer}/${flyingMobCap} flying)")
                     println("  Need: ${groundMobsNeeded} ground, ${flyingMobsNeeded} flying")
                     println("  Player at: (${playerPos.x}, ${playerPos.y}, ${playerPos.z})")
-                    if (nearbyMobsList.isNotEmpty()) {
-                        println("  Sample mobs:\n  $mobInfo")
-                    } else {
-                        println("  No mobs found nearby (within 128 blocks)")
+                    if (nearbyMobs.isNotEmpty()) {
+                        val mobInfo = nearbyMobs.take(5).joinToString(", ") { mob ->
+                            val dist = Math.sqrt(mob.blockPosition().distSqr(playerPos).toDouble()).toInt()
+                            "${mob.type.description.string}@${dist}m"
+                        }
+                        println("  Nearby: $mobInfo")
                     }
                 }
 
-                // If we're at or above caps for both mob types, skip spawning entirely
+                // If this player has enough mobs, skip
                 if (groundMobsNearPlayer >= groundMobCap && flyingMobsNearPlayer >= flyingMobCap) continue
 
                 var successfulGroundSpawns = 0
@@ -141,8 +146,8 @@ object MobDifficultyHandler {
 
                 // PHASE 1: Spawn ground mobs ONLY if needed
                 if (groundMobsNeeded > 0) {
-                    // Increase attempts significantly since many will be filtered out
-                    val groundAttempts = (groundMobsNeeded * 50).coerceAtLeast(100).coerceAtMost(500)
+                    // Attempt to spawn needed ground mobs (runs once per second, so 10x attempts per needed mob)
+                    val groundAttempts = (groundMobsNeeded * 10).coerceAtLeast(20).coerceAtMost(100)
                     for (attempt in 0 until groundAttempts) {
                         if (successfulGroundSpawns >= groundMobsNeeded) break
 
@@ -163,58 +168,31 @@ object MobDifficultyHandler {
                     val mob = mobType.create(runLevel) ?: continue
 
                     // Skip if this is a flying mob - we want ground mobs only in this phase
-                    val typeName = BuiltInRegistries.ENTITY_TYPE.getKey(mob.type).toString()
-                    val canFly = typeName.contains("ghast") ||
-                                 typeName.contains("phantom") ||
-                                 typeName.contains("wither") ||
-                                 mob is net.minecraft.world.entity.FlyingMob
-                    if (canFly) continue
+                    if (MobSpawnHelpers.isFlyingMob(mob as Mob)) continue
 
-                    // Ground mobs: need solid block below and air above
-                    // Check up to 10 blocks up/down from spawn pos for valid ground (increased range)
-                    var foundPos: BlockPos? = null
-                    for (yCheck in -10..10) {
-                        val checkPos = spawnPos.offset(0, yCheck, 0)
-                        val blockBelow = runLevel.getBlockState(checkPos.below())
-                        val blockAt = runLevel.getBlockState(checkPos)
-                        val blockAbove = runLevel.getBlockState(checkPos.above())
+                    // Find valid ground spawn position
+                    val foundPos = MobSpawnHelpers.findValidGroundSpawn(runLevel, spawnPos)
+                    if (foundPos == null) continue
 
-                        if (blockBelow.isSolidRender(runLevel, checkPos.below()) &&
-                            blockAt.isAir &&
-                            blockAbove.isAir) {
-                            foundPos = checkPos
-                            break
-                        }
-                    }
-                    if (foundPos == null) continue // No valid ground found
+                    // Verify spawn is not too far vertically from player
+                    if (!MobSpawnHelpers.isValidSpawnDistance(foundPos, playerPos)) continue
 
-                    // Verify mob can path to player from spawn position
-                    // Relaxed check: allow more vertical distance
-                    val yDiff = Math.abs(foundPos.y - playerPos.y)
-                    if (yDiff > 30) continue // Increased from 15 to 30
-
-                    // Removed line-of-sight check - too restrictive, mobs can navigate around walls
-
-                        // Spawn the ground mob
-                        mob.moveTo(foundPos.x + 0.5, foundPos.y.toDouble(), foundPos.z + 0.5, Random.nextFloat() * 360, 0f)
-                        if (mob is Mob) {
-                            mob.finalizeSpawn(runLevel, runLevel.getCurrentDifficultyAt(foundPos), net.minecraft.world.entity.MobSpawnType.NATURAL, null, null)
-                        }
-                        mob.isSilent = true
-                        runLevel.addFreshEntity(mob)
-                        mob.isSilent = false
+                    // Spawn the ground mob
+                    if (MobSpawnHelpers.spawnGroundMob(mob as Mob, runLevel, foundPos)) {
                         successfulGroundSpawns++
+                    }
                     }
                 }
 
                 // PHASE 2: Spawn flying mobs ONLY if:
                 // 1. We have enough ground mobs (at least 80% of ground cap)
                 // 2. We still need flying mobs
-                // 3. We haven't hit our tracked flying mob limit
-                if (groundMobsNearPlayer >= groundMobCap && flyingMobsNeeded > 0 && flyingMobSet.size < flyingMobCap) {
-                    val flyingAttempts = (flyingMobsNeeded * 20).coerceAtLeast(10).coerceAtMost(100)
+                // 3. We haven't hit our per-dimension flying mob limit
+                val dimensionFlyingCap = playersInDimension.size * flyingMobCap
+                if (groundMobsNearPlayer >= groundMobCap && flyingMobsNeeded > 0 && flyingMobSet.size < dimensionFlyingCap) {
+                    val flyingAttempts = (flyingMobsNeeded * 10).coerceAtLeast(5).coerceAtMost(50)
                     for (attempt in 0 until flyingAttempts) {
-                        if (flyingMobSet.size >= flyingMobCap) break
+                        if (flyingMobSet.size >= dimensionFlyingCap) break
 
                         // Random offset from player
                         val offsetX = (Random.nextInt(32) + 16) * if (Random.nextBoolean()) 1 else -1
@@ -232,28 +210,14 @@ object MobDifficultyHandler {
                         val mob = mobType.create(runLevel) ?: continue
 
                         // Skip if this is NOT a flying mob
-                        val typeName = BuiltInRegistries.ENTITY_TYPE.getKey(mob.type).toString()
-                        val canFly = typeName.contains("ghast") ||
-                                     typeName.contains("phantom") ||
-                                     typeName.contains("wither") ||
-                                     mob is net.minecraft.world.entity.FlyingMob
-                        if (!canFly) continue
-
-                        // Flying mobs: spawn in air at the calculated position if there's air
-                        if (!runLevel.getBlockState(spawnPos).isAir) continue
+                        if (!MobSpawnHelpers.isFlyingMob(mob as Mob)) continue
 
                         // Spawn the flying mob
-                        mob.moveTo(spawnPos.x + 0.5, spawnPos.y.toDouble(), spawnPos.z + 0.5, Random.nextFloat() * 360, 0f)
-                        if (mob is Mob) {
-                            mob.finalizeSpawn(runLevel, runLevel.getCurrentDifficultyAt(spawnPos), net.minecraft.world.entity.MobSpawnType.NATURAL, null, null)
+                        if (MobSpawnHelpers.spawnFlyingMob(mob as Mob, runLevel, spawnPos)) {
+                            // Track this flying mob
+                            flyingMobSet.add(mob.uuid)
+                            successfulFlyingSpawns++
                         }
-                        mob.isSilent = true
-                        runLevel.addFreshEntity(mob)
-                        mob.isSilent = false
-
-                        // Track this flying mob
-                        flyingMobSet.add(mob.uuid)
-                        successfulFlyingSpawns++
                     }
                 }
 
