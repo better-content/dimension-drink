@@ -419,12 +419,31 @@ class ObeliskBlockEntity(
                 // Choose particle type based on state
                 val particleType = when {
                     blockEntity.isRunActive() -> ParticleTypes.PORTAL // Purple particles when run is active
+                    energyPercent >= 1.0 && !blockEntity.isOnCooldown() -> ParticleTypes.WHITE_ASH // Dust when fully charged and ready
                     energyPercent > 0.5 -> ParticleTypes.END_ROD // White particles when charged
                     energyPercent > 0.25 -> ParticleTypes.ENCHANT // Enchantment particles
                     else -> ParticleTypes.SMOKE // Smoke when low energy
                 }
 
                 level.addParticle(particleType, x, y, z, xSpeed, ySpeed, zSpeed)
+            }
+
+            // Extra dust particles when fully charged and ready - more frequent and numerous
+            if (energyPercent >= 1.0 && !blockEntity.isOnCooldown() && level.random.nextFloat() > 0.3f) {
+                val extraDustCount = 2 + level.random.nextInt(2) // 2-3 extra dust particles
+                for (i in 0 until extraDustCount) {
+                    val groundPos = spawnPositions.random()
+                    val x = groundPos.x + 0.2 + level.random.nextDouble() * 0.6
+                    val y = groundPos.y + 1.0 + level.random.nextDouble() * 0.3
+                    val z = groundPos.z + 0.2 + level.random.nextDouble() * 0.6
+
+                    // Slower upward drift for dust
+                    val xSpeed = (level.random.nextDouble() - 0.5) * 0.01
+                    val ySpeed = level.random.nextDouble() * 0.04 + 0.02
+                    val zSpeed = (level.random.nextDouble() - 0.5) * 0.01
+
+                    level.addParticle(ParticleTypes.WHITE_ASH, x, y, z, xSpeed, ySpeed, zSpeed)
+                }
             }
 
             // Extra effect when on cooldown - flame particles from random ground blocks

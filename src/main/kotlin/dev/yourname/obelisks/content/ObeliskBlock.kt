@@ -1,5 +1,6 @@
 package dev.yourname.obelisks.content
 
+import dev.yourname.obelisks.dimension.DimensionCoordinator
 import dev.yourname.obelisks.player.getRunInfo
 import dev.yourname.obelisks.registry.ModBlockEntities
 import net.minecraft.core.BlockPos
@@ -53,26 +54,37 @@ class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
             return InteractionResult.SUCCESS
         }
 
-        // Open GUI menu with extra data
-        net.minecraftforge.network.NetworkHooks.openScreen(
-            serverPlayer,
-            object : MenuProvider {
-                override fun createMenu(
-                    containerId: Int,
-                    playerInventory: Inventory,
-                    player: Player
-                ): AbstractContainerMenu {
-                    val menu = ObeliskMenu(containerId, playerInventory, pos, SimpleContainerData(ObeliskMenu.DATA_COUNT))
-                    menu.updateData() // Initial data sync
-                    return menu
-                }
+        // Sneak + right-click = open menu
+        // Normal right-click = teleport directly
+        if (player.isShiftKeyDown) {
+            // Open GUI menu with extra data
+            net.minecraftforge.network.NetworkHooks.openScreen(
+                serverPlayer,
+                object : MenuProvider {
+                    override fun createMenu(
+                        containerId: Int,
+                        playerInventory: Inventory,
+                        player: Player
+                    ): AbstractContainerMenu {
+                        val menu = ObeliskMenu(containerId, playerInventory, pos, SimpleContainerData(ObeliskMenu.DATA_COUNT))
+                        menu.updateData() // Initial data sync
+                        return menu
+                    }
 
-                override fun getDisplayName(): Component {
-                    return Component.literal("Obelisk")
-                }
-            },
-            pos // Extra data - position will be written to buffer
-        )
+                    override fun getDisplayName(): Component {
+                        return Component.literal("Obelisk")
+                    }
+                },
+                pos // Extra data - position will be written to buffer
+            )
+        } else {
+            // Direct teleport - use DimensionCoordinator to enter dimension
+            val result = DimensionCoordinator.enterDimension(serverPlayer, be, pos, level as ServerLevel)
+
+            result.onFailure { error, _ ->
+                player.sendSystemMessage(Component.literal("Failed to activate obelisk: $error"))
+            }
+        }
 
         return InteractionResult.SUCCESS
     }

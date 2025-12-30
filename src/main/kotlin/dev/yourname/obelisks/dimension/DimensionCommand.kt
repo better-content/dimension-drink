@@ -507,7 +507,7 @@ class ExitDimensionCommand(
             originalPosition = player.blockPosition()
         )
 
-        // Phase 3: Execute with rollback on failure
+        // Phase 3: Execute with rollback on failurethe s
         return try {
             executeExit(runManager, playerRunInfo, runData)
         } catch (e: Exception) {
