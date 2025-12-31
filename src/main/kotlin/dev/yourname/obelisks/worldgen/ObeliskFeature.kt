@@ -21,6 +21,7 @@ import net.minecraft.world.level.levelgen.feature.configurations.NoneFeatureConf
 class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatureConfiguration>(codec) {
 
     override fun place(context: FeaturePlaceContext<NoneFeatureConfiguration>): Boolean {
+        val startTime = System.currentTimeMillis()
         val level = context.level()
         val pos = context.origin()
         val random = context.random()
@@ -48,8 +49,40 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
         }
 
+        // Validate terrain flatness - check surrounding 5x5 area for narrow cracks/caves
+        val centerY = groundPos.y
+        var validGroundCount = 0
+        var totalChecks = 0
+
+        for (dx in -2..2) {
+            for (dz in -2..2) {
+                if (dx == 0 && dz == 0) continue // Skip center
+                totalChecks++
+
+                val checkPos = groundPos.offset(dx, 0, dz)
+                val nearbyGround = findLocalGround(level, checkPos)
+
+                if (nearbyGround != null) {
+                    val yDiff = Math.abs(nearbyGround.y - centerY)
+                    // Accept ground within 4 blocks of center height
+                    if (yDiff <= 4) {
+                        validGroundCount++
+                    }
+                }
+            }
+        }
+
+        // Require at least 60% of surrounding positions to have reasonable ground
+        val validRatio = validGroundCount.toFloat() / totalChecks.toFloat()
+        if (validRatio < 0.6f) {
+            println("[OBELISKS] Rejected spawn at $groundPos - terrain too uneven ($validGroundCount/$totalChecks valid)")
+            return false
+        }
+
         // Choose random obelisk config with weighted rarity
         val config = ObeliskTypeRegistry.getRandomWeightedConfig(random) ?: return false
+
+        println("[OBELISKS] Starting obelisk at $groundPos (${config.dimensionConfig.dimensionId})")
 
         // Build stem UPWARD from ground (same as ObeliskPlacer)
         // Stem goes from ground level to (ground + pillarHeight)
@@ -72,16 +105,27 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             blockEntity.syncToClients()
         }
 
+        val afterStemTime = System.currentTimeMillis()
+        println("[OBELISKS] Stem built in ${afterStemTime - startTime}ms")
+
         // Place dimension-specific blocks in item frames on pillars
         placeDimensionBlockPillars(level, groundPos, config.dimensionConfig, random)
+        val afterPillarsTime = System.currentTimeMillis()
+        println("[OBELISKS] Item frame pillars placed in ${afterPillarsTime - afterStemTime}ms")
 
         // Scatter gravel around obelisk base
         scatterGravel(level, groundPos, random)
+        val afterGravelTime = System.currentTimeMillis()
+        println("[OBELISKS] Gravel scattered in ${afterGravelTime - afterPillarsTime}ms")
 
         // Generate epic ruins around the obelisk
-        println("[OBELISKS] Generating ruins at $groundPos for dimension ${config.dimensionConfig.dimensionId}")
+        println("[OBELISKS] Starting ruins generation...")
         generateRuins(level, groundPos, config.dimensionConfig, random)
-        println("[OBELISKS] Ruins generation complete")
+        val afterRuinsTime = System.currentTimeMillis()
+        println("[OBELISKS] Ruins generated in ${afterRuinsTime - afterGravelTime}ms")
+
+        val totalTime = System.currentTimeMillis() - startTime
+        println("[OBELISKS] TOTAL obelisk generation time: ${totalTime}ms")
 
         return true
     }
@@ -96,10 +140,13 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         dimConfig: DimensionConfig,
         random: RandomSource
     ) {
+        println("[OBELISKS] Starting pillar placement...")
+
         // Get flavor blocks for this dimension type
         val flavorBlocks = dimConfig.flavorBlocks ?: emptyList()
 
         if (flavorBlocks.isEmpty()) {
+            println("[OBELISKS] No flavor blocks, skipping pillars")
             return // No flavor blocks configured
         }
 
@@ -108,53 +155,32 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
         // Place 4-6 pillars in a circle around the obelisk
         val pillarCount = (4 + random.nextInt(3)).coerceAtMost(flavorBlocks.size)
+        println("[OBELISKS] Placing $pillarCount pillars")
 
         for (i in 0 until pillarCount) {
+            println("[OBELISKS] Pillar $i/$pillarCount")
+
             // Evenly distribute pillars around circle
             val angle = (i.toDouble() / pillarCount) * Math.PI * 2
             val x = centerPos.x + (radius * Math.cos(angle)).toInt()
             val z = centerPos.z + (radius * Math.sin(angle)).toInt()
 
+            println("[OBELISKS] Finding ground for pillar at x=$x z=$z")
             val pillarBase = findLocalGround(level, BlockPos(x, centerPos.y, z)) ?: continue
+            println("[OBELISKS] Ground found at $pillarBase")
 
-            // Check if there's at least 1 air block below (requirement)
-            val blockBelow = level.getBlockState(pillarBase.below())
-            if (!blockBelow.isAir) continue // Skip if no air below
+            // Build pillar (always 2 blocks high)
+            level.setBlock(pillarBase, baseBlock.defaultBlockState(), 3)
+            level.setBlock(pillarBase.above(), baseBlock.defaultBlockState(), 3)
+            println("[OBELISKS] Pillar blocks placed")
 
-            // Build pillar (2-3 blocks high)
-            val pillarHeight = 2 + random.nextInt(2)
-            for (h in 0 until pillarHeight) {
-                level.setBlock(pillarBase.above(h), baseBlock.defaultBlockState(), 3)
-            }
+            // SKIP ITEM FRAMES - they cause worldgen hangs by spawning entities
+            // Item frames will be added in a separate post-worldgen pass if needed
 
-            // Place item frame on top facing toward obelisk center
-            val itemFramePos = pillarBase.above(pillarHeight)
-
-            // Calculate direction facing center
-            val dx = centerPos.x - x
-            val dz = centerPos.z - z
-            val facing = when {
-                Math.abs(dx) > Math.abs(dz) -> if (dx > 0) net.minecraft.core.Direction.EAST else net.minecraft.core.Direction.WEST
-                else -> if (dz > 0) net.minecraft.core.Direction.SOUTH else net.minecraft.core.Direction.NORTH
-            }
-
-            // Place item frame
-            val itemFrameEntity = net.minecraft.world.entity.decoration.ItemFrame(
-                level.level,
-                itemFramePos,
-                facing
-            )
-
-            // Pick a dimension-specific block to display
-            val flavorBlockId = flavorBlocks[i % flavorBlocks.size]
-            val block = BuiltInRegistries.BLOCK.get(ResourceLocation(flavorBlockId))
-
-            if (block != null && block != net.minecraft.world.level.block.Blocks.AIR) {
-                val itemStack = net.minecraft.world.item.ItemStack(block.asItem())
-                itemFrameEntity.item = itemStack
-                level.level.addFreshEntity(itemFrameEntity)
-            }
+            println("[OBELISKS] Pillar $i complete")
         }
+
+        println("[OBELISKS] All pillars complete")
     }
 
     /**
@@ -222,6 +248,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         dimConfig: DimensionConfig,
         random: RandomSource
     ) {
+        val startTime = System.currentTimeMillis()
+
         // Get biome data for weathering calculations
         val biome = level.getBiome(centerPos)
         val temperature = biome.value().getBaseTemperature()
@@ -230,19 +258,48 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         println("[OBELISKS] Biome temp: $temperature, downfall: $downfall")
 
         // Generate raised dais platform extending to ground
+        val daisStart = System.currentTimeMillis()
         generateDais(level, centerPos, random, temperature, downfall)
+        println("[OBELISKS]   - Dais: ${System.currentTimeMillis() - daisStart}ms")
 
-        // Procedurally generate all ruin types with random chance
-        if (random.nextFloat() < 0.7f) generateCrumbledWalls(level, centerPos, random, temperature, downfall)
-        if (random.nextFloat() < 0.5f) generateBrokenArchway(level, centerPos, random, temperature, downfall)
-        if (random.nextFloat() < 0.8f) generateScatteredPillars(level, centerPos, random, temperature, downfall)
-        if (random.nextFloat() < 0.6f) generateFoundationRuins(level, centerPos, random, temperature, downfall)
-        
+        // Procedurally generate ruin types with reduced frequency for performance
+        if (random.nextFloat() < 0.4f) {
+            val wallsStart = System.currentTimeMillis()
+            generateCrumbledWalls(level, centerPos, random, temperature, downfall)
+            println("[OBELISKS]   - Walls: ${System.currentTimeMillis() - wallsStart}ms")
+        }
+
+        if (random.nextFloat() < 0.3f) {
+            val archStart = System.currentTimeMillis()
+            generateBrokenArchway(level, centerPos, random, temperature, downfall)
+            println("[OBELISKS]   - Archway: ${System.currentTimeMillis() - archStart}ms")
+        }
+
+        if (random.nextFloat() < 0.5f) {
+            val pillarsStart = System.currentTimeMillis()
+            generateScatteredPillars(level, centerPos, random, temperature, downfall)
+            println("[OBELISKS]   - Pillars: ${System.currentTimeMillis() - pillarsStart}ms")
+        }
+
+        if (random.nextFloat() < 0.3f) {
+            val foundStart = System.currentTimeMillis()
+            generateFoundationRuins(level, centerPos, random, temperature, downfall)
+            println("[OBELISKS]   - Foundation: ${System.currentTimeMillis() - foundStart}ms")
+        }
+
         // Add epic decorative features
-        generateEpicFeatures(level, centerPos, random, temperature, downfall)
+        if (random.nextFloat() < 0.5f) {
+            val epicStart = System.currentTimeMillis()
+            generateEpicFeatures(level, centerPos, random, temperature, downfall)
+            println("[OBELISKS]   - Epic features: ${System.currentTimeMillis() - epicStart}ms")
+        }
 
         // Scatter gravel around the ruins
+        val gravelStart = System.currentTimeMillis()
         scatterRuinGravel(level, centerPos, random)
+        println("[OBELISKS]   - Ruin gravel: ${System.currentTimeMillis() - gravelStart}ms")
+
+        println("[OBELISKS]   Total ruins time: ${System.currentTimeMillis() - startTime}ms")
     }
 
     /**
@@ -287,10 +344,24 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             // Find ground at this position
             val wallGroundPos = findLocalGround(level, BlockPos(x, centerPos.y, z))
             if (wallGroundPos != null) {
-                // Build wall segment (2-6 blocks high, deteriorating) - TALLER
+                // Build support pillar from centerPos level down to actual ground
+                val targetY = centerPos.y
+                val depth = targetY - wallGroundPos.y
+                if (depth > 0) {
+                    for (d in 0..depth) {
+                        val supportPos = wallGroundPos.above(d)
+                        val currentState = level.getBlockState(supportPos)
+                        if (!currentState.isSolidRender(level, supportPos)) {
+                            level.setBlock(supportPos, baseBlock.defaultBlockState(), 3)
+                        }
+                    }
+                }
+
+                // Build wall segment upward from centerPos level (2-6 blocks high)
+                val wallBaseY = centerPos.y
                 val height = 2 + random.nextInt(5)
                 for (h in 0 until height) {
-                    val pos = wallGroundPos.above(h)
+                    val pos = BlockPos(x, wallBaseY + h, z)
                     // Mix of blocks for variety - mossy chance increases with humidity
                     val block = when {
                         random.nextFloat() < 0.15f -> crackedBlock
@@ -303,16 +374,30 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     applyWeathering(level, pos, temperature, downfall, random)
                 }
 
-                // Add depth - double thickness walls occasionally
+                // Add depth - double thickness walls occasionally with supports
                 if (random.nextFloat() < 0.4f) {
-                    val innerPos = BlockPos(
-                        centerPos.x + ((radius - 1) * Math.cos(angle)).toInt(),
-                        wallGroundPos.y,
-                        centerPos.z + ((radius - 1) * Math.sin(angle)).toInt()
-                    )
-                    val innerHeight = (height * 0.7).toInt()
-                    for (h in 0 until innerHeight) {
-                        level.setBlock(innerPos.above(h), baseBlock.defaultBlockState(), 3)
+                    val innerX = centerPos.x + ((radius - 1) * Math.cos(angle)).toInt()
+                    val innerZ = centerPos.z + ((radius - 1) * Math.sin(angle)).toInt()
+                    val innerGround = findLocalGround(level, BlockPos(innerX, centerPos.y, innerZ))
+
+                    if (innerGround != null) {
+                        // Build inner support down to ground
+                        val innerDepth = targetY - innerGround.y
+                        if (innerDepth > 0) {
+                            for (d in 0..innerDepth) {
+                                val supportPos = innerGround.above(d)
+                                val currentState = level.getBlockState(supportPos)
+                                if (!currentState.isSolidRender(level, supportPos)) {
+                                    level.setBlock(supportPos, baseBlock.defaultBlockState(), 3)
+                                }
+                            }
+                        }
+
+                        // Build inner wall upward
+                        val innerHeight = (height * 0.7).toInt()
+                        for (h in 0 until innerHeight) {
+                            level.setBlock(BlockPos(innerX, wallBaseY + h, innerZ), baseBlock.defaultBlockState(), 3)
+                        }
                     }
                 }
 
@@ -361,12 +446,27 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val pillarCenter = groundPos.offset(if (xOffset != 0) 0 else side, 0, if (zOffset != 0) 0 else side)
             val pillarHeight = 5 + random.nextInt(4) // 5-8 blocks tall
 
-            // 3x3 pillar base
+            // 3x3 pillar base with ground supports
             for (px in -1..1) {
                 for (pz in -1..1) {
-                    val pillarPos = pillarCenter.offset(px, 0, pz)
+                    val surfacePos = pillarCenter.offset(px, 0, pz)
+                    val actualGround = findLocalGround(level, surfacePos) ?: continue
+
+                    // Build support down to ground if above ground
+                    val supportDepth = surfacePos.y - actualGround.y
+                    if (supportDepth > 0) {
+                        for (d in 1..supportDepth) {
+                            val supportPos = surfacePos.below(d)
+                            val currentState = level.getBlockState(supportPos)
+                            if (!currentState.isSolidRender(level, supportPos)) {
+                                level.setBlock(supportPos, baseBlock.defaultBlockState(), 3)
+                            }
+                        }
+                    }
+
+                    // Build pillar upward
                     for (h in 0 until pillarHeight) {
-                        val pos = pillarPos.above(h)
+                        val pos = actualGround.above(h)
                         val block = when {
                             h > pillarHeight - 2 && random.nextFloat() < 0.5f -> continue // Missing top blocks
                             random.nextFloat() < 0.15f -> crackedBlock
@@ -377,12 +477,6 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                         if (px == 0 && pz == 0) applyWeathering(level, pos, temperature, downfall, random)
                     }
                 }
-            }
-
-            // Add decorative stairs at corners
-            if (random.nextFloat() < 0.6f) {
-                val stairPos = pillarCenter.offset(1, pillarHeight - 1, 1)
-                level.setBlock(stairPos, stairsBlock.defaultBlockState(), 3)
             }
 
             // MORE rubble at base
@@ -435,13 +529,29 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val groundPos = findLocalGround(level, BlockPos(x, centerPos.y, z)) ?: continue
 
             if (random.nextFloat() < 0.5f) {
-                // Standing pillar (broken) - TALLER and THICKER
+                // Standing pillar (broken) - TALLER and THICKER with support
                 val height = 3 + random.nextInt(6)
-                // 2x2 pillar
+                // 2x2 pillar with ground supports
                 for (px in 0..1) {
                     for (pz in 0..1) {
+                        val pillarPos = groundPos.offset(px, 0, pz)
+                        val actualGround = findLocalGround(level, pillarPos) ?: continue
+
+                        // Build support down to actual ground
+                        val supportDepth = pillarPos.y - actualGround.y
+                        if (supportDepth > 0) {
+                            for (d in 1..supportDepth) {
+                                val supportPos = pillarPos.below(d)
+                                val currentState = level.getBlockState(supportPos)
+                                if (!currentState.isSolidRender(level, supportPos)) {
+                                    level.setBlock(supportPos, baseBlock.defaultBlockState(), 3)
+                                }
+                            }
+                        }
+
+                        // Build pillar upward from groundPos
                         for (h in 0 until height) {
-                            val pos = groundPos.offset(px, h, pz)
+                            val pos = actualGround.above(h)
                             val block = when {
                                 h > height - 2 && random.nextFloat() < 0.4f -> continue
                                 random.nextFloat() < 0.2f -> crackedBlock
@@ -501,7 +611,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             else -> 0.05f // 5% in true deserts (near 0 rainfall)
         }
 
-        // Create partial foundation pattern
+        // Create partial foundation pattern with ground supports
         for (x in -radius..radius) {
             for (z in -radius..radius) {
                 val distance = Math.sqrt((x * x + z * z).toDouble())
@@ -515,6 +625,22 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 // Don't overwrite obelisk pillar
                 if (x == 0 && z == 0) continue
 
+                // Find actual ground and build support down
+                val actualGround = findLocalGround(level, pos) ?: continue
+                val supportDepth = pos.y - actualGround.y
+
+                if (supportDepth > 0) {
+                    // Build support pillar down to ground
+                    for (d in 1..supportDepth) {
+                        val supportPos = pos.below(d)
+                        val currentState = level.getBlockState(supportPos)
+                        if (!currentState.isSolidRender(level, supportPos)) {
+                            level.setBlock(supportPos, baseBlock.defaultBlockState(), 3)
+                        }
+                    }
+                }
+
+                // Place foundation block at original position
                 val block = when {
                     random.nextFloat() < 0.15f -> crackedBlock
                     random.nextFloat() < mossyChance -> weatheredBlock
@@ -555,6 +681,12 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
         val platformRadius = 5
 
+        // Cache ground level at center to avoid redundant searches
+        val centerGround = findLocalGround(level, centerPos.below())
+        if (centerGround == null) return
+
+        val estimatedDepth = centerPos.y - centerGround.y
+
         // Create raised platform at obelisk level
         for (x in -platformRadius..platformRadius) {
             for (z in -platformRadius..platformRadius) {
@@ -574,22 +706,34 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 }
                 level.setBlock(platformPos, block.defaultBlockState(), 3)
 
-                // Extend support pillars down to ground from platform - ALWAYS
-                val groundPos = findLocalGround(level, platformPos.below())
-                if (groundPos != null) {
-                    val depth = platformPos.y - groundPos.y
-                    if (depth > 0) {
-                        // Build support all the way down
-                        for (d in 1..depth) {
-                            val pillarPos = platformPos.below(d)
-                            val currentState = level.getBlockState(pillarPos)
+                // Build support pillars using estimated depth (much faster than searching each position)
+                // Search down from estimated ground +/- 3 blocks for actual ground
+                val searchStart = platformPos.below(estimatedDepth - 3)
+                var foundGround = false
 
-                            // Only replace non-solid blocks
-                            if (!currentState.isSolidRender(level, pillarPos) || currentState.fluidState.isEmpty.not()) {
-                                val pillarBlock = if (random.nextFloat() < 0.15f) crackedBlock else baseBlock
-                                level.setBlock(pillarPos, pillarBlock.defaultBlockState(), 3)
+                for (offset in 0..6) {
+                    val checkPos = searchStart.below(offset)
+                    val blockBelow = level.getBlockState(checkPos.below())
+                    if (blockBelow.isSolidRender(level, checkPos.below())) {
+                        // Found ground, build solid pillar from ground up to platform level
+                        val actualGround = checkPos
+                        val depth = platformPos.y - actualGround.y
+
+                        // Fill ALL blocks from ground up to (but not including) the platform itself
+                        if (depth > 0) {
+                            for (d in 1..depth) {
+                                val pillarPos = actualGround.above(d)
+                                val currentState = level.getBlockState(pillarPos)
+
+                                // Only replace non-solid blocks
+                                if (!currentState.isSolidRender(level, pillarPos) || currentState.fluidState.isEmpty.not()) {
+                                    val pillarBlock = if (random.nextFloat() < 0.15f) crackedBlock else baseBlock
+                                    level.setBlock(pillarPos, pillarBlock.defaultBlockState(), 3)
+                                }
                             }
                         }
+                        foundGround = true
+                        break
                     }
                 }
 
@@ -629,16 +773,30 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
             val groundPos = findLocalGround(level, BlockPos(x, centerPos.y, z)) ?: continue
 
-            // Decorative column with capital
+            // Build support from centerPos down to actual ground
+            val targetY = centerPos.y
+            val supportDepth = targetY - groundPos.y
+            if (supportDepth > 0) {
+                for (d in 0..supportDepth) {
+                    val supportPos = groundPos.above(d)
+                    val currentState = level.getBlockState(supportPos)
+                    if (!currentState.isSolidRender(level, supportPos)) {
+                        level.setBlock(supportPos, baseBlock.defaultBlockState(), 3)
+                    }
+                }
+            }
+
+            // Decorative column with capital (build from centerPos level)
+            val columnBase = BlockPos(x, targetY, z)
             val height = 3 + random.nextInt(3)
             for (h in 0 until height) {
                 val block = if (random.nextFloat() < 0.2f) crackedBlock else baseBlock
-                level.setBlock(groundPos.above(h), block.defaultBlockState(), 3)
+                level.setBlock(columnBase.above(h), block.defaultBlockState(), 3)
             }
 
             // Add slab or stair capital on top
             if (random.nextBoolean()) {
-                level.setBlock(groundPos.above(height), slabBlock.defaultBlockState(), 3)
+                level.setBlock(columnBase.above(height), slabBlock.defaultBlockState(), 3)
             }
         }
 
@@ -800,9 +958,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
      * Finds ground level near a position (smaller search than main findGroundPosition).
      */
     private fun findLocalGround(level: WorldGenLevel, startPos: BlockPos): BlockPos? {
+        // First try looking down
         var currentPos = startPos
-
-        // Look down up to 15 blocks
         for (i in 0..15) {
             val blockBelow = level.getBlockState(currentPos.below())
             if (blockBelow.isSolidRender(level, currentPos.below())) {
@@ -811,8 +968,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             currentPos = currentPos.below()
         }
 
-        // Look up if we went too far down
-        currentPos = startPos
+        // If not found, try looking up from start position
+        currentPos = startPos.above()
         for (i in 0..15) {
             val blockBelow = level.getBlockState(currentPos.below())
             if (blockBelow.isSolidRender(level, currentPos.below())) {
