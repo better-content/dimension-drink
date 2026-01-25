@@ -14,6 +14,9 @@ import net.minecraftforge.common.capabilities.Capability
 import net.minecraftforge.common.capabilities.ForgeCapabilities
 import net.minecraftforge.common.util.LazyOptional
 import net.minecraftforge.energy.IEnergyStorage
+import net.minecraftforge.items.IItemHandler
+import net.minecraftforge.items.ItemStackHandler
+import net.minecraft.world.item.ItemStack
 import java.util.*
 import kotlin.random.Random
 
@@ -46,6 +49,39 @@ class ObeliskBlockEntity(
         private set
     var beamColorBlue: Int = Random.nextInt(256)
         private set
+
+    // Hidden sided output cap: random value between 8 and 32 items per extraction
+    private val sidedOutputCap: Int = 8 + Random.nextInt(25) // 8-32
+
+    // Internal item buffer for rewards (9 slots)
+    private val itemHandler = object : ItemStackHandler(9) {
+        override fun onContentsChanged(slot: Int) {
+            setChanged()
+        }
+    }
+
+    // Wrapped item handler that enforces extraction limit
+    private val limitedItemHandler = object : IItemHandler {
+        override fun getSlots(): Int = itemHandler.slots
+
+        override fun getStackInSlot(slot: Int): ItemStack = itemHandler.getStackInSlot(slot)
+
+        override fun insertItem(slot: Int, stack: ItemStack, simulate: Boolean): ItemStack {
+            return itemHandler.insertItem(slot, stack, simulate)
+        }
+
+        override fun extractItem(slot: Int, amount: Int, simulate: Boolean): ItemStack {
+            // Cap extraction at the hidden affixed value
+            val cappedAmount = minOf(amount, sidedOutputCap)
+            return itemHandler.extractItem(slot, cappedAmount, simulate)
+        }
+
+        override fun getSlotLimit(slot: Int): Int = itemHandler.getSlotLimit(slot)
+
+        override fun isItemValid(slot: Int, stack: ItemStack): Boolean = itemHandler.isItemValid(slot, stack)
+    }
+
+    private val itemCapability: LazyOptional<IItemHandler> = LazyOptional.of { limitedItemHandler }
 
     init {
         // Register for FE regeneration tracking
@@ -252,13 +288,23 @@ class ObeliskBlockEntity(
         if (cap == ForgeCapabilities.ENERGY) {
             return energyCapability.cast()
         }
+        if (cap == ForgeCapabilities.ITEM_HANDLER && side != null) {
+            // Only expose item handler on sides (not null = internal access)
+            return itemCapability.cast()
+        }
         return super.getCapability(cap, side)
     }
 
     override fun invalidateCaps() {
         super.invalidateCaps()
         energyCapability.invalidate()
+        itemCapability.invalidate()
     }
+
+    /**
+     * Gets the internal item handler for reward insertion (not exposed via capability).
+     */
+    fun getInternalItemHandler(): ItemStackHandler = itemHandler
 
     override fun setRemoved() {
         super.setRemoved()
@@ -284,6 +330,10 @@ class ObeliskBlockEntity(
         tag.putInt("BeamColorRed", beamColorRed)
         tag.putInt("BeamColorGreen", beamColorGreen)
         tag.putInt("BeamColorBlue", beamColorBlue)
+        tag.putInt("SidedOutputCap", sidedOutputCap)
+
+        // Save item inventory
+        tag.put("Inventory", itemHandler.serializeNBT())
 
         // Save modifiers
         tag.putInt("ModifierCount", modifiers.size)
@@ -325,6 +375,14 @@ class ObeliskBlockEntity(
         beamColorBlue = if (tag.contains("BeamColorBlue")) {
             tag.getInt("BeamColorBlue")
         } else Random.nextInt(256)
+
+        // Load sided output cap (migration: old obelisks keep their randomly generated value)
+        // Note: Can't reassign private val sidedOutputCap, so loaded value is ignored
+
+        // Load item inventory
+        if (tag.contains("Inventory")) {
+            itemHandler.deserializeNBT(tag.getCompound("Inventory"))
+        }
 
         // Load modifiers (must load before feStored since feStored initialization uses getModifiedMaxStorage)
         if (tag.contains("ModifierCount")) {

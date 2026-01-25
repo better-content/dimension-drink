@@ -3,9 +3,11 @@ package dev.yourname.obelisks.content
 import dev.yourname.obelisks.player.PlayerReturnHandler
 import dev.yourname.obelisks.player.getRunInfo
 import net.minecraft.core.BlockPos
+import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.util.RandomSource
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.InteractionResult
 import net.minecraft.world.entity.Entity
@@ -30,8 +32,28 @@ import net.minecraft.world.phys.shapes.VoxelShape
 class ReturnPadBlock(properties: Properties) : Block(properties) {
 
     companion object {
-        // Make it a pressure plate shape
-        private val SHAPE: VoxelShape = box(0.0, 0.0, 0.0, 16.0, 2.0, 16.0)
+        // Octagonal shape (remove corners to make it less square)
+        private val SHAPE: VoxelShape = run {
+            val shapes = mutableListOf<VoxelShape>()
+
+            // Center 14x2x14 square (most of the pad)
+            shapes.add(box(1.0, 0.0, 1.0, 15.0, 2.0, 15.0))
+
+            // Add edge pieces to create octagonal corners
+            // North edge
+            shapes.add(box(3.0, 0.0, 0.0, 13.0, 2.0, 1.0))
+            // South edge
+            shapes.add(box(3.0, 0.0, 15.0, 13.0, 2.0, 16.0))
+            // East edge
+            shapes.add(box(15.0, 0.0, 3.0, 16.0, 2.0, 13.0))
+            // West edge
+            shapes.add(box(0.0, 0.0, 3.0, 1.0, 2.0, 13.0))
+
+            // Combine all shapes
+            shapes.reduce { acc, shape ->
+                net.minecraft.world.phys.shapes.Shapes.or(acc, shape)
+            }
+        }
 
         /**
          * Validates that the return pad has a 3x3 obsidian ring around it.
@@ -140,5 +162,40 @@ class ReturnPadBlock(properties: Properties) : Block(properties) {
         super.neighborChanged(state, level, pos, block, fromPos, isMoving)
 
         // No longer validate structure on neighbor change - return pad persists regardless of structure
+    }
+
+    override fun animateTick(state: BlockState, level: Level, pos: BlockPos, random: RandomSource) {
+        // Spawn particles in a 3 block radius around the return pad
+        val radius = 3.0
+
+        // Spawn 3-5 particles per tick
+        val particleCount = 3 + random.nextInt(3)
+
+        repeat(particleCount) {
+            // Random position within 3 block radius
+            val angle = random.nextDouble() * Math.PI * 2
+            val distance = random.nextDouble() * radius
+            val offsetX = Math.cos(angle) * distance
+            val offsetZ = Math.sin(angle) * distance
+
+            // Random height above the pad (0.0 to 1.5 blocks)
+            val offsetY = random.nextDouble() * 1.5
+
+            val x = pos.x + 0.5 + offsetX
+            val y = pos.y + 0.125 + offsetY
+            val z = pos.z + 0.5 + offsetZ
+
+            // Upward velocity
+            val velocityX = (random.nextDouble() - 0.5) * 0.02
+            val velocityY = random.nextDouble() * 0.05 + 0.01
+            val velocityZ = (random.nextDouble() - 0.5) * 0.02
+
+            // Mix of portal and end rod particles for magical effect
+            if (random.nextBoolean()) {
+                level.addParticle(ParticleTypes.PORTAL, x, y, z, velocityX, velocityY, velocityZ)
+            } else {
+                level.addParticle(ParticleTypes.END_ROD, x, y, z, velocityX, velocityY, velocityZ)
+            }
+        }
     }
 }

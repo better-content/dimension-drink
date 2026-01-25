@@ -5,10 +5,12 @@ import com.google.gson.GsonBuilder
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.resources.ResourceLocation
 import net.minecraft.server.level.ServerLevel
+import net.minecraft.util.RandomSource
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.storage.loot.LootParams
 import net.minecraft.world.level.storage.loot.parameters.LootContextParamSets
+import net.minecraftforge.fml.ModList
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.random.Random
@@ -98,85 +100,40 @@ object LootGenerator {
     }
 
     /**
-     * Attempts to apply Apotheosis affixes if the mod is loaded.
-     * GUARANTEED affixes if Apotheosis is installed.
+     * Applies Apotheosis affixes if the mod is loaded.
+     * Uses reflection since Apotheosis is an optional dependency.
      */
     private fun tryApplyApotheosisAffixes(stack: ItemStack, tier: EquipmentTier): ItemStack {
-        try {
-            // Check if Apotheosis is loaded
-            Class.forName("dev.shadowsoffire.apotheosis.Apotheosis")
-
-            // Try to apply affixes via reflection
-            // Use AffixHelper to guarantee affixes
-            val affixHelper = Class.forName("dev.shadowsoffire.apotheosis.adventure.affix.AffixHelper")
-
-            // Rarity to quality mapping - use high values to guarantee affixes
-            val quality = when (tier) {
-                EquipmentTier.COMMON -> 1.0f      // 100% quality = guaranteed affixes
-                EquipmentTier.UNCOMMON -> 1.0f
-                EquipmentTier.RARE -> 1.0f
-                EquipmentTier.EPIC -> 1.0f
-                EquipmentTier.LEGENDARY -> 1.0f
-            }
-
-            // Try multiple methods to ensure affixes are applied
-            try {
-                // Method 1: Try applyRandomAffixes with guaranteed quality
-                val method1 = affixHelper.getMethod("applyRandomAffixes", ItemStack::class.java, net.minecraft.util.RandomSource::class.java, Float::class.javaPrimitiveType)
-                method1.invoke(null, stack, net.minecraft.util.RandomSource.create(), quality)
-            } catch (e1: Exception) {
-                try {
-                    // Method 2: Try alternative signature
-                    val method2 = affixHelper.getDeclaredMethods().firstOrNull {
-                        it.name.contains("affix", ignoreCase = true) && it.parameterCount >= 2
-                    }
-                    if (method2 != null) {
-                        method2.isAccessible = true
-                        when (method2.parameterCount) {
-                            2 -> method2.invoke(null, stack, net.minecraft.util.RandomSource.create())
-                            3 -> method2.invoke(null, stack, net.minecraft.util.RandomSource.create(), quality)
-                            else -> method2.invoke(null, stack, net.minecraft.util.RandomSource.create(), quality, true)
-                        }
-                    }
-                } catch (e2: Exception) {
-                    // If both methods fail, try to add affixes directly via NBT manipulation
-                    ensureAffixedViaRarity(stack, tier)
-                }
-            }
-
-            return stack
-        } catch (e: Exception) {
-            // Apotheosis not installed, return vanilla item
+        // Check if Apotheosis is loaded
+        if (!ModList.get().isLoaded("apotheosis")) {
             return stack
         }
-    }
 
-    /**
-     * Ensures item has Apotheosis rarity set, which typically triggers affix generation.
-     */
-    private fun ensureAffixedViaRarity(stack: ItemStack, tier: EquipmentTier) {
         try {
-            val rarityClass = Class.forName("dev.shadowsoffire.apotheosis.adventure.loot.LootRarity")
-            val rarities = rarityClass.enumConstants
-
-            // Map tier to Apotheosis rarity
-            val rarityIndex = when (tier) {
-                EquipmentTier.COMMON -> 0       // COMMON
-                EquipmentTier.UNCOMMON -> 1     // UNCOMMON
-                EquipmentTier.RARE -> 2         // RARE
-                EquipmentTier.EPIC -> 3         // EPIC
-                EquipmentTier.LEGENDARY -> 4    // MYTHIC
+            // Map tier to Apotheosis rarity ID
+            val rarityId = when (tier) {
+                EquipmentTier.COMMON -> "common"
+                EquipmentTier.UNCOMMON -> "uncommon"
+                EquipmentTier.RARE -> "rare"
+                EquipmentTier.EPIC -> "epic"
+                EquipmentTier.LEGENDARY -> "mythic"
             }
 
-            val rarity = rarities.getOrNull(rarityIndex) ?: rarities.last()
+            // Get LootRarity enum via reflection
+            val rarityClass = Class.forName("dev.shadowsoffire.apotheosis.adventure.loot.LootRarity")
+            val byIdMethod = rarityClass.getMethod("byId", String::class.java)
+            val rarity = byIdMethod.invoke(null, rarityId)
 
-            // Try to set rarity on the item
-            val lootHelper = Class.forName("dev.shadowsoffire.apotheosis.adventure.loot.LootCategory")
-            val methods = lootHelper.declaredMethods.filter { it.name.contains("forItem") }
-            // This would set the item's rarity, triggering affix generation
+            // Call randomAffixes method
+            val randomAffixesMethod = rarityClass.getMethod("randomAffixes",
+                ItemStack::class.java,
+                RandomSource::class.java)
+            randomAffixesMethod.invoke(rarity, stack, RandomSource.create())
 
+            return stack
         } catch (e: Exception) {
-            // Silently fail if unable to set rarity
+            // Apotheosis not installed or API changed, return vanilla item
+            return stack
         }
     }
 

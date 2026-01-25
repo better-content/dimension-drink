@@ -70,24 +70,30 @@ object SpawnPlatformGenerator {
     private fun buildPlatform(level: ServerLevel, center: BlockPos) {
         val radius = ObelisksConstants.PLATFORM_RADIUS // 3 (creates 7x7)
 
-        // PHASE 1: Build flat 7x7 obsidian floor
+        // PHASE 1: Build flat 7x7 bedrock floor (to resist dimension decay)
         for (x in -radius..radius) {
             for (z in -radius..radius) {
                 val floorPos = center.offset(x, 0, z)
-                level.setBlock(floorPos, Blocks.OBSIDIAN.defaultBlockState(), 11)
+                level.setBlock(floorPos, Blocks.BEDROCK.defaultBlockState(), 11)
             }
         }
 
-        // PHASE 2: Build 7x7x4 obsidian walls (hollow interior)
+        // PHASE 2: Build 7x7x4 obsidian walls (hollow interior, no corners)
         for (y in 1..4) {
             for (x in -radius..radius) {
                 for (z in -radius..radius) {
                     val pos = center.offset(x, y, z)
 
+                    // Check if this is a corner position (remove corners for octagonal shape)
+                    val isCorner = (x == -radius || x == radius) && (z == -radius || z == radius)
+
                     // Check if this is a wall position (edge of 7x7)
                     val isWall = x == -radius || x == radius || z == -radius || z == radius
 
-                    if (isWall) {
+                    if (isCorner) {
+                        // Remove corners - leave as air
+                        level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3)
+                    } else if (isWall) {
                         // Check for doorway positions (2x1 on each cardinal direction)
                         val isDoorway =
                             // North doorway (z = -radius, x = 0, y = 1-2)
@@ -112,11 +118,17 @@ object SpawnPlatformGenerator {
             }
         }
 
-        // PHASE 3: Build flat obsidian roof
+        // PHASE 3: Build flat obsidian roof (no corners for octagonal shape)
         for (x in -radius..radius) {
             for (z in -radius..radius) {
                 val roofPos = center.offset(x, 5, z)
-                level.setBlock(roofPos, Blocks.OBSIDIAN.defaultBlockState(), 11)
+
+                // Check if this is a corner position
+                val isCorner = (x == -radius || x == radius) && (z == -radius || z == radius)
+
+                if (!isCorner) {
+                    level.setBlock(roofPos, Blocks.OBSIDIAN.defaultBlockState(), 11)
+                }
             }
         }
 
@@ -141,7 +153,7 @@ object SpawnPlatformGenerator {
             return false
         }
 
-        // Check 2: Obsidian ring exists (8 blocks around return pad)
+        // Check 2: Bedrock ring exists (8 blocks around return pad)
         for (dx in -1..1) {
             for (dz in -1..1) {
                 if (dx == 0 && dz == 0) continue // Skip center
@@ -149,7 +161,7 @@ object SpawnPlatformGenerator {
                 val ringPos = returnPadPos.offset(dx, 0, dz)
                 val ringBlock = level.getBlockState(ringPos).block
 
-                if (ringBlock != Blocks.OBSIDIAN) {
+                if (ringBlock != Blocks.BEDROCK) {
                     return false
                 }
             }

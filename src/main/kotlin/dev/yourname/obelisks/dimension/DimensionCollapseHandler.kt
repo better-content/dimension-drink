@@ -280,15 +280,23 @@ object DimensionCollapseHandler {
 
             val currentBlock = level.getBlockState(targetPos).block
 
+            // Check if this bedrock is part of the spawn platform (within 7x7 area centered on spawn)
+            val isPlatformBedrock = if (currentBlock == Blocks.BEDROCK) {
+                val spawnPos = runData.spawnPos.below(2) // Platform ground level is 2 below spawn
+                val dx = Math.abs(targetPos.x - spawnPos.x)
+                val dz = Math.abs(targetPos.z - spawnPos.z)
+                val dy = targetPos.y - spawnPos.y
+                // Check if within 7x7 platform area (radius 3) at ground level (Y=0)
+                dx <= 3 && dz <= 3 && dy == 0
+            } else false
+
             if (currentBlock != Blocks.AIR &&
-                currentBlock != Blocks.BEDROCK &&
                 currentBlock != Blocks.BARRIER &&
                 currentBlock != Blocks.WATER &&
                 currentBlock != Blocks.LAVA &&
-                currentBlock != Blocks.OBSIDIAN &&
-                currentBlock != Blocks.CRYING_OBSIDIAN &&
                 currentBlock != dev.yourname.obelisks.registry.ModBlocks.RETURN_PAD.get() &&
-                !currentBlock.defaultBlockState().isAir) {
+                !currentBlock.defaultBlockState().isAir &&
+                !isPlatformBedrock) {
 
                 level.setBlock(targetPos, Blocks.AIR.defaultBlockState(), 3)
                 deleted++
@@ -358,13 +366,21 @@ object DimensionCollapseHandler {
                         val targetPos = BlockPos(x + dx, y, z + dz)
                         val currentBlock = level.getBlockState(targetPos).block
 
+                        // Check if this bedrock is part of the spawn platform
+                        val isPlatformBedrock = if (currentBlock == Blocks.BEDROCK) {
+                            val spawnPos = runData.spawnPos.below(2)
+                            val pdx = Math.abs(targetPos.x - spawnPos.x)
+                            val pdz = Math.abs(targetPos.z - spawnPos.z)
+                            val pdy = targetPos.y - spawnPos.y
+                            pdx <= 3 && pdz <= 3 && pdy == 0
+                        } else false
+
                         if (currentBlock != Blocks.BARRIER &&
                             currentBlock != Blocks.AIR &&
                             currentBlock != Blocks.WATER &&
                             currentBlock != Blocks.LAVA &&
-                            currentBlock != Blocks.OBSIDIAN &&
-                            currentBlock != Blocks.CRYING_OBSIDIAN &&
-                            currentBlock != dev.yourname.obelisks.registry.ModBlocks.RETURN_PAD.get()) {
+                            currentBlock != dev.yourname.obelisks.registry.ModBlocks.RETURN_PAD.get() &&
+                            !isPlatformBedrock) {
 
                             // Seal adjacent fluids before removing block
                             sealAdjacentFluids(level, targetPos)

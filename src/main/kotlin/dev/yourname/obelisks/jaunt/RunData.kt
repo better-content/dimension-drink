@@ -21,7 +21,8 @@ data class RunData(
     val activePlayers: MutableSet<UUID> = mutableSetOf(),
     var ticksElapsed: Long = 0,  // Track how long the run has been active
     var drainMultiplier: Double = 1.0,  // Current exponential drain multiplier
-    var monstersKilled: Int = 0  // Track monster kills for emerald rewards
+    var monstersKilled: Int = 0,  // Track monster kills for emerald rewards
+    var totalDamageDealt: Float = 0f  // Track total damage dealt for rewards
 ) {
     fun toNbt(): CompoundTag {
         val tag = CompoundTag()
@@ -35,6 +36,7 @@ data class RunData(
         tag.putLong("TicksElapsed", ticksElapsed)
         tag.putDouble("DrainMultiplier", drainMultiplier)
         tag.putInt("MonstersKilled", monstersKilled)
+        tag.putFloat("TotalDamageDealt", totalDamageDealt)
 
         val playersTag = CompoundTag()
         activePlayers.forEachIndexed { idx, playerId ->
@@ -60,6 +62,7 @@ data class RunData(
             val ticksElapsed = if (tag.contains("TicksElapsed")) tag.getLong("TicksElapsed") else 0L
             val drainMultiplier = if (tag.contains("DrainMultiplier")) tag.getDouble("DrainMultiplier") else 1.0
             val monstersKilled = if (tag.contains("MonstersKilled")) tag.getInt("MonstersKilled") else 0
+            val totalDamageDealt = if (tag.contains("TotalDamageDealt")) tag.getFloat("TotalDamageDealt") else 0f
 
             val activePlayers = mutableSetOf<UUID>()
             if (tag.contains("ActivePlayers")) {
@@ -70,7 +73,7 @@ data class RunData(
                 }
             }
 
-            return RunData(obeliskId, runId, dimensionId, dimKey, spawnPos, originObeliskPos, originDimension, activePlayers, ticksElapsed, drainMultiplier, monstersKilled)
+            return RunData(obeliskId, runId, dimensionId, dimKey, spawnPos, originObeliskPos, originDimension, activePlayers, ticksElapsed, drainMultiplier, monstersKilled, totalDamageDealt)
         }
     }
 }

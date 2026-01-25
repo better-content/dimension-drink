@@ -21,6 +21,9 @@ dependencies {
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-jdk8:1.7.3"
     implementation fg.deobf("curse.maven:kotlin-for-forge-351264:4578885")
+
+    // Apotheosis for affix system (optional at runtime)
+    // Users must install Apotheosis separately to get affixes on gear
 }
 
 repositories {
@@ -28,6 +31,7 @@ repositories {
     maven { url = "https://maven.minecraftforge.net/" }
     maven { url = "https://cursemaven.com" }     // REQUIRED for KFF
     maven { url = "https://maven.quiltmc.org/repository/release/" } // OPTIONAL, alternative KFF repo
+    maven { url = "https://maven.theillusivec4.top/" } // For Placebo (Apotheosis dependency)
 }
 
 println "Java: ${System.getProperty 'java.version'}, JVM: ${System.getProperty 'java.vm.version'} (${System.getProperty 'java.vendor'}), Arch: ${System.getProperty 'os.arch'}"

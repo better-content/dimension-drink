@@ -2,13 +2,44 @@ package dev.yourname.obelisks.jaunt
 
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.entity.MobCategory
+import net.minecraftforge.event.entity.living.LivingDamageEvent
 import net.minecraftforge.event.entity.living.LivingDeathEvent
 import net.minecraftforge.eventbus.api.SubscribeEvent
 
 /**
- * Tracks monster kills during runs for emerald reward calculation.
+ * Tracks damage dealt and monster kills during runs for reward calculation.
  */
 object MonsterKillHandler {
+
+    @SubscribeEvent
+    fun onLivingDamage(event: LivingDamageEvent) {
+        val victim = event.entity
+
+        // Only process server-side
+        if (victim.level().isClientSide) return
+
+        // Only count damage to monsters
+        if (victim.type.category != MobCategory.MONSTER) return
+
+        // Get the attacker
+        val damageSource = event.source
+        val attacker = damageSource.entity
+
+        // Must be damaged by a player
+        if (attacker !is ServerPlayer) return
+
+        // Check if the player is in an active run
+        val server = attacker.server
+        val runManager = RunManager.get(server)
+        val runData = runManager.getPlayerRun(attacker.uuid) ?: return
+
+        // Verify the damage happened in the run dimension
+        if (victim.level().dimension() != runData.runDimensionKey) return
+
+        // Track damage dealt
+        runData.totalDamageDealt += event.amount
+        runManager.setDirty()
+    }
 
     @SubscribeEvent
     fun onLivingDeath(event: LivingDeathEvent) {

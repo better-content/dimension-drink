@@ -43,6 +43,7 @@ object ModBlocks {
                 .strength(50.0f, 1200.0f) // Obsidian hardness
                 .requiresCorrectToolForDrops()
                 .noOcclusion()
+                .lightLevel { 15 } // Full brightness glow
         )
     }
 }

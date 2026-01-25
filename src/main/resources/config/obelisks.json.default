@@ -116,11 +116,11 @@
   },
 
   "feSystem": {
-    "maxFEStorage": 3600,
-    "baseFEDrainPerTick": 1,
-    "perPlayerFEDrain": 2,
-    "feRegenPerTick": 1,
-    "drainExponentialFactor": 0.00005,
+    "maxFEStorage": 360000,
+    "baseFEDrainPerTick": 100,
+    "perPlayerFEDrain": 200,
+    "feRegenPerTick": 100,
+    "drainExponentialFactor": 0.0005,
     "drainExponentialIntervalTicks": 20
   },
 

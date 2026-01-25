@@ -31,23 +31,7 @@ class ObelisksMod {
         // Register network packets
         dev.yourname.obelisks.network.ModNetwork.register()
 
-        // Client-side setup
-        modBus.addListener { event: net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent ->
-            event.enqueueWork {
-                net.minecraft.client.gui.screens.MenuScreens.register(
-                    dev.yourname.obelisks.registry.ModMenuTypes.OBELISK_MENU.get()
-                ) { menu, inventory, title ->
-                    dev.yourname.obelisks.client.ObeliskScreen(menu, inventory, title)
-                }
-
-                // Register block entity renderer for beam rendering
-                net.minecraft.client.renderer.blockentity.BlockEntityRenderers.register(
-                    dev.yourname.obelisks.registry.ModBlockEntities.OBELISK.get()
-                ) { context ->
-                    dev.yourname.obelisks.client.ObeliskBlockEntityRenderer(context)
-                }
-            }
-        }
+        // Client-side setup is handled in dev.yourname.obelisks.client.ClientSetup
 
         // Register event handlers
         MinecraftForge.EVENT_BUS.register(this)

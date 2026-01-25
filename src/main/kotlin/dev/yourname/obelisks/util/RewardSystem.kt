@@ -17,19 +17,26 @@ import net.minecraft.world.item.ItemStack
 object RewardSystem {
 
     /**
-     * Spawns loot rewards at the obelisk based on monsters killed during the run.
+     * Spawns loot rewards at the obelisk based on damage dealt during the run.
      * Uses configurable loot tables for flexible reward systems.
+     * Items go to internal buffer if automation connected, otherwise eject as entities.
+     *
+     * Reward scaling: 1 loot roll per 20 damage dealt (equivalent to 1 zombie kill).
      */
     fun spawnRewards(level: ServerLevel, pos: BlockPos, runData: RunData) {
-        val monstersKilled = runData.monstersKilled
-        if (monstersKilled == 0) return
+        val damageDealt = runData.totalDamageDealt
+        if (damageDealt <= 0f) return
+
+        // Calculate loot rolls: 1 roll per 20 damage dealt (1 zombie = 20 HP)
+        val lootRolls = (damageDealt / 20f).toInt().coerceAtLeast(0)
+        if (lootRolls == 0) return
 
         // Get dimension config for loot table override
         val dimConfig = ConfigManager.getDimensionConfig(runData.dimensionId)
 
-        // Generate loot for each kill using loot table (dimension-specific if configured)
+        // Generate loot for each 20 damage dealt using loot table (dimension-specific if configured)
         val allLoot = mutableListOf<ItemStack>()
-        repeat(monstersKilled) {
+        repeat(lootRolls) {
             val loot = LootGenerator.generateLootForKill(level, dimConfig)
             allLoot.addAll(loot)
         }
@@ -38,25 +45,41 @@ object RewardSystem {
             return
         }
 
-        // Check for adjacent inventories
-        val adjacentInventory = findAdjacentInventory(level, pos)
+        // Get obelisk block entity
+        val obeliskBE = level.getBlockEntity(pos) as? dev.yourname.obelisks.content.ObeliskBlockEntity
 
-        if (adjacentInventory != null) {
-            // Export to adjacent inventory
+        // Check if any automation (item handler) is connected to any side
+        val hasAutomation = if (obeliskBE != null) {
+            Direction.values().any { side ->
+                val adjacentPos = pos.relative(side)
+                val adjacentBE = level.getBlockEntity(adjacentPos)
+                adjacentBE?.getCapability(net.minecraftforge.common.capabilities.ForgeCapabilities.ITEM_HANDLER, side.opposite)?.isPresent == true
+            }
+        } else false
+
+        if (hasAutomation && obeliskBE != null) {
+            // Route to internal buffer for automation to extract
+            val internalInventory = obeliskBE.getInternalItemHandler()
             allLoot.forEach { stack ->
-                val remaining = insertIntoInventory(adjacentInventory, stack)
+                var remaining = stack.copy()
+
+                // Try to insert into internal inventory
+                for (i in 0 until internalInventory.slots) {
+                    if (remaining.isEmpty) break
+                    remaining = internalInventory.insertItem(i, remaining, false)
+                }
+
+                // If internal inventory is full, eject remainder
                 if (!remaining.isEmpty) {
-                    // If inventory is full, eject the remainder
                     ejectItem(level, pos, remaining)
                 }
-                // Play jingley sound for each item
+
                 playJingleSound(level, pos)
             }
         } else {
-            // No adjacent inventory, eject all items
+            // No automation connected - eject all items directly as entities
             allLoot.forEach { stack ->
                 ejectItem(level, pos, stack)
-                // Play jingley sound for each item
                 playJingleSound(level, pos)
             }
         }
