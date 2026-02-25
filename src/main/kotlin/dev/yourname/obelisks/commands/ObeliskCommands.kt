@@ -21,6 +21,8 @@ import net.minecraftforge.fml.common.Mod
  * - /obelisk return — returns the executing player to their origin obelisk
  * - /obelisk cleanup_run <runId> — force-cleans up a specific run
  * - /obelisk info — shows run/FE info for the executing player
+ * - /obelisk check_modifiers — shows modifier stats for the obelisk you're looking at
+ * - /obelisk locate — finds the nearest obelisk meteor structure
  */
 @Mod.EventBusSubscriber(modid = MOD_ID)
 object ObeliskCommands {
@@ -176,6 +178,59 @@ object ObeliskCommands {
                     }
                 } else {
                     source.sendFailure(Component.literal("Not looking at a block!"))
+                }
+                1
+            }
+        )
+
+        // locate - finds nearest obelisk
+        root.then(
+            Commands.literal("locate").executes { ctx ->
+                val source = ctx.source
+                val level = source.level
+                val startPos = BlockPos.containing(source.position)
+
+                source.sendSuccess({ Component.literal("Searching for obelisks...") }, false)
+
+                var nearestObelisk: BlockPos? = null
+                var nearestDistance = Double.MAX_VALUE
+                val searchRadius = 128 // Search in chunks
+
+                // Search in a spiral pattern outward from player
+                for (radius in 0..searchRadius step 16) {
+                    for (dx in -radius..radius step 16) {
+                        for (dz in -radius..radius step 16) {
+                            val chunkX = (startPos.x + dx) shr 4
+                            val chunkZ = (startPos.z + dz) shr 4
+
+                            val chunk = level.getChunk(chunkX, chunkZ)
+                            val blockEntities = chunk.blockEntities
+
+                            for ((pos, be) in blockEntities) {
+                                if (be is dev.yourname.obelisks.content.ObeliskBlockEntity) {
+                                    val distance = startPos.distSqr(pos)
+                                    if (distance < nearestDistance) {
+                                        nearestDistance = distance
+                                        nearestObelisk = pos.immutable()
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // If we found one, stop searching
+                    if (nearestObelisk != null) break
+                }
+
+                if (nearestObelisk != null) {
+                    val dist = kotlin.math.sqrt(nearestDistance).toInt()
+                    val blockEntity = level.getBlockEntity(nearestObelisk) as? dev.yourname.obelisks.content.ObeliskBlockEntity
+                    val dimensionType = blockEntity?.dimensionDisplayName ?: "Unknown"
+                    source.sendSuccess({
+                        Component.literal("The nearest obelisk ($dimensionType) is at ${nearestObelisk.x}, ${nearestObelisk.y}, ${nearestObelisk.z} (~$dist blocks away)")
+                    }, false)
+                } else {
+                    source.sendFailure(Component.literal("No obelisks found within $searchRadius chunks"))
                 }
                 1
             }

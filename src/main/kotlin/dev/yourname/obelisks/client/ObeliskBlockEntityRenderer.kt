@@ -39,11 +39,14 @@ class ObeliskBlockEntityRenderer(context: BlockEntityRendererProvider.Context) :
         packedLight: Int,
         packedOverlay: Int
     ) {
-        // Only render if beam should be visible
-        if (!shouldRenderBeam(blockEntity)) return
-
         val level = blockEntity.level ?: return
         val gameTime = level.gameTime
+
+        // Render subtle glow overlay on the block itself
+        renderBlockGlow(blockEntity, poseStack, bufferSource, gameTime, partialTick)
+
+        // Only render beam if it should be visible
+        if (!shouldRenderBeam(blockEntity)) return
 
         // Calculate beam height (from block to build limit)
         val beamHeight = (MAX_RENDER_Y - blockEntity.blockPos.y).toFloat()
@@ -74,6 +77,121 @@ class ObeliskBlockEntityRenderer(context: BlockEntityRendererProvider.Context) :
         )
 
         poseStack.popPose()
+    }
+
+    /**
+     * Renders a subtle glowing overlay on the obelisk block.
+     */
+    private fun renderBlockGlow(
+        blockEntity: ObeliskBlockEntity,
+        poseStack: PoseStack,
+        bufferSource: MultiBufferSource,
+        gameTime: Long,
+        partialTick: Float
+    ) {
+        val energyPercent = blockEntity.getEnergyPercent()
+        if (energyPercent <= 0.0) return // No glow when no energy
+
+        // Pulsing glow intensity based on time and energy level
+        val time = (gameTime + partialTick) / 20.0
+        val pulse = (sin(time * 2.0) * 0.3 + 0.7).toFloat() // Pulse between 0.4 and 1.0
+        val alpha = (energyPercent * 0.4 * pulse).toFloat() // Max 40% opacity when fully charged
+
+        if (alpha <= 0.01f) return
+
+        poseStack.pushPose()
+
+        // Slightly expand the overlay to create glow effect
+        val expansion = 0.001f
+        poseStack.translate(-expansion, -expansion, -expansion)
+        poseStack.scale(1.0f + expansion * 2, 1.0f + expansion * 2, 1.0f + expansion * 2)
+
+        val matrix = poseStack.last().pose()
+        val normal = poseStack.last().normal()
+
+        // Use translucent render type for glow
+        val renderType = RenderType.entityTranslucent(BEAM_LOCATION)
+        val consumer = bufferSource.getBuffer(renderType)
+
+        // Get obelisk color
+        val color = getBeamColor(blockEntity)
+
+        // Render glowing cube overlay (simplified - just the visible faces)
+        renderGlowCube(consumer, matrix, normal, color, alpha)
+
+        poseStack.popPose()
+    }
+
+    /**
+     * Renders a simple glowing cube overlay.
+     */
+    private fun renderGlowCube(
+        consumer: VertexConsumer,
+        matrix: Matrix4f,
+        normalMatrix: org.joml.Matrix3f,
+        color: FloatArray,
+        alpha: Float
+    ) {
+        // Simplified cube rendering - 6 faces
+        val min = 0f
+        val max = 1f
+
+        // Bottom face (y = 0)
+        addGlowVertex(consumer, matrix, normalMatrix, min, min, min, color, alpha, 0f, -1f, 0f)
+        addGlowVertex(consumer, matrix, normalMatrix, max, min, min, color, alpha, 0f, -1f, 0f)
+        addGlowVertex(consumer, matrix, normalMatrix, max, min, max, color, alpha, 0f, -1f, 0f)
+        addGlowVertex(consumer, matrix, normalMatrix, min, min, max, color, alpha, 0f, -1f, 0f)
+
+        // Top face (y = 1)
+        addGlowVertex(consumer, matrix, normalMatrix, min, max, min, color, alpha, 0f, 1f, 0f)
+        addGlowVertex(consumer, matrix, normalMatrix, min, max, max, color, alpha, 0f, 1f, 0f)
+        addGlowVertex(consumer, matrix, normalMatrix, max, max, max, color, alpha, 0f, 1f, 0f)
+        addGlowVertex(consumer, matrix, normalMatrix, max, max, min, color, alpha, 0f, 1f, 0f)
+
+        // North face (z = 0)
+        addGlowVertex(consumer, matrix, normalMatrix, min, min, min, color, alpha, 0f, 0f, -1f)
+        addGlowVertex(consumer, matrix, normalMatrix, min, max, min, color, alpha, 0f, 0f, -1f)
+        addGlowVertex(consumer, matrix, normalMatrix, max, max, min, color, alpha, 0f, 0f, -1f)
+        addGlowVertex(consumer, matrix, normalMatrix, max, min, min, color, alpha, 0f, 0f, -1f)
+
+        // South face (z = 1)
+        addGlowVertex(consumer, matrix, normalMatrix, min, min, max, color, alpha, 0f, 0f, 1f)
+        addGlowVertex(consumer, matrix, normalMatrix, max, min, max, color, alpha, 0f, 0f, 1f)
+        addGlowVertex(consumer, matrix, normalMatrix, max, max, max, color, alpha, 0f, 0f, 1f)
+        addGlowVertex(consumer, matrix, normalMatrix, min, max, max, color, alpha, 0f, 0f, 1f)
+
+        // West face (x = 0)
+        addGlowVertex(consumer, matrix, normalMatrix, min, min, min, color, alpha, -1f, 0f, 0f)
+        addGlowVertex(consumer, matrix, normalMatrix, min, min, max, color, alpha, -1f, 0f, 0f)
+        addGlowVertex(consumer, matrix, normalMatrix, min, max, max, color, alpha, -1f, 0f, 0f)
+        addGlowVertex(consumer, matrix, normalMatrix, min, max, min, color, alpha, -1f, 0f, 0f)
+
+        // East face (x = 1)
+        addGlowVertex(consumer, matrix, normalMatrix, max, min, min, color, alpha, 1f, 0f, 0f)
+        addGlowVertex(consumer, matrix, normalMatrix, max, max, min, color, alpha, 1f, 0f, 0f)
+        addGlowVertex(consumer, matrix, normalMatrix, max, max, max, color, alpha, 1f, 0f, 0f)
+        addGlowVertex(consumer, matrix, normalMatrix, max, min, max, color, alpha, 1f, 0f, 0f)
+    }
+
+    /**
+     * Adds a vertex for the glow overlay.
+     */
+    private fun addGlowVertex(
+        consumer: VertexConsumer,
+        matrix: Matrix4f,
+        normalMatrix: org.joml.Matrix3f,
+        x: Float, y: Float, z: Float,
+        color: FloatArray,
+        alpha: Float,
+        normalX: Float, normalY: Float, normalZ: Float
+    ) {
+        consumer.vertex(matrix, x, y, z)
+            .color(color[0], color[1], color[2], alpha)
+            .uv(0f, 0f) // No texture
+            .overlayCoords(0, 10)
+            .uv2(LightTexture.FULL_BRIGHT) // Full bright glow
+            .normal(normalMatrix, normalX, normalY, normalZ)
+            .endVertex()
     }
 
     /**

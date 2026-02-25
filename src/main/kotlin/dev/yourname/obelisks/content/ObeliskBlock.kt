@@ -20,6 +20,8 @@ import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.EntityBlock
 import net.minecraft.world.level.block.RenderShape
 import net.minecraft.world.level.block.entity.BlockEntity
+import net.minecraft.world.level.block.entity.BlockEntityTicker
+import net.minecraft.world.level.block.entity.BlockEntityType
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.phys.BlockHitResult
 
@@ -30,6 +32,20 @@ class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
 
     override fun getRenderShape(state: BlockState): RenderShape =
         RenderShape.MODEL
+
+    override fun <T : BlockEntity> getTicker(
+        level: Level,
+        state: BlockState,
+        blockEntityType: BlockEntityType<T>
+    ): BlockEntityTicker<T>? {
+        return if (level.isClientSide) {
+            BlockEntityTicker { lvl, pos, st, be ->
+                if (be is ObeliskBlockEntity) {
+                    ObeliskBlockEntity.clientTick(lvl, pos, st, be)
+                }
+            }
+        } else null
+    }
 
     override fun use(
         state: BlockState,

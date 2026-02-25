@@ -437,120 +437,127 @@ class ObeliskBlockEntity(
     }
 
     companion object {
-        // Cache for particle spawn positions to avoid recalculating every tick
-        private val particleSpawnCache = mutableMapOf<BlockPos, List<BlockPos>>()
-
         /**
-         * Client-side tick method for spawning ambient particles from nearby ground blocks.
+         * Client-side tick method for spawning ambient particles and sounds.
          */
         fun clientTick(level: Level, pos: BlockPos, state: BlockState, blockEntity: ObeliskBlockEntity) {
             if (!level.isClientSide) return
 
             val energyPercent = blockEntity.getEnergyPercent()
 
-            // Spawn particles from nearby ground blocks
-            if (level.random.nextFloat() > 0.4f) return
+            // Play ambient humming sound when fully charged
+            playAmbientHum(level, pos, blockEntity, energyPercent)
 
-            // Get or generate particle spawn positions
-            val spawnPositions = particleSpawnCache.getOrPut(pos) {
-                findNearbyGroundBlocks(level, pos)
-            }
-
-            if (spawnPositions.isEmpty()) return
-
-            // Pick random ground block positions to spawn particles from
-            val particleCount = if (energyPercent > 0.75) 3 else if (energyPercent > 0.25) 2 else 1
-
-            for (i in 0 until particleCount) {
-                val groundPos = spawnPositions.random()
-
-                // Spawn particle from this ground block
-                val x = groundPos.x + 0.3 + level.random.nextDouble() * 0.4
-                val y = groundPos.y + 1.0 + level.random.nextDouble() * 0.2
-                val z = groundPos.z + 0.3 + level.random.nextDouble() * 0.4
-
-                // Velocity - particles drift upward
-                val xSpeed = (level.random.nextDouble() - 0.5) * 0.015
-                val ySpeed = level.random.nextDouble() * 0.06 + 0.03
-                val zSpeed = (level.random.nextDouble() - 0.5) * 0.015
-
-                // Choose particle type based on state
-                val particleType = when {
-                    blockEntity.isRunActive() -> ParticleTypes.PORTAL // Purple particles when run is active
-                    energyPercent >= 1.0 && !blockEntity.isOnCooldown() -> ParticleTypes.WHITE_ASH // Dust when fully charged and ready
-                    energyPercent > 0.5 -> ParticleTypes.END_ROD // White particles when charged
-                    energyPercent > 0.25 -> ParticleTypes.ENCHANT // Enchantment particles
-                    else -> ParticleTypes.SMOKE // Smoke when low energy
-                }
-
-                level.addParticle(particleType, x, y, z, xSpeed, ySpeed, zSpeed)
-            }
-
-            // Extra dust particles when fully charged and ready - more frequent and numerous
-            if (energyPercent >= 1.0 && !blockEntity.isOnCooldown() && level.random.nextFloat() > 0.3f) {
-                val extraDustCount = 2 + level.random.nextInt(2) // 2-3 extra dust particles
-                for (i in 0 until extraDustCount) {
-                    val groundPos = spawnPositions.random()
-                    val x = groundPos.x + 0.2 + level.random.nextDouble() * 0.6
-                    val y = groundPos.y + 1.0 + level.random.nextDouble() * 0.3
-                    val z = groundPos.z + 0.2 + level.random.nextDouble() * 0.6
-
-                    // Slower upward drift for dust
-                    val xSpeed = (level.random.nextDouble() - 0.5) * 0.01
-                    val ySpeed = level.random.nextDouble() * 0.04 + 0.02
-                    val zSpeed = (level.random.nextDouble() - 0.5) * 0.01
-
-                    level.addParticle(ParticleTypes.WHITE_ASH, x, y, z, xSpeed, ySpeed, zSpeed)
-                }
-            }
-
-            // Extra effect when on cooldown - flame particles from random ground blocks
-            if (blockEntity.isOnCooldown() && level.random.nextFloat() > 0.6f) {
-                val groundPos = spawnPositions.random()
-                val x = groundPos.x + 0.3 + level.random.nextDouble() * 0.4
-                val y = groundPos.y + 1.0
-                val z = groundPos.z + 0.3 + level.random.nextDouble() * 0.4
-                level.addParticle(ParticleTypes.FLAME, x, y, z, 0.0, 0.02, 0.0)
-            }
+            // Spawn interdimensional particles that get sucked into the obelisk
+            spawnSuckingParticles(level, pos, blockEntity, energyPercent)
         }
 
         /**
-         * Finds solid ground blocks near the obelisk for particle spawning.
-         * Looks in a radius around the obelisk and finds blocks that are solid with air above.
+         * Plays ambient humming sound when obelisk is fully charged and ready.
          */
-        private fun findNearbyGroundBlocks(level: Level, obeliskPos: BlockPos): List<BlockPos> {
-            val groundBlocks = mutableListOf<BlockPos>()
-            val radius = 8
-            val searchHeight = 10
+        private fun playAmbientHum(level: Level, pos: BlockPos, blockEntity: ObeliskBlockEntity, energyPercent: Double) {
+            // Only hum when fully charged and ready (not on cooldown, not in active run)
+            if (energyPercent < 1.0 || blockEntity.isOnCooldown() || blockEntity.isRunActive()) return
 
-            for (dx in -radius..radius) {
-                for (dz in -radius..radius) {
-                    // Skip if too close to obelisk center
-                    if (dx * dx + dz * dz < 4) continue
+            // Play sound occasionally (every ~3 seconds on average)
+            if (level.random.nextFloat() > 0.016f) return
 
-                    // Search down from obelisk level to find ground
-                    for (dy in 2 downTo -searchHeight) {
-                        val checkPos = obeliskPos.offset(dx, dy, dz)
-                        val blockState = level.getBlockState(checkPos)
-                        val aboveState = level.getBlockState(checkPos.above())
+            // Play beacon ambient sound for energetic hum
+            level.playLocalSound(
+                pos.x + 0.5,
+                pos.y + 0.5,
+                pos.z + 0.5,
+                net.minecraft.sounds.SoundEvents.BEACON_AMBIENT,
+                net.minecraft.sounds.SoundSource.BLOCKS,
+                0.25f, // Quiet volume
+                0.8f + level.random.nextFloat() * 0.2f, // Lower pitch (0.8-1.0) for deeper hum
+                false
+            )
+        }
 
-                        // Found a solid block with air above it
-                        if (blockState.isSolidRender(level, checkPos) && 
-                            aboveState.isAir && 
-                            blockState.fluidState.isEmpty) {
-                            groundBlocks.add(checkPos)
-                            break
-                        }
+        /**
+         * Spawns spooky interdimensional particles that spiral and get sucked into the obelisk.
+         */
+        private fun spawnSuckingParticles(level: Level, pos: BlockPos, blockEntity: ObeliskBlockEntity, energyPercent: Double) {
+            val centerX = pos.x + 0.5
+            val centerY = pos.y + 0.5
+            val centerZ = pos.z + 0.5
+
+            // More particles when active or fully charged
+            val particleCount = when {
+                blockEntity.isRunActive() -> 6
+                energyPercent >= 1.0 && !blockEntity.isOnCooldown() -> 4
+                energyPercent > 0.5 -> 3
+                energyPercent > 0.25 -> 2
+                else -> 1
+            }
+
+            // Only spawn some of the time
+            if (level.random.nextFloat() > 0.7f) return
+
+            for (i in 0 until particleCount) {
+                // Spawn particles in a sphere around the obelisk
+                val radius = 2.0 + level.random.nextDouble() * 2.5
+                val theta = level.random.nextDouble() * Math.PI * 2.0
+                val phi = level.random.nextDouble() * Math.PI
+
+                val offsetX = radius * Math.sin(phi) * Math.cos(theta)
+                val offsetY = radius * Math.sin(phi) * Math.sin(theta)
+                val offsetZ = radius * Math.cos(phi)
+
+                val spawnX = centerX + offsetX
+                val spawnY = centerY + offsetY
+                val spawnZ = centerZ + offsetZ
+
+                // Velocity towards the obelisk center (sucking effect)
+                val pullStrength = 0.08 + level.random.nextDouble() * 0.04
+                val velocityX = -offsetX * pullStrength / radius
+                val velocityY = -offsetY * pullStrength / radius
+                val velocityZ = -offsetZ * pullStrength / radius
+
+                // Choose spooky particle types
+                val particleType = when {
+                    blockEntity.isRunActive() -> {
+                        // Mix of portal and reverse portal when run is active
+                        if (level.random.nextBoolean()) ParticleTypes.PORTAL else ParticleTypes.REVERSE_PORTAL
+                    }
+                    energyPercent >= 1.0 && !blockEntity.isOnCooldown() -> {
+                        // Mix of enchant glyphs and soul when fully charged
+                        if (level.random.nextFloat() < 0.7f) ParticleTypes.ENCHANT else ParticleTypes.SOUL
+                    }
+                    energyPercent > 0.5 -> {
+                        // Warped spores and portal for interdimensional feel
+                        if (level.random.nextFloat() < 0.6f) ParticleTypes.WARPED_SPORE else ParticleTypes.PORTAL
+                    }
+                    else -> {
+                        // Smoke and ash when low energy
+                        if (level.random.nextBoolean()) ParticleTypes.SMOKE else ParticleTypes.ASH
                     }
                 }
+
+                level.addParticle(particleType, spawnX, spawnY, spawnZ, velocityX, velocityY, velocityZ)
             }
 
-            // If we found no ground blocks, use the obelisk position as fallback
-            if (groundBlocks.isEmpty()) {
-                groundBlocks.add(obeliskPos.below(2))
-            }
+            // Extra reverse portal particles when run is active for extra spookiness
+            if (blockEntity.isRunActive() && level.random.nextFloat() > 0.5f) {
+                val radius = 3.0
+                val theta = level.random.nextDouble() * Math.PI * 2.0
+                val phi = level.random.nextDouble() * Math.PI
 
-            return groundBlocks
+                val offsetX = radius * Math.sin(phi) * Math.cos(theta)
+                val offsetY = radius * Math.sin(phi) * Math.sin(theta)
+                val offsetZ = radius * Math.cos(phi)
+
+                val spawnX = centerX + offsetX
+                val spawnY = centerY + offsetY
+                val spawnZ = centerZ + offsetZ
+
+                val velocityX = -offsetX * 0.1 / radius
+                val velocityY = -offsetY * 0.1 / radius
+                val velocityZ = -offsetZ * 0.1 / radius
+
+                level.addParticle(ParticleTypes.REVERSE_PORTAL, spawnX, spawnY, spawnZ, velocityX, velocityY, velocityZ)
+            }
         }
     }
 }

@@ -331,7 +331,9 @@ class EnterDimensionCommand(
     }
 
     private fun teleportPlayer(player: ServerPlayer, targetLevel: ServerLevel, spawnPos: BlockPos) {
-        
+        // Spawn spooky particles at departure point
+        spawnTeleportParticles(originLevel, player.position())
+
         player.changeDimension(targetLevel, object : net.minecraftforge.common.util.ITeleporter {
             override fun placeEntity(
                 entity: net.minecraft.world.entity.Entity,
@@ -344,10 +346,13 @@ class EnterDimensionCommand(
                 val targetX = spawnPos.x.toDouble() + ObelisksConstants.TELEPORT_CENTER_OFFSET
                 val targetY = spawnPos.y.toDouble()
                 val targetZ = spawnPos.z.toDouble() + ObelisksConstants.TELEPORT_CENTER_OFFSET
-                
-                
+
+
                 newEntity.moveTo(targetX, targetY, targetZ, yaw, entity.xRot)
-                
+
+                // Spawn spooky particles at arrival point
+                spawnTeleportParticles(destWorld, net.minecraft.world.phys.Vec3(targetX, targetY, targetZ))
+
                 return newEntity
             }
 
@@ -635,5 +640,49 @@ class ExitDimensionCommand(
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+}
+
+/**
+ * Spawns spooky interdimensional particles at teleportation points.
+ */
+private fun spawnTeleportParticles(level: ServerLevel, pos: net.minecraft.world.phys.Vec3) {
+    val random = level.random
+
+    // Spawn a burst of spooky particles in a sphere around the teleport location
+    for (i in 0 until 30) {
+        val radius = 1.5
+        val theta = random.nextDouble() * Math.PI * 2.0
+        val phi = random.nextDouble() * Math.PI
+
+        val offsetX = radius * Math.sin(phi) * Math.cos(theta)
+        val offsetY = radius * Math.sin(phi) * Math.sin(theta)
+        val offsetZ = radius * Math.cos(phi)
+
+        val spawnX = pos.x + offsetX
+        val spawnY = pos.y + offsetY + 1.0
+        val spawnZ = pos.z + offsetZ
+
+        // Velocity outward from center
+        val velocityX = offsetX * 0.15
+        val velocityY = offsetY * 0.15
+        val velocityZ = offsetZ * 0.15
+
+        // Mix of spooky particle types
+        val particleType = when (random.nextInt(5)) {
+            0 -> net.minecraft.core.particles.ParticleTypes.PORTAL
+            1 -> net.minecraft.core.particles.ParticleTypes.REVERSE_PORTAL
+            2 -> net.minecraft.core.particles.ParticleTypes.WARPED_SPORE
+            3 -> net.minecraft.core.particles.ParticleTypes.SOUL
+            else -> net.minecraft.core.particles.ParticleTypes.ENCHANT
+        }
+
+        level.sendParticles(
+            particleType,
+            spawnX, spawnY, spawnZ,
+            1, // count
+            velocityX, velocityY, velocityZ,
+            0.0 // speed multiplier
+        )
     }
 }

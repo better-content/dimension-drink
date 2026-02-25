@@ -28,6 +28,10 @@ object ModBlocks {
                 .mapColor(MapColor.STONE)
                 .strength(50.0f, 1200.0f) // Obsidian hardness
                 .requiresCorrectToolForDrops()
+                .lightLevel { state ->
+                    // Emit subtle light (level 7 out of 15) - less than torch but noticeable
+                    7
+                }
         )
     }
 
