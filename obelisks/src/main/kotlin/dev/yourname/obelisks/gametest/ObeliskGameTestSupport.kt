@@ -439,6 +439,7 @@ object ObeliskGameTestSupport {
     }
 
     fun rewardTablesFollowDefinitionWithSharedTemplate(helper: GameTestHelper) {
+        deleteTestConfigs()
         val server = helper.level.server
         val definitionA = ObeliskDefinition(
             id = "test_shared_template_a",
@@ -492,10 +493,13 @@ object ObeliskGameTestSupport {
         helper.assertTrue(countBufferedItem(obeliskA, Items.GOLD_INGOT) == 0, "Expected definition A buffer to avoid definition B rewards")
         helper.assertTrue(countBufferedItem(obeliskB, Items.GOLD_INGOT) > 0, "Expected definition B to use its gold reward table")
         helper.assertTrue(countBufferedItem(obeliskB, Items.IRON_INGOT) == 0, "Expected definition B buffer to avoid definition A rewards")
+        deleteTestConfigs()
+        reloadData()
         helper.succeed()
     }
 
     fun reloadCommandRefreshesDefinitionData(helper: GameTestHelper) {
+        deleteTestConfigs()
         val server = helper.level.server
         val definitionId = "test_reloadable_definition"
         val baseDefinition = ObeliskDefinition(
@@ -517,10 +521,13 @@ object ObeliskGameTestSupport {
         val reloaded = ObeliskApi.getDefinition(definitionId)
         helper.assertTrue(reloaded?.displayName == "Reload Two", "Expected reload command to refresh the definition display name")
         helper.assertTrue(reloaded?.rewardTableId == "end", "Expected reload command to refresh the definition reward table id")
+        deleteTestConfigs()
+        reloadDataWithCommand(server)
         helper.succeed()
     }
 
     fun worldgenFamiliesProduceDistinctSiteShapes(helper: GameTestHelper) {
+        deleteTestConfigs()
         val spireDefinition = ObeliskDefinition(
             id = "test_spire_definition",
             displayName = "Test Spire",
@@ -561,6 +568,8 @@ object ObeliskGameTestSupport {
         helper.assertTrue(ruinObelisk?.definitionId == ruinDefinition.id, "Expected generated ruin obelisk to keep its definition id")
         helper.assertTrue(countNonAirColumn(helper, spirePos.above(1), 7) >= 4, "Expected spire family to create a tall vertical structure")
         helper.assertTrue(countNonAirRing(helper, ruinPos, 4) >= 6, "Expected ruin family to create surrounding debris or pillars")
+        deleteTestConfigs()
+        reloadData()
         helper.succeed()
     }
 
@@ -803,6 +812,21 @@ object ObeliskGameTestSupport {
     private fun writeJsonFile(path: Path, value: Any) {
         Files.createDirectories(path.parent)
         Files.writeString(path, gson.toJson(value))
+    }
+
+    private fun deleteTestConfigs() {
+        deleteMatching(ObeliskDataManager.definitionsPath(), "test_")
+        deleteMatching(ObeliskDataManager.rewardsPath(), "test_")
+        deleteMatching(ObeliskDataManager.worldgenFamiliesPath(), "test_")
+    }
+
+    private fun deleteMatching(dir: Path, prefix: String) {
+        if (!Files.isDirectory(dir)) return
+        Files.list(dir).use { paths ->
+            paths
+                .filter { path -> path.fileName.toString().startsWith(prefix) && path.fileName.toString().endsWith(".json") }
+                .forEach(Files::deleteIfExists)
+        }
     }
 
     private fun reloadData() {
