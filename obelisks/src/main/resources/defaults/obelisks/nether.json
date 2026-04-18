@@ -1,0 +1,21 @@
+{
+  "id": "nether",
+  "displayName": "Nether Obelisk",
+  "instanceTemplateId": "nether",
+  "enabled": true,
+  "worldgenWeight": 1.0,
+  "worldgenRarityChance": 200,
+  "worldgenFamilyId": "ruin",
+  "meteorCoreBlock": "minecraft:obsidian",
+  "meteorShellBlock": "minecraft:magma_block",
+  "pedestalBlock": "minecraft:crying_obsidian",
+  "returnPadFrameBlock": "minecraft:blackstone",
+  "platformFloorBlock": "minecraft:polished_blackstone",
+  "craterFillBlocks": [
+    "minecraft:gravel",
+    "minecraft:blackstone",
+    "minecraft:magma_block"
+  ],
+  "rewardTableId": "nether",
+  "useAe2Skystone": true
+}

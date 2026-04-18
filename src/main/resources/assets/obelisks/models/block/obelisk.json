@@ -1,6 +1,0 @@
-{
-  "parent": "minecraft:block/cube_all",
-  "textures": {
-    "all": "obelisks:block/obelisk_cap_v3"
-  }
-}

@@ -1,0 +1,18 @@
+{
+  "id": "spire",
+  "enabled": true,
+  "siteShape": "spire",
+  "craterRadiusMin": 3,
+  "craterRadiusMax": 5,
+  "craterDepthMin": 1,
+  "craterDepthMax": 2,
+  "coreRadiusMin": 2,
+  "coreRadiusMax": 2,
+  "shellIntegrity": 0.94,
+  "debrisRadius": 3,
+  "debrisChance": 0.08,
+  "pillarCountMin": 0,
+  "pillarCountMax": 0,
+  "pillarHeightMin": 5,
+  "pillarHeightMax": 8
+}

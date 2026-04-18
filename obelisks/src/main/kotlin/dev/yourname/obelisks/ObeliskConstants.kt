@@ -1,0 +1,23 @@
+package dev.yourname.obelisks
+
+object ObeliskConstants {
+    const val MAX_FE_STORAGE: Int = 15_000
+    const val BASE_FE_DRAIN_PER_TICK: Int = 10
+    const val PER_PLAYER_FE_DRAIN: Int = 10
+    const val FE_REGEN_PER_TICK: Int = 2
+    const val DRAIN_EXPONENTIAL_FACTOR: Double = 0.0015
+    const val DRAIN_EXPONENTIAL_INTERVAL_TICKS: Int = 20
+    const val RUN_EMPTY_CLEANUP_DELAY_TICKS: Long = 40L
+    const val COOLDOWN_TICKS: Long = 20L * 30L
+    const val BOSS_BAR_SHOW_THRESHOLD: Double = 0.90
+    const val BOSS_BAR_GREEN_THRESHOLD: Double = 0.50
+    const val BOSS_BAR_YELLOW_THRESHOLD: Double = 0.25
+    const val TICKS_PER_SECOND: Int = 20
+    const val VOID_FALL_Y_THRESHOLD: Double = -64.0
+    const val PLATFORM_Y_LEVEL: Int = 80
+    const val PLATFORM_RADIUS: Int = 3
+    const val RETURN_PAD_HEIGHT: Int = 1
+    const val EMERALDS_PER_REWARD_ROLL: Int = 1
+    const val DAMAGE_PER_REWARD_ROLL: Float = 20.0F
+    val DEFAULT_TEMPLATES: List<String> = listOf("overworld", "nether", "end")
+}
