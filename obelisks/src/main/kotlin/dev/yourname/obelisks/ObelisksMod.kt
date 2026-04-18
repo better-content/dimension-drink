@@ -3,7 +3,6 @@ package dev.yourname.obelisks
 import com.mojang.logging.LogUtils
 import dev.yourname.obelisks.data.ObeliskDataManager
 import dev.yourname.obelisks.commands.ObeliskCommands
-import dev.yourname.obelisks.portal.PortalBlocker
 import dev.yourname.obelisks.gametest.ObeliskGameTestRegistrar
 import dev.yourname.obelisks.registry.ModRegistries
 import dev.yourname.obelisks.runtime.combat.RunCombatTracker
@@ -30,7 +29,6 @@ class ObelisksMod {
         MinecraftForge.EVENT_BUS.register(RunRegistry)
         MinecraftForge.EVENT_BUS.register(RunBossBarManager)
         MinecraftForge.EVENT_BUS.register(ObeliskCommands)
-        MinecraftForge.EVENT_BUS.register(PortalBlocker)
     }
 
     companion object {
