@@ -37,9 +37,15 @@ object ObeliskDataManager {
     @Synchronized
     fun reload() {
         copyDefaultsIfMissing()
-        obeliskDefinitions = loadDirectory(definitionsDir, ObeliskDefinition::class.java).associateBy { it.id }
-        rewardTables = loadDirectory(rewardsDir, RewardTableDefinition::class.java).associateBy { it.id }
-        worldgenFamilies = loadDirectory(worldgenFamiliesDir, WorldgenFamilyDefinition::class.java).associateBy { it.id }
+        obeliskDefinitions = loadDirectory(definitionsDir, ObeliskDefinition::class.java)
+            .mapNotNull(::normalizeObeliskDefinition)
+            .associateBy { it.id }
+        rewardTables = loadDirectory(rewardsDir, RewardTableDefinition::class.java)
+            .mapNotNull(::normalizeRewardTable)
+            .associateBy { it.id }
+        worldgenFamilies = loadDirectory(worldgenFamiliesDir, WorldgenFamilyDefinition::class.java)
+            .mapNotNull(::normalizeWorldgenFamily)
+            .associateBy { it.id }
         loaded = true
         logger.info(
             "Loaded {} obelisk definitions, {} reward tables, and {} worldgen families",
@@ -76,9 +82,9 @@ object ObeliskDataManager {
         return enabled.last()
     }
 
-    fun getRewardTable(id: String): RewardTableDefinition? {
+    fun getRewardTable(id: String?): RewardTableDefinition? {
         ensureLoaded()
-        return rewardTables[id]
+        return rewardTables[id ?: return null]
     }
 
     fun configRootPath(): Path = configRoot
@@ -89,10 +95,87 @@ object ObeliskDataManager {
 
     fun worldgenFamiliesPath(): Path = worldgenFamiliesDir
 
-    fun getWorldgenFamily(id: String): WorldgenFamilyDefinition? {
+    fun getWorldgenFamily(id: String?): WorldgenFamilyDefinition? {
         ensureLoaded()
-        return worldgenFamilies[id]
+        return worldgenFamilies[id ?: return null]
     }
+
+    private fun normalizeObeliskDefinition(definition: ObeliskDefinition): ObeliskDefinition? {
+        val id = stringOrNull(definition.id)
+        if (id == null) {
+            logger.warn("Ignoring obelisk definition with missing id")
+            return null
+        }
+        return definition.copy(
+            id = id,
+            displayName = stringOrNull(definition.displayName) ?: id.replaceFirstChar { it.uppercase() },
+            instanceTemplateId = stringOrNull(definition.instanceTemplateId) ?: id,
+            worldgenFamilyId = stringOrNull(definition.worldgenFamilyId) ?: "meteor",
+            meteorCoreBlock = stringOrNull(definition.meteorCoreBlock) ?: "minecraft:obsidian",
+            meteorShellBlock = stringOrNull(definition.meteorShellBlock) ?: "minecraft:crying_obsidian",
+            pedestalBlock = stringOrNull(definition.pedestalBlock) ?: "minecraft:obsidian",
+            returnPadFrameBlock = stringOrNull(definition.returnPadFrameBlock) ?: "minecraft:obsidian",
+            platformFloorBlock = stringOrNull(definition.platformFloorBlock) ?: "minecraft:bedrock",
+            craterFillBlocks = definition.craterFillBlocks.orEmpty().ifEmpty {
+                listOf("minecraft:gravel", "minecraft:coarse_dirt")
+            },
+            rewardTableId = stringOrNull(definition.rewardTableId) ?: "default"
+        )
+    }
+
+    private fun normalizeRewardTable(table: RewardTableDefinition): RewardTableDefinition? {
+        val id = stringOrNull(table.id)
+        if (id == null) {
+            logger.warn("Ignoring reward table with missing id")
+            return null
+        }
+        return table.copy(
+            id = id,
+            pools = table.pools.orEmpty().mapNotNull poolLoop@ { pool ->
+                val poolId = stringOrNull(pool.id) ?: return@poolLoop null
+                pool.copy(
+                    id = poolId,
+                    chance = pool.chance.coerceIn(0.0, 1.0),
+                    entries = pool.entries.orEmpty().mapNotNull entryLoop@ { entry ->
+                        val item = stringOrNull(entry.item) ?: return@entryLoop null
+                        entry.copy(
+                            item = item,
+                            minCount = entry.minCount.coerceAtLeast(1),
+                            maxCount = entry.maxCount.coerceAtLeast(entry.minCount.coerceAtLeast(1)),
+                            weight = entry.weight.coerceAtLeast(0)
+                        )
+                    }
+                )
+            }
+        )
+    }
+
+    private fun normalizeWorldgenFamily(family: WorldgenFamilyDefinition): WorldgenFamilyDefinition? {
+        val id = stringOrNull(family.id)
+        if (id == null) {
+            logger.warn("Ignoring worldgen family with missing id")
+            return null
+        }
+        return family.copy(
+            id = id,
+            siteShape = stringOrNull(family.siteShape) ?: "meteor",
+            craterRadiusMin = family.craterRadiusMin.coerceAtLeast(0),
+            craterRadiusMax = family.craterRadiusMax.coerceAtLeast(family.craterRadiusMin.coerceAtLeast(0)),
+            craterDepthMin = family.craterDepthMin.coerceAtLeast(0),
+            craterDepthMax = family.craterDepthMax.coerceAtLeast(family.craterDepthMin.coerceAtLeast(0)),
+            coreRadiusMin = family.coreRadiusMin.coerceAtLeast(1),
+            coreRadiusMax = family.coreRadiusMax.coerceAtLeast(family.coreRadiusMin.coerceAtLeast(1)),
+            shellIntegrity = family.shellIntegrity.coerceIn(0.0, 1.0),
+            debrisRadius = family.debrisRadius.coerceAtLeast(0),
+            debrisChance = family.debrisChance.coerceIn(0.0, 1.0),
+            pillarCountMin = family.pillarCountMin.coerceAtLeast(0),
+            pillarCountMax = family.pillarCountMax.coerceAtLeast(family.pillarCountMin.coerceAtLeast(0)),
+            pillarHeightMin = family.pillarHeightMin.coerceAtLeast(0),
+            pillarHeightMax = family.pillarHeightMax.coerceAtLeast(family.pillarHeightMin.coerceAtLeast(0))
+        )
+    }
+
+    private fun stringOrNull(value: String?): String? = value?.trim()?.takeIf { it.isNotEmpty() }
 
     private fun copyDefaultsIfMissing() {
         definitionsDir.createDirectories()
