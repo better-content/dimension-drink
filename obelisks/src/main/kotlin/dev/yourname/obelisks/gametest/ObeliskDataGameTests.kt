@@ -25,4 +25,9 @@ class ObeliskDataGameTests {
     fun reload_skips_definitions_with_missing_required_namespace(helper: GameTestHelper) {
         ObeliskGameTestSupport.reloadSkipsDefinitionsWithMissingRequiredNamespace(helper)
     }
+
+    @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
+    fun reload_skips_definitions_with_missing_instance_template(helper: GameTestHelper) {
+        ObeliskGameTestSupport.reloadSkipsDefinitionsWithMissingInstanceTemplate(helper)
+    }
 }

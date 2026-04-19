@@ -7,6 +7,8 @@ import dev.yourname.instanceddimensions.NETWORK_CHANNEL
 import dev.yourname.instanceddimensions.compat.C2meCompat
 import dev.yourname.instanceddimensions.engine.instance.InstanceManager
 import dev.yourname.instanceddimensions.engine.instance.InstanceState
+import dev.yourname.instanceddimensions.engine.instance.InstanceTemplate
+import dev.yourname.instanceddimensions.engine.instance.InstanceTemplateDataManager
 import dev.yourname.instanceddimensions.engine.travel.TravelManager
 import dev.yourname.obelisks.ObeliskConstants
 import dev.yourname.obelisks.api.ObeliskApi
@@ -663,8 +665,47 @@ object ObeliskGameTestSupport {
         helper.succeed()
     }
 
+    fun reloadSkipsDefinitionsWithMissingInstanceTemplate(helper: GameTestHelper) {
+        deleteTestConfigs()
+        val server = helper.level.server
+        val missingId = "test_missing_template_definition"
+        val presentId = "test_present_template_definition"
+
+        writeDefinition(
+            ObeliskDefinition(
+                id = missingId,
+                displayName = "Missing Template",
+                instanceTemplateId = "missing_runtime_template",
+                rewardTableId = "overworld"
+            )
+        )
+        writeDefinition(
+            ObeliskDefinition(
+                id = presentId,
+                displayName = "Present Template",
+                instanceTemplateId = "end",
+                rewardTableId = "overworld"
+            )
+        )
+
+        reloadDataWithCommand(server)
+        helper.assertTrue(
+            ObeliskApi.getDefinition(missingId) == null,
+            "Expected reload to skip definitions whose instance template is unavailable"
+        )
+        helper.assertTrue(
+            ObeliskApi.getDefinition(presentId)?.displayName == "Present Template",
+            "Expected reload to keep definitions whose instance template is available"
+        )
+
+        deleteTestConfigs()
+        reloadDataWithCommand(server)
+        helper.succeed()
+    }
+
     fun instanceTemplateIdSelectsRuntimeInstanceTemplate(helper: GameTestHelper) {
         deleteTestConfigs()
+        deleteTestInstanceTemplates()
         val server = helper.level.server
         val obeliskPos = helper.absolutePos(BlockPos(4, 2, 16))
         val definition = ObeliskDefinition(
@@ -687,8 +728,74 @@ object ObeliskGameTestSupport {
         helper.assertTrue(template.requiredNamespace == "minecraft", "Expected built-in end template namespace requirement to remain minecraft")
 
         deleteTestConfigs()
+        deleteTestInstanceTemplates()
         reloadDataWithCommand(server)
+        InstanceManager.reloadTemplates()
         helper.succeed()
+    }
+
+    fun runtimeIncompatibleTemplateFailsObeliskActivationCleanly(helper: GameTestHelper) {
+        deleteTestConfigs()
+        deleteTestInstanceTemplates()
+        val server = helper.level.server
+        val obeliskPos = helper.absolutePos(BlockPos(4, 2, 19))
+        val templateId = "test_runtime_incompatible_template"
+        val definitionId = "test_runtime_incompatible_definition"
+        val client = connectHeadlessPlayer(helper)
+        val player = client.player
+        val originDimension = player.serverLevel().dimension()
+
+        writeInstanceTemplate(
+            InstanceTemplate(
+                id = templateId,
+                stem = "examplemod:test_dimension",
+                requiredNamespace = "minecraft",
+                runtimeCompatible = false,
+                description = "Should fail before runtime world creation"
+            )
+        )
+        writeDefinition(
+            ObeliskDefinition(
+                id = definitionId,
+                displayName = "Blocked Runtime Template",
+                instanceTemplateId = templateId,
+                rewardTableId = "default"
+            )
+        )
+
+        try {
+            InstanceManager.reloadTemplates()
+            reloadDataWithCommand(server)
+            placeChargedDefinitionObelisk(helper, obeliskPos, definitionId)
+            val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
+            helper.assertTrue(obelisk != null, "Expected placed obelisk block entity for runtime-incompatible template test")
+
+            val message = RunRegistry.activateObelisk(player, obelisk!!, obeliskPos)
+            helper.assertTrue(
+                message?.startsWith("Cannot initialize Blocked Runtime Template run:") == true,
+                "Expected incompatible template activation to fail immediately, got '$message'"
+            )
+            helper.assertTrue(
+                message?.contains("disabled for template '$templateId'") == true,
+                "Expected incompatible template activation message to explain the runtime block, got '$message'"
+            )
+            helper.assertTrue(obelisk.activeRunId == null, "Expected failed activation to leave the obelisk without an active run")
+            helper.assertTrue(
+                RunRegistry.snapshot().none { it.obeliskId == obelisk.obeliskId },
+                "Expected failed activation to avoid registering a run"
+            )
+            helper.assertTrue(
+                player.serverLevel().dimension() == originDimension,
+                "Expected failed activation to keep the player in the origin dimension"
+            )
+            helper.succeed()
+        } finally {
+            client.close(server)
+            deleteTestConfigs()
+            deleteTestInstanceTemplates()
+            reloadDataWithCommand(server)
+            InstanceManager.reloadTemplates()
+        }
     }
 
     fun secondPlayerJoinsExistingRunAndBothReturn(helper: GameTestHelper) {
@@ -956,6 +1063,10 @@ object ObeliskGameTestSupport {
         writeJsonFile(ObeliskDataManager.definitionsPath().resolve("${definition.id}.json"), definition)
     }
 
+    private fun writeInstanceTemplate(template: InstanceTemplate) {
+        writeJsonFile(InstanceTemplateDataManager.templatesPath().resolve("${template.id}.json"), template)
+    }
+
     private fun writeRewardTable(table: RewardTableDefinition) {
         writeJsonFile(ObeliskDataManager.rewardsPath().resolve("${table.id}.json"), table)
     }
@@ -974,6 +1085,10 @@ object ObeliskGameTestSupport {
         deleteMatching(ObeliskDataManager.definitionsPath(), "test_")
         deleteMatching(ObeliskDataManager.rewardsPath(), "test_")
         deleteMatching(ObeliskDataManager.worldgenFamiliesPath(), "test_")
+    }
+
+    private fun deleteTestInstanceTemplates() {
+        deleteMatching(InstanceTemplateDataManager.templatesPath(), "test_")
     }
 
     private fun deleteMatching(dir: Path, prefix: String) {

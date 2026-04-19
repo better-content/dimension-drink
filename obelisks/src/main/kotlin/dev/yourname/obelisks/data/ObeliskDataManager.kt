@@ -2,6 +2,7 @@ package dev.yourname.obelisks.data
 
 import com.google.gson.GsonBuilder
 import com.mojang.logging.LogUtils
+import dev.yourname.instanceddimensions.engine.instance.InstanceManager
 import dev.yourname.obelisks.MOD_ID
 import net.minecraftforge.fml.ModList
 import net.minecraftforge.fml.loading.FMLPaths
@@ -110,10 +111,15 @@ object ObeliskDataManager {
             logger.info("Skipping obelisk definition {} because required namespace {} is unavailable", id, requiredNamespace)
             return null
         }
+        val instanceTemplateId = stringOrNull(definition.instanceTemplateId) ?: id
+        if (InstanceManager.getTemplate(instanceTemplateId) == null) {
+            logger.warn("Skipping obelisk definition {} because instance template {} is unavailable", id, instanceTemplateId)
+            return null
+        }
         return definition.copy(
             id = id,
             displayName = stringOrNull(definition.displayName) ?: id.replaceFirstChar { it.uppercase() },
-            instanceTemplateId = stringOrNull(definition.instanceTemplateId) ?: id,
+            instanceTemplateId = instanceTemplateId,
             requiredNamespace = requiredNamespace,
             craterFillBlocks = definition.craterFillBlocks.orEmpty().ifEmpty {
                 listOf("minecraft:gravel", "minecraft:coarse_dirt")

@@ -140,8 +140,9 @@ object RunRegistry : RunService {
         }
 
         val instanceTemplateId = ObeliskDataManager.getObelisk(obelisk.definitionId)?.instanceTemplateId ?: obelisk.definitionId
-        if (InstanceManager.getTemplate(instanceTemplateId) == null) {
-            return "Trying to initialize ${displayName(obelisk.definitionId)} run..."
+        val validationError = InstanceManager.validateTemplateForRuntime(server, instanceTemplateId)
+        if (validationError != null) {
+            return "Cannot initialize ${displayName(obelisk.definitionId)} run: $validationError"
         }
 
         val created = createRun(

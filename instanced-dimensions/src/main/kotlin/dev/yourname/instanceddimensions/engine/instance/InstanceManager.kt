@@ -55,6 +55,23 @@ object InstanceManager : InstanceService {
         return templates[templateId]
     }
 
+    fun validateTemplateForRuntime(server: MinecraftServer, templateId: String): String? {
+        ensureTemplatesLoaded()
+        val template = templates[templateId] ?: return "unknown runtime template '$templateId'"
+        if (template.runtimeCompatible == false) {
+            return "runtime instancing is disabled for template '$templateId'"
+        }
+
+        val stemLocation = ResourceLocation.tryParse(template.stem)
+            ?: return "template '$templateId' has an invalid level stem '${template.stem}'"
+        val stemKey = ResourceKey.create(Registries.LEVEL_STEM, stemLocation)
+        val stemRegistry = server.registryAccess().registryOrThrow(Registries.LEVEL_STEM)
+        if (!stemRegistry.containsKey(stemKey)) {
+            return "level stem '$stemLocation' is unavailable"
+        }
+        return null
+    }
+
     override fun registerTemplate(template: InstanceTemplate) {
         templates[template.id] = template
     }
@@ -102,6 +119,8 @@ object InstanceManager : InstanceService {
 
     override fun createInstance(server: MinecraftServer, templateId: String, ownerId: UUID?): InstanceHandle {
         ensureTemplatesLoaded()
+        val validationError = validateTemplateForRuntime(server, templateId)
+        check(validationError == null) { validationError ?: "runtime template validation failed for '$templateId'" }
         val template = templates[templateId] ?: error("Unknown instance template: $templateId")
         val instanceId = UUID.randomUUID()
         val levelLocation = nextLevelLocation(template.id)
@@ -302,8 +321,27 @@ object InstanceManager : InstanceService {
             return true
         }
 
+        val validationError = validateTemplateForRuntime(server, record.templateId)
+        if (validationError != null) {
+            logger.warn("Discarding runtime instance {} for template {}: {}", record.id, record.templateId, validationError)
+            instances.remove(instanceId)
+            markSavedDataDirty()
+            return true
+        }
+
         val template = templates[record.templateId] ?: error("Unknown instance template: ${record.templateId}")
-        val created = InstanceLevelFactory.create(server, template, record)
+        val created = runCatching { InstanceLevelFactory.create(server, template, record) }
+            .getOrElse { throwable ->
+                logger.warn("Failed to construct runtime instance {} for template {}", record.id, record.templateId, throwable)
+                RuntimeServerLevel.forgetSeed(record.levelKey)
+                liveLevelData.remove(instanceId)
+                warmupChunks.remove(instanceId)
+                warmupReadyGameTimes.remove(instanceId)
+                closeGraceCounts.remove(instanceId)
+                instances.remove(instanceId)
+                markSavedDataDirty()
+                return true
+            }
         (created.level.levelData as? InstanceLevelData)?.let { liveLevelData[record.id] = it }
         putRuntimeLevel(server, created.level)
         scheduleWarmup(record.id, created.level)

@@ -108,6 +108,49 @@ class BootstrapGameTests {
         }
     }
 
+    @GameTest(template = "bootstrap/empty", batch = "bootstrap")
+    fun create_instance_rejects_runtime_incompatible_template(helper: GameTestHelper) {
+        val templatesDir = InstanceTemplateDataManager.templatesPath()
+        val incompatibleTemplatePath = templatesDir.resolve("test_runtime_incompatible_template.json")
+
+        Files.createDirectories(templatesDir)
+        Files.writeString(
+            incompatibleTemplatePath,
+            """
+            {
+              "id": "test_runtime_incompatible_template",
+              "stem": "examplemod:test_dimension",
+              "requiredNamespace": "minecraft",
+              "runtimeCompatible": false,
+              "description": "Should fail before runtime construction"
+            }
+            """.trimIndent()
+        )
+
+        try {
+            InstanceManager.reloadTemplates()
+            val template = InstanceManager.getTemplate("test_runtime_incompatible_template")
+            helper.assertTrue(template != null, "Expected runtime-incompatible template to load for validation testing")
+            helper.assertTrue(template?.runtimeCompatible == false, "Expected runtime-incompatible template to preserve its opt-out flag")
+            val validationError = InstanceManager.validateTemplateForRuntime(helper.level.server, "test_runtime_incompatible_template")
+            helper.assertTrue(
+                validationError?.contains("disabled for template 'test_runtime_incompatible_template'") == true,
+                "Expected template validation to reject runtime-incompatible templates, got '$validationError'"
+            )
+
+            val failure = runCatching { InstanceManager.createInstance(helper.level.server, "test_runtime_incompatible_template") }.exceptionOrNull()
+            helper.assertTrue(failure != null, "Expected runtime-incompatible template creation to fail")
+            helper.assertTrue(
+                failure?.message?.contains("disabled for template 'test_runtime_incompatible_template'") == true,
+                "Expected runtime-incompatible template failure to explain the validation error, got '${failure?.message}'"
+            )
+            helper.succeed()
+        } finally {
+            Files.deleteIfExists(incompatibleTemplatePath)
+            InstanceManager.reloadTemplates()
+        }
+    }
+
     @GameTest(template = "bootstrap/empty", batch = "instance_compat", timeoutTicks = 1600)
     fun runtime_dimension_access_tracks_runtime_levels(helper: GameTestHelper) {
         val server = helper.level.server

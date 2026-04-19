@@ -5,5 +5,6 @@ data class InstanceTemplate(
     val stem: String,
     val requiredNamespace: String? = null,
     val ephemeral: Boolean = true,
+    val runtimeCompatible: Boolean? = null,
     val description: String = ""
 )
