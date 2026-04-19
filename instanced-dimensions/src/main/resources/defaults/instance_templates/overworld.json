@@ -1,0 +1,7 @@
+{
+  "id": "overworld",
+  "stem": "minecraft:overworld",
+  "requiredNamespace": "minecraft",
+  "ephemeral": true,
+  "description": "Rewrite bootstrap template for overworld-like instances"
+}

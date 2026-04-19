@@ -1,0 +1,7 @@
+{
+  "id": "nether",
+  "stem": "minecraft:the_nether",
+  "requiredNamespace": "minecraft",
+  "ephemeral": true,
+  "description": "Rewrite bootstrap template for nether-like instances"
+}

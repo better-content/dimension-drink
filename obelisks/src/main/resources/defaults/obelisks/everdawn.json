@@ -1,0 +1,16 @@
+{
+  "id": "everdawn",
+  "displayName": "Everdawn Obelisk",
+  "instanceTemplateId": "overworld",
+  "requiredNamespace": "blue_skies",
+  "enabled": true,
+  "worldgenWeight": 1.0,
+  "craterFillBlocks": [
+    "blue_skies:lunar_stonebrick",
+    "blue_skies:polished_umber",
+    "blue_skies:polished_cinderstone",
+    "blue_skies:chiseled_lunar_stonebrick",
+    "blue_skies:midnight_sandstone"
+  ],
+  "rewardTableId": "default"
+}

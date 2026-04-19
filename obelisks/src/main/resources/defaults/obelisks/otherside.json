@@ -1,0 +1,16 @@
+{
+  "id": "otherside",
+  "displayName": "Otherside Obelisk",
+  "instanceTemplateId": "overworld",
+  "requiredNamespace": "deeperdarker",
+  "enabled": true,
+  "worldgenWeight": 1.0,
+  "craterFillBlocks": [
+    "minecraft:sculk",
+    "minecraft:sculk_vein",
+    "deeperdarker:sculk_stone",
+    "deeperdarker:sculk_gleam",
+    "deeperdarker:echo_soil"
+  ],
+  "rewardTableId": "default"
+}

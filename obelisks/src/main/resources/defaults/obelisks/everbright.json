@@ -1,0 +1,16 @@
+{
+  "id": "everbright",
+  "displayName": "Everbright Obelisk",
+  "instanceTemplateId": "overworld",
+  "requiredNamespace": "blue_skies",
+  "enabled": true,
+  "worldgenWeight": 1.0,
+  "craterFillBlocks": [
+    "blue_skies:turquoise_stonebrick",
+    "blue_skies:polished_taratite",
+    "blue_skies:polished_rimestone",
+    "blue_skies:chiseled_turquoise_stonebrick",
+    "blue_skies:crystal_sandstone"
+  ],
+  "rewardTableId": "default"
+}
