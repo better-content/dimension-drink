@@ -39,6 +39,5 @@ data class ObeliskDefinitionState(
     val displayName: String,
     val instanceTemplateId: String,
     val rewardTableId: String,
-    val worldgenFamilyId: String,
     val enabled: Boolean
 )

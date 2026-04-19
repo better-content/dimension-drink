@@ -58,6 +58,11 @@ tasks.register('runGameTestServerData', GradleBuild) {
     startParameter.projectProperties = ['obelisksGameTestSelection': 'data']
 }
 
+tasks.register('runGameTestServerTemplate', GradleBuild) {
+    tasks = [':obelisks:runGameTestServer']
+    startParameter.projectProperties = ['obelisksGameTestSelection': 'template']
+}
+
 tasks.register('runGameTestServerMultiplayer', GradleBuild) {
     tasks = [':obelisks:runGameTestServer']
     startParameter.projectProperties = ['obelisksGameTestSelection': 'multiplayer']

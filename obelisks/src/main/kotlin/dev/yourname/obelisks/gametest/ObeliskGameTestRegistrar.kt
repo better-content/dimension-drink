@@ -15,6 +15,7 @@ object ObeliskGameTestRegistrar {
             "rewards" -> event.register(ObeliskRewardsGameTests::class.java)
             "void" -> event.register(ObeliskVoidGameTests::class.java)
             "data" -> event.register(ObeliskDataGameTests::class.java)
+            "template" -> event.register(ObeliskTemplateMappingGameTests::class.java)
             "multiplayer" -> event.register(ObeliskMultiplayerGameTests::class.java)
             else -> {
                 event.register(ObeliskRunLifecycleGameTests::class.java)
@@ -22,6 +23,7 @@ object ObeliskGameTestRegistrar {
                 event.register(ObeliskRewardsGameTests::class.java)
                 event.register(ObeliskVoidGameTests::class.java)
                 event.register(ObeliskDataGameTests::class.java)
+                event.register(ObeliskTemplateMappingGameTests::class.java)
                 event.register(ObeliskMultiplayerGameTests::class.java)
             }
         }

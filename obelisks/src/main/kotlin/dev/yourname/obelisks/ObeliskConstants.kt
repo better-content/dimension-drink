@@ -19,5 +19,5 @@ object ObeliskConstants {
     const val RETURN_PAD_HEIGHT: Int = 1
     const val EMERALDS_PER_REWARD_ROLL: Int = 1
     const val DAMAGE_PER_REWARD_ROLL: Float = 20.0F
-    val DEFAULT_TEMPLATES: List<String> = listOf("overworld", "nether", "end")
+    val DEFAULT_TEMPLATES: List<String> = listOf("nether", "end")
 }

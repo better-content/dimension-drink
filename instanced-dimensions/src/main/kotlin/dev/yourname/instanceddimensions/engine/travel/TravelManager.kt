@@ -23,6 +23,7 @@ object TravelManager : TravelService {
 
     private val returnAnchors = linkedMapOf<UUID, PlayerReturnAnchor>()
     private val pendingTransfers = ArrayDeque<PendingPlayerTransfer>()
+    private val pendingTicketReleases = ArrayDeque<PendingChunkTicketRelease>()
 
     override fun enterInstance(player: ServerPlayer, instanceId: UUID) {
         val targetHandle = InstanceManager.getInstance(instanceId)
@@ -119,6 +120,7 @@ object TravelManager : TravelService {
     fun reset() {
         returnAnchors.clear()
         pendingTransfers.clear()
+        pendingTicketReleases.clear()
     }
 
     private fun transferPlayer(
@@ -149,8 +151,18 @@ object TravelManager : TravelService {
         yRot: Float,
         xRot: Float
     ) {
+        val targetChunk = ChunkPos(BlockPos.containing(x, y, z))
         RuntimeLevelKeySyncManager.ensurePlayerKnowsLevel(player, targetLevel.dimension())
+        targetLevel.chunkSource.addRegionTicket(TicketType.POST_TELEPORT, targetChunk, 1, player.id)
         player.teleportTo(targetLevel, x, y, z, yRot, xRot)
+        pendingTicketReleases.addLast(
+            PendingChunkTicketRelease(
+                levelKey = targetLevel.dimension(),
+                chunkPos = targetChunk,
+                passengerId = player.id,
+                releaseGameTime = targetLevel.server.overworld().gameTime + 1L
+            )
+        )
     }
 
     private fun moveWithoutNetwork(
@@ -208,7 +220,7 @@ object TravelManager : TravelService {
 
     @SubscribeEvent
     fun onServerTick(event: TickEvent.ServerTickEvent) {
-        if (event.phase != TickEvent.Phase.END || pendingTransfers.isEmpty()) {
+        if (event.phase != TickEvent.Phase.END || (pendingTransfers.isEmpty() && pendingTicketReleases.isEmpty())) {
             return
         }
 
@@ -230,6 +242,12 @@ object TravelManager : TravelService {
             val returnAnchor = returnAnchors[player.uuid] ?: return@repeat
             MinecraftForge.EVENT_BUS.post(PlayerInstanceTravelEvent.Entered(player, instance, returnAnchor))
         }
+
+        while (pendingTicketReleases.isNotEmpty() && pendingTicketReleases.first().releaseGameTime <= event.server.overworld().gameTime) {
+            val release = pendingTicketReleases.removeFirst()
+            val level = event.server.getLevel(release.levelKey) ?: continue
+            level.chunkSource.removeRegionTicket(TicketType.POST_TELEPORT, release.chunkPos, 1, release.passengerId)
+        }
     }
 
     @SubscribeEvent
@@ -246,5 +264,12 @@ object TravelManager : TravelService {
         val z: Double,
         val yRot: Float,
         val xRot: Float
+    )
+
+    private data class PendingChunkTicketRelease(
+        val levelKey: net.minecraft.resources.ResourceKey<Level>,
+        val chunkPos: ChunkPos,
+        val passengerId: Int,
+        val releaseGameTime: Long
     )
 }

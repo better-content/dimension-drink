@@ -181,7 +181,9 @@ object ObeliskCommands {
                 player.sendSystemMessage(Component.literal("Unknown obelisk '$it'."))
                 return 0
             }
-            ?: ObeliskDataManager.enabledObelisks().firstOrNull()?.id
+            ?: ObeliskDataManager.enabledObelisks()
+                .firstOrNull { InstanceManager.getTemplate(it.instanceTemplateId) != null }
+                ?.id
             ?: return 0
 
         val level = player.serverLevel()

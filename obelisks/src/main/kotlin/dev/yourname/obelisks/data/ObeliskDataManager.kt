@@ -1,13 +1,12 @@
 package dev.yourname.obelisks.data
 
 import com.google.gson.GsonBuilder
-import com.google.gson.JsonParser
 import com.mojang.logging.LogUtils
 import dev.yourname.obelisks.MOD_ID
+import net.minecraftforge.fml.ModList
 import net.minecraftforge.fml.loading.FMLPaths
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.inputStream
@@ -106,16 +105,16 @@ object ObeliskDataManager {
             logger.warn("Ignoring obelisk definition with missing id")
             return null
         }
+        val requiredNamespace = stringOrNull(definition.requiredNamespace)
+        if (requiredNamespace != null && !namespaceAvailable(requiredNamespace)) {
+            logger.info("Skipping obelisk definition {} because required namespace {} is unavailable", id, requiredNamespace)
+            return null
+        }
         return definition.copy(
             id = id,
             displayName = stringOrNull(definition.displayName) ?: id.replaceFirstChar { it.uppercase() },
             instanceTemplateId = stringOrNull(definition.instanceTemplateId) ?: id,
-            worldgenFamilyId = stringOrNull(definition.worldgenFamilyId) ?: "meteor",
-            meteorCoreBlock = stringOrNull(definition.meteorCoreBlock) ?: "minecraft:obsidian",
-            meteorShellBlock = stringOrNull(definition.meteorShellBlock) ?: "minecraft:crying_obsidian",
-            pedestalBlock = stringOrNull(definition.pedestalBlock) ?: "minecraft:obsidian",
-            returnPadFrameBlock = stringOrNull(definition.returnPadFrameBlock) ?: "minecraft:obsidian",
-            platformFloorBlock = stringOrNull(definition.platformFloorBlock) ?: "minecraft:bedrock",
+            requiredNamespace = requiredNamespace,
             craterFillBlocks = definition.craterFillBlocks.orEmpty().ifEmpty {
                 listOf("minecraft:gravel", "minecraft:coarse_dirt")
             },
@@ -177,6 +176,10 @@ object ObeliskDataManager {
 
     private fun stringOrNull(value: String?): String? = value?.trim()?.takeIf { it.isNotEmpty() }
 
+    private fun namespaceAvailable(namespace: String): Boolean {
+        return namespace in ALWAYS_AVAILABLE_NAMESPACES || ModList.get().isLoaded(namespace)
+    }
+
     private fun copyDefaultsIfMissing() {
         definitionsDir.createDirectories()
         rewardsDir.createDirectories()
@@ -217,4 +220,6 @@ object ObeliskDataManager {
                 .toList()
         }
     }
+
+    private val ALWAYS_AVAILABLE_NAMESPACES = setOf("minecraft", "forge", MOD_ID, "instanceddimensions")
 }

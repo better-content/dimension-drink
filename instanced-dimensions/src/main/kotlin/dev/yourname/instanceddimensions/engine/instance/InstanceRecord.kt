@@ -13,6 +13,7 @@ data class InstanceRecord(
     val levelKey: ResourceKey<Level>,
     var state: InstanceState,
     val ownerId: UUID? = null,
+    val instanceSeed: Long = UNSET_SEED,
     val createdGameTime: Long = 0L,
     var updatedGameTime: Long = createdGameTime,
     var levelState: InstanceLevelState
@@ -33,6 +34,9 @@ data class InstanceRecord(
         putString("level_key", levelKey.location().toString())
         putString("state", state.name)
         ownerId?.let { putString("owner_id", it.toString()) }
+        if (instanceSeed != UNSET_SEED) {
+            putLong("instance_seed", instanceSeed)
+        }
         putLong("created_game_time", createdGameTime)
         putLong("updated_game_time", updatedGameTime)
         put("level_state", levelState.toTag())
@@ -53,11 +57,14 @@ data class InstanceRecord(
                 levelKey = ResourceKey.create(Registries.DIMENSION, levelLocation),
                 state = state,
                 ownerId = ownerId,
+                instanceSeed = if (tag.contains("instance_seed")) tag.getLong("instance_seed") else UNSET_SEED,
                 createdGameTime = tag.getLong("created_game_time"),
                 updatedGameTime = tag.getLong("updated_game_time"),
                 levelState = InstanceLevelState.fromTag(tag.getCompound("level_state"))
             )
         }
+
+        const val UNSET_SEED: Long = Long.MIN_VALUE
 
         private fun parseUuid(raw: String): UUID? {
             if (raw.isBlank()) {

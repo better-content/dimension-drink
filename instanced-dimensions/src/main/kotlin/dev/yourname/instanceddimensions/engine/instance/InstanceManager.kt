@@ -16,7 +16,6 @@ import net.minecraft.server.level.TicketType
 import net.minecraft.util.Unit
 import net.minecraft.world.level.ChunkPos
 import net.minecraft.world.level.Level
-import net.minecraft.world.level.dimension.LevelStem
 import net.minecraft.world.level.chunk.storage.IOWorker
 import net.minecraft.server.MinecraftServer
 import net.minecraftforge.common.MinecraftForge
@@ -41,18 +40,20 @@ object InstanceManager : InstanceService {
     private val instances = linkedMapOf<UUID, InstanceRecord>()
     private val lifecycleRequests = ArrayDeque<InstanceLifecycleRequest>()
     private val liveLevelData = linkedMapOf<UUID, InstanceLevelData>()
-    private val warmupChunks = linkedMapOf<UUID, ChunkPos>()
+    private val warmupChunks = linkedMapOf<UUID, Set<ChunkPos>>()
     private val warmupReadyGameTimes = linkedMapOf<UUID, Long>()
     private val closeGraceCounts = linkedMapOf<UUID, Int>()
     private var savedDataDirty = false
 
-    init {
-        bootstrapBuiltinTemplates()
+    override fun templates(): Collection<InstanceTemplate> {
+        ensureTemplatesLoaded()
+        return templates.values
     }
 
-    override fun templates(): Collection<InstanceTemplate> = templates.values
-
-    override fun getTemplate(templateId: String): InstanceTemplate? = templates[templateId]
+    override fun getTemplate(templateId: String): InstanceTemplate? {
+        ensureTemplatesLoaded()
+        return templates[templateId]
+    }
 
     override fun registerTemplate(template: InstanceTemplate) {
         templates[template.id] = template
@@ -84,15 +85,33 @@ object InstanceManager : InstanceService {
         return isTravelReady(record.id)
     }
 
+    fun retargetTravelWarmup(instanceId: UUID, level: ServerLevel, center: net.minecraft.core.BlockPos) {
+        val previousChunks = warmupChunks.remove(instanceId)
+        warmupReadyGameTimes.remove(instanceId)
+        previousChunks?.forEach { chunk ->
+            level.chunkSource.removeRegionTicket(TicketType.START, chunk, 1, Unit.INSTANCE)
+        }
+
+        val targetChunks = warmupChunksFor(center)
+        warmupChunks[instanceId] = targetChunks
+        warmupReadyGameTimes[instanceId] = currentGameTime(level.server) + C2meCompat.warmupTicketTicks()
+        targetChunks.forEach { chunk ->
+            level.chunkSource.addRegionTicket(TicketType.START, chunk, 1, Unit.INSTANCE)
+        }
+    }
+
     override fun createInstance(server: MinecraftServer, templateId: String, ownerId: UUID?): InstanceHandle {
+        ensureTemplatesLoaded()
         val template = templates[templateId] ?: error("Unknown instance template: $templateId")
+        val instanceId = UUID.randomUUID()
         val levelLocation = nextLevelLocation(template.id)
         val record = InstanceRecord(
-            id = UUID.randomUUID(),
+            id = instanceId,
             templateId = template.id,
             levelKey = ResourceKey.create(Registries.DIMENSION, levelLocation),
             state = InstanceState.ALLOCATED,
             ownerId = ownerId,
+            instanceSeed = nextInstanceSeed(instanceId),
             createdGameTime = currentGameTime(server),
             updatedGameTime = currentGameTime(server),
             levelState = InstanceLevelState.createDefault(server, template.id, levelLocation)
@@ -143,6 +162,7 @@ object InstanceManager : InstanceService {
         warmupChunks.clear()
         warmupReadyGameTimes.clear()
         closeGraceCounts.clear()
+        RuntimeServerLevel.clearSeeds()
         savedDataDirty = false
     }
 
@@ -151,41 +171,23 @@ object InstanceManager : InstanceService {
         return server.forgeGetWorldMap().isNotEmpty()
     }
 
-    fun bootstrapBuiltinTemplates() {
-        if (templates.isNotEmpty()) {
-            return
-        }
-
-        registerTemplate(
-            InstanceTemplate(
-                id = "overworld",
-                stem = ResourceKey.create(net.minecraft.core.registries.Registries.LEVEL_STEM, LevelStem.OVERWORLD.location()),
-                description = "Rewrite bootstrap template for overworld-like instances"
-            )
-        )
-        registerTemplate(
-            InstanceTemplate(
-                id = "nether",
-                stem = ResourceKey.create(net.minecraft.core.registries.Registries.LEVEL_STEM, LevelStem.NETHER.location()),
-                description = "Rewrite bootstrap template for nether-like instances"
-            )
-        )
-        registerTemplate(
-            InstanceTemplate(
-                id = "end",
-                stem = ResourceKey.create(net.minecraft.core.registries.Registries.LEVEL_STEM, LevelStem.END.location()),
-                description = "Rewrite bootstrap template for end-like instances"
-            )
-        )
+    fun reloadTemplates() {
+        InstanceTemplateDataManager.reload()
+        templates.clear()
+        InstanceTemplateDataManager.allTemplates().forEach(::registerTemplate)
+        logger.info("Registered {} runtime instance templates", templates.size)
     }
 
     fun allocatePlaceholder(templateId: String, levelKey: ResourceKey<Level>, ownerId: UUID? = null): InstanceHandle {
+        ensureTemplatesLoaded()
+        val instanceId = UUID.randomUUID()
         val record = InstanceRecord(
-            id = UUID.randomUUID(),
+            id = instanceId,
             templateId = templateId,
             levelKey = levelKey,
             state = InstanceState.ALLOCATED,
             ownerId = ownerId,
+            instanceSeed = nextInstanceSeed(instanceId),
             levelState = InstanceLevelState.createDefaultPlaceholder(levelKey.location())
         )
         register(record)
@@ -195,6 +197,7 @@ object InstanceManager : InstanceService {
     fun records(): Collection<InstanceRecord> = instances.values.map { it.deepCopy() }
 
     fun restoreFromSavedData(server: MinecraftServer) {
+        ensureTemplatesLoaded()
         val restored = mutableListOf<InstanceRecord>()
         var pruned = false
         InstanceSavedData.get(server).snapshot().forEach { saved ->
@@ -221,7 +224,7 @@ object InstanceManager : InstanceService {
     @SubscribeEvent
     fun onServerStarted(event: ServerStartedEvent) {
         clearInstances()
-        bootstrapBuiltinTemplates()
+        reloadTemplates()
         restoreFromSavedData(event.server)
         logger.info("Runtime instance manager initialized")
     }
@@ -281,6 +284,12 @@ object InstanceManager : InstanceService {
         savedDataDirty = true
     }
 
+    private fun ensureTemplatesLoaded() {
+        if (templates.isEmpty()) {
+            reloadTemplates()
+        }
+    }
+
     private fun applyCreate(server: MinecraftServer, instanceId: UUID): Boolean {
         val record = instances[instanceId] ?: return false
         if (server.getLevel(record.levelKey) != null) {
@@ -312,6 +321,7 @@ object InstanceManager : InstanceService {
         val now = currentGameTime(server)
 
         if (loadedLevel == null) {
+            RuntimeServerLevel.forgetSeed(record.levelKey)
             liveLevelData.remove(instanceId)
             warmupChunks.remove(instanceId)
             warmupReadyGameTimes.remove(instanceId)
@@ -373,6 +383,7 @@ object InstanceManager : InstanceService {
         closeLevelWithoutSave(loadedLevel)
         removeRuntimeLevel(server, loadedLevel)
         RuntimeLevelKeySyncManager.revokeRuntimeLevel(server, loadedLevel.dimension())
+        RuntimeServerLevel.forgetSeed(record.levelKey)
         liveLevelData.remove(instanceId)
         warmupChunks.remove(instanceId)
         warmupReadyGameTimes.remove(instanceId)
@@ -431,6 +442,10 @@ object InstanceManager : InstanceService {
 
     private fun currentGameTime(server: MinecraftServer): Long = server.overworld().gameTime
 
+    private fun nextInstanceSeed(instanceId: UUID): Long {
+        return instanceId.mostSignificantBits xor java.lang.Long.rotateLeft(instanceId.leastSignificantBits, 1)
+    }
+
     private fun captureRuntimeState(record: InstanceRecord, level: ServerLevel) {
         val levelData = liveLevelData[record.id] ?: (level.levelData as? InstanceLevelData) ?: return
         record.levelState = levelData.snapshot(level.worldBorder.createSettings())
@@ -461,10 +476,7 @@ object InstanceManager : InstanceService {
     }
 
     private fun scheduleWarmup(instanceId: UUID, level: ServerLevel) {
-        val spawnChunk = ChunkPos(level.sharedSpawnPos)
-        warmupChunks[instanceId] = spawnChunk
-        warmupReadyGameTimes[instanceId] = currentGameTime(level.server) + C2meCompat.warmupTicketTicks()
-        level.chunkSource.addRegionTicket(TicketType.START, spawnChunk, 1, Unit.INSTANCE)
+        retargetTravelWarmup(instanceId, level, level.sharedSpawnPos)
     }
 
     private fun pruneCompletedWarmup(instanceId: UUID, level: ServerLevel) {
@@ -472,13 +484,41 @@ object InstanceManager : InstanceService {
         if (currentGameTime(level.server) < readyGameTime) {
             return
         }
+        val chunks = warmupChunks[instanceId] ?: return
+        if (chunks.any { level.chunkSource.getChunkNow(it.x, it.z) == null }) {
+            return
+        }
         removeWarmupTicket(instanceId, level)
     }
 
     private fun removeWarmupTicket(instanceId: UUID, level: ServerLevel) {
-        val spawnChunk = warmupChunks.remove(instanceId) ?: return
+        val chunks = warmupChunks.remove(instanceId) ?: return
         warmupReadyGameTimes.remove(instanceId)
-        level.chunkSource.removeRegionTicket(TicketType.START, spawnChunk, 1, Unit.INSTANCE)
+        chunks.forEach { chunk ->
+            level.chunkSource.removeRegionTicket(TicketType.START, chunk, 1, Unit.INSTANCE)
+        }
+    }
+
+    private fun warmupChunksFor(center: net.minecraft.core.BlockPos): Set<ChunkPos> {
+        val chunks = linkedSetOf<ChunkPos>()
+        val platformRadius = 3
+        for (radius in 0..32 step 8) {
+            for (angle in 0 until 360 step 45) {
+                val radians = Math.toRadians(angle.toDouble())
+                val x = center.x + (radius * kotlin.math.cos(radians)).toInt()
+                val z = center.z + (radius * kotlin.math.sin(radians)).toInt()
+                val minChunkX = (x - platformRadius) shr 4
+                val maxChunkX = (x + platformRadius) shr 4
+                val minChunkZ = (z - platformRadius) shr 4
+                val maxChunkZ = (z + platformRadius) shr 4
+                for (chunkX in minChunkX..maxChunkX) {
+                    for (chunkZ in minChunkZ..maxChunkZ) {
+                        chunks += ChunkPos(chunkX, chunkZ)
+                    }
+                }
+            }
+        }
+        return chunks
     }
 
     private fun drainChunkWork(level: ServerLevel, closing: Boolean): ChunkDrainSnapshot {

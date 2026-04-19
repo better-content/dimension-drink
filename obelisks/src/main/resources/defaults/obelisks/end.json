@@ -2,19 +2,12 @@
   "id": "end",
   "displayName": "End Obelisk",
   "instanceTemplateId": "end",
+  "requiredNamespace": "minecraft",
   "enabled": true,
   "worldgenWeight": 1.0,
-  "worldgenRarityChance": 200,
-  "worldgenFamilyId": "spire",
-  "meteorCoreBlock": "minecraft:obsidian",
-  "meteorShellBlock": "minecraft:end_stone",
-  "pedestalBlock": "minecraft:crying_obsidian",
-  "returnPadFrameBlock": "minecraft:purpur_block",
-  "platformFloorBlock": "minecraft:end_stone_bricks",
   "craterFillBlocks": [
     "minecraft:end_stone",
     "minecraft:gravel"
   ],
-  "rewardTableId": "end",
-  "useAe2Skystone": true
+  "rewardTableId": "end"
 }

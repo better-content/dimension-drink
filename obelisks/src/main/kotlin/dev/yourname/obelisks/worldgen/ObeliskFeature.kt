@@ -30,8 +30,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
         val random = context.random()
         val definition = ObeliskDataManager.pickRandomObelisk(random.asKotlinRandom()) ?: return false
-        val family = ObeliskDataManager.getWorldgenFamily(definition.worldgenFamilyId)?.takeIf { it.enabled }
-            ?: ObeliskDataManager.getWorldgenFamily("meteor")
+        val family = meteorFamily()
             ?: WorldgenFamilyDefinition(id = "meteor")
         val surfacePos = surfaceAt(level, context.origin()) ?: return false
         if (!isValidSurface(level, surfacePos)) {
@@ -116,14 +115,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         materials: WorldgenMaterials
     ) {
         val obeliskPos = center.below()
-        when (family.siteShape.lowercase()) {
-            "spire" -> buildSpire(level, obeliskPos, random, family, materials)
-            "ruin" -> buildRuin(level, obeliskPos, random, family, materials)
-            else -> buildMeteor(level, obeliskPos, random, family, materials)
-        }
-        placePedestal(level, obeliskPos, materials, if (family.siteShape.equals("spire", ignoreCase = true)) 2 else 1)
-        scatterDebris(level, obeliskPos, random, family, materials)
-        clearHeadroom(level, obeliskPos)
+        buildMeteor(level, obeliskPos, random, family, materials)
         level.setBlock(obeliskPos, ModBlocks.OBELISK.get().defaultBlockState(), 3)
         val obelisk = level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity ?: return
         obelisk.setDefinition(definition.id)
@@ -145,117 +137,25 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     val distance = sqrt((dx * dx + dy * dy + dz * dz).toDouble())
                     if (distance > radius) continue
                     if (dx == 0 && dy == 0 && dz == 0) continue
-                    if (random.nextDouble() > family.shellIntegrity) continue
 
-                    val block = if (distance > radius - 0.8) materials.shell else materials.core
-                    level.setBlock(obeliskPos.offset(dx, dy, dz), block.defaultBlockState(), 3)
+                    level.setBlock(obeliskPos.offset(dx, dy, dz), materials.meteor.defaultBlockState(), 3)
                 }
             }
-        }
-    }
-
-    private fun buildRuin(
-        level: WorldGenLevel,
-        obeliskPos: BlockPos,
-        random: RandomSource,
-        family: WorldgenFamilyDefinition,
-        materials: WorldgenMaterials
-    ) {
-        val radius = random.nextIntBetweenInclusive(family.coreRadiusMin, family.coreRadiusMax.coerceAtLeast(family.coreRadiusMin))
-        for (dx in -radius..radius) {
-            for (dz in -radius..radius) {
-                if (random.nextDouble() > family.shellIntegrity) continue
-                level.setBlock(obeliskPos.offset(dx, 0, dz), materials.shell.defaultBlockState(), 3)
-                if (random.nextBoolean()) {
-                    level.setBlock(obeliskPos.offset(dx, -1, dz), materials.core.defaultBlockState(), 3)
-                }
-            }
-        }
-
-        val pillarCount = random.nextIntBetweenInclusive(family.pillarCountMin, family.pillarCountMax.coerceAtLeast(family.pillarCountMin))
-        repeat(pillarCount) {
-            val offsetX = random.nextIntBetweenInclusive(-radius - 2, radius + 2)
-            val offsetZ = random.nextIntBetweenInclusive(-radius - 2, radius + 2)
-            if (offsetX == 0 && offsetZ == 0) return@repeat
-            val height = random.nextIntBetweenInclusive(family.pillarHeightMin, family.pillarHeightMax.coerceAtLeast(family.pillarHeightMin))
-            for (y in 0 until height) {
-                val block = if (y == height - 1 || random.nextBoolean()) materials.shell else materials.core
-                level.setBlock(obeliskPos.offset(offsetX, y, offsetZ), block.defaultBlockState(), 3)
-            }
-        }
-    }
-
-    private fun buildSpire(
-        level: WorldGenLevel,
-        obeliskPos: BlockPos,
-        random: RandomSource,
-        family: WorldgenFamilyDefinition,
-        materials: WorldgenMaterials
-    ) {
-        val height = random.nextIntBetweenInclusive(family.pillarHeightMin, family.pillarHeightMax.coerceAtLeast(family.pillarHeightMin))
-        for (y in 0 until height) {
-            val width = if (y < height / 2) 1 else 0
-            for (dx in -width..width) {
-                for (dz in -width..width) {
-                    if (dx == 0 && dz == 0 && y < 2) continue
-                    val block = if (dx == 0 && dz == 0) materials.core else materials.shell
-                    level.setBlock(obeliskPos.offset(dx, y, dz), block.defaultBlockState(), 3)
-                }
-            }
-        }
-    }
-
-    private fun placePedestal(level: WorldGenLevel, obeliskPos: BlockPos, materials: WorldgenMaterials, radius: Int) {
-        for (dx in -radius..radius) {
-            for (dz in -radius..radius) {
-                level.setBlock(obeliskPos.offset(dx, -1, dz), materials.pedestal.defaultBlockState(), 3)
-            }
-        }
-    }
-
-    private fun scatterDebris(
-        level: WorldGenLevel,
-        obeliskPos: BlockPos,
-        random: RandomSource,
-        family: WorldgenFamilyDefinition,
-        materials: WorldgenMaterials
-    ) {
-        if (family.debrisRadius <= 0 || family.debrisChance <= 0.0) {
-            return
-        }
-        for (dx in -family.debrisRadius..family.debrisRadius) {
-            for (dz in -family.debrisRadius..family.debrisRadius) {
-                if (dx == 0 && dz == 0) continue
-                if (random.nextDouble() > family.debrisChance) continue
-                val targetPos = obeliskPos.offset(dx, 0, dz)
-                val block = if (random.nextBoolean()) materials.shell else materials.core
-                level.setBlock(targetPos, block.defaultBlockState(), 3)
-            }
-        }
-    }
-
-    private fun clearHeadroom(level: WorldGenLevel, pos: BlockPos) {
-        for (dy in 0..3) {
-            level.setBlock(pos.above(dy), Blocks.AIR.defaultBlockState(), 3)
         }
     }
 
     private fun resolveMaterials(definition: ObeliskDefinition): WorldgenMaterials {
-        val ae2Skystone = if (definition.useAe2Skystone && ModList.get().isLoaded("ae2")) {
+        val ae2Skystone = if (ModList.get().isLoaded("ae2")) {
             blockOrNull("ae2:sky_stone_block")
         } else {
             null
         }
-        val shell = ae2Skystone ?: blockOrDefault(definition.meteorShellBlock, Blocks.CRYING_OBSIDIAN)
-        val core = ae2Skystone ?: blockOrDefault(definition.meteorCoreBlock, Blocks.OBSIDIAN)
-        val pedestal = ae2Skystone ?: blockOrDefault(definition.pedestalBlock, Blocks.OBSIDIAN)
+        val meteor = ae2Skystone ?: Blocks.STONE
         val craterFill = definition.craterFillBlocks.mapNotNull(::blockOrNull).ifEmpty {
             listOf(Blocks.GRAVEL, Blocks.COARSE_DIRT)
         }
-        return WorldgenMaterials(core, shell, pedestal, craterFill)
+        return WorldgenMaterials(meteor, craterFill)
     }
-
-    private fun blockOrDefault(id: String, fallback: Block): Block = blockOrNull(id) ?: fallback
 
     private fun blockOrNull(id: String): Block? {
         val location = ResourceLocation.tryParse(id) ?: return null
@@ -264,9 +164,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
     }
 
     private data class WorldgenMaterials(
-        val core: Block,
-        val shell: Block,
-        val pedestal: Block,
+        val meteor: Block,
         val craterFill: List<Block>
     )
 
@@ -283,10 +181,13 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         ): Boolean {
             val feature = ObeliskFeature(NoneFeatureConfiguration.CODEC)
             val definition = ObeliskDataManager.getObelisk(definitionId) ?: return false
-            val family = ObeliskDataManager.getWorldgenFamily(definition.worldgenFamilyId)?.takeIf { it.enabled }
-                ?: ObeliskDataManager.getWorldgenFamily("meteor")
+            val family = feature.meteorFamily()
                 ?: WorldgenFamilyDefinition(id = "meteor")
             return feature.generateSite(level, surfacePos, random, definition, family)
         }
+    }
+
+    private fun meteorFamily(): WorldgenFamilyDefinition? {
+        return ObeliskDataManager.getWorldgenFamily("meteor")?.takeIf { it.enabled }
     }
 }

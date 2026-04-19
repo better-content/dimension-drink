@@ -1,6 +1,7 @@
 package dev.yourname.instanceddimensions.engine.instance
 
 import com.google.common.collect.ImmutableList
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.progress.ChunkProgressListener
@@ -20,9 +21,10 @@ object InstanceLevelFactory {
     private fun createLevel(server: MinecraftServer, record: InstanceRecord, stem: LevelStem): ServerLevel {
         val serverLevelData = InstanceLevelData(record.levelState.deepCopy())
         val debugWorld = server.worldData.isDebugWorld
-        val obfuscatedSeed = BiomeManager.obfuscateSeed(server.worldData.worldGenOptions().seed())
+        val instanceSeed = resolveInstanceSeed(server, record)
+        val obfuscatedSeed = BiomeManager.obfuscateSeed(instanceSeed)
 
-        return ServerLevel(
+        return RuntimeServerLevel.create(
             server,
             currentServerExecutor(server),
             currentStorageSource(server),
@@ -31,6 +33,7 @@ object InstanceLevelFactory {
             stem,
             NoOpChunkProgressListener,
             debugWorld,
+            instanceSeed,
             obfuscatedSeed,
             ImmutableList.of(),
             false,
@@ -39,10 +42,12 @@ object InstanceLevelFactory {
     }
 
     private fun resolveStem(server: MinecraftServer, template: InstanceTemplate): LevelStem {
+        val stemLocation = ResourceLocation.tryParse(template.stem)
+            ?: error("Invalid level stem for template ${template.id}: ${template.stem}")
         return server.registryAccess()
             .registryOrThrow(net.minecraft.core.registries.Registries.LEVEL_STEM)
-            .get(template.stem)
-            ?: error("Unknown level stem for template ${template.id}: ${template.stem.location()}")
+            .get(net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.LEVEL_STEM, stemLocation))
+            ?: error("Unknown level stem for template ${template.id}: $stemLocation")
     }
 
     @Suppress("DEPRECATION")
@@ -69,6 +74,14 @@ object InstanceLevelFactory {
             }
 
         error("Could not resolve MinecraftServer LevelStorageAccess field in ${serverClass.name}")
+    }
+
+    private fun resolveInstanceSeed(server: MinecraftServer, record: InstanceRecord): Long {
+        return if (record.instanceSeed == InstanceRecord.UNSET_SEED) {
+            server.worldData.worldGenOptions().seed()
+        } else {
+            record.instanceSeed
+        }
     }
 
     private object NoOpChunkProgressListener : ChunkProgressListener {

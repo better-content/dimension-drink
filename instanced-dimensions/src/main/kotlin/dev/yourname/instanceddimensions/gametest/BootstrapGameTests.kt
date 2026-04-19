@@ -9,6 +9,7 @@ import dev.yourname.instanceddimensions.engine.instance.InstanceSavedData
 import dev.yourname.instanceddimensions.engine.instance.InstanceState
 import dev.yourname.instanceddimensions.engine.instance.InstanceRecord
 import dev.yourname.instanceddimensions.engine.instance.InstanceLevelState
+import dev.yourname.instanceddimensions.engine.instance.InstanceTemplateDataManager
 import dev.yourname.instanceddimensions.engine.travel.TravelManager
 import dev.yourname.instanceddimensions.events.RuntimeDimensionTransitionEvent
 import com.mojang.authlib.GameProfile
@@ -38,6 +39,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent
 import org.slf4j.LoggerFactory
 import java.lang.reflect.Proxy
 import java.net.SocketAddress
+import java.nio.file.Files
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
@@ -54,8 +56,56 @@ class BootstrapGameTests {
 
     @GameTest(template = "bootstrap/empty", batch = "bootstrap")
     fun bootstrap_smoke_test(helper: GameTestHelper) {
-        helper.assertTrue(InstanceManager.templates().isNotEmpty(), "Expected built-in instance templates to be registered")
+        helper.assertTrue(InstanceManager.templates().isNotEmpty(), "Expected default instance templates to be loaded from data")
         helper.succeed()
+    }
+
+    @GameTest(template = "bootstrap/empty", batch = "bootstrap")
+    fun template_data_skips_missing_required_namespace(helper: GameTestHelper) {
+        val templatesDir = InstanceTemplateDataManager.templatesPath()
+        val missingTemplate = templatesDir.resolve("test_missing_namespace_template.json")
+        val presentTemplate = templatesDir.resolve("test_present_namespace_template.json")
+
+        Files.createDirectories(templatesDir)
+        Files.writeString(
+            missingTemplate,
+            """
+            {
+              "id": "test_missing_namespace_template",
+              "stem": "minecraft:overworld",
+              "requiredNamespace": "missing_test_namespace",
+              "description": "Should be skipped"
+            }
+            """.trimIndent()
+        )
+        Files.writeString(
+            presentTemplate,
+            """
+            {
+              "id": "test_present_namespace_template",
+              "stem": "minecraft:overworld",
+              "requiredNamespace": "minecraft",
+              "description": "Should load"
+            }
+            """.trimIndent()
+        )
+
+        try {
+            InstanceManager.reloadTemplates()
+            helper.assertTrue(
+                InstanceManager.getTemplate("test_missing_namespace_template") == null,
+                "Expected template reload to skip templates whose required namespace is unavailable"
+            )
+            helper.assertTrue(
+                InstanceManager.getTemplate("test_present_namespace_template") != null,
+                "Expected template reload to keep templates whose required namespace is available"
+            )
+            helper.succeed()
+        } finally {
+            Files.deleteIfExists(missingTemplate)
+            Files.deleteIfExists(presentTemplate)
+            InstanceManager.reloadTemplates()
+        }
     }
 
     @GameTest(template = "bootstrap/empty", batch = "instance_compat", timeoutTicks = 1600)
@@ -209,6 +259,45 @@ class BootstrapGameTests {
             }, onSuccess = {
                 helper.assertTrue(server.getLevel(first.levelKey) == null, "Expected first instance to unload cleanly")
                 helper.assertTrue(server.getLevel(second.levelKey) == null, "Expected second instance to unload cleanly")
+                helper.succeed()
+            })
+        })
+    }
+
+    @GameTest(template = "bootstrap/empty", batch = "instance_state", timeoutTicks = 1600)
+    fun instance_seeds_are_randomized_per_instance(helper: GameTestHelper) {
+        val server = helper.level.server
+        val first = InstanceManager.createInstance(server, "overworld")
+        val second = InstanceManager.createInstance(server, "overworld")
+
+        waitUntil(helper, 30, "Expected both instance levels to become ACTIVE for seed checks", condition = {
+            InstanceManager.getInstance(first.id)?.state == InstanceState.ACTIVE &&
+                InstanceManager.getInstance(second.id)?.state == InstanceState.ACTIVE
+        }, onSuccess = {
+            val firstLevel = requireNotNull(server.getLevel(first.levelKey)) { "Expected first instance level to be loaded" }
+            val secondLevel = requireNotNull(server.getLevel(second.levelKey)) { "Expected second instance level to be loaded" }
+            val snapshot = InstanceSavedData.get(server).snapshot()
+            val firstRecord = snapshot.firstOrNull { it.id == first.id }
+            val secondRecord = snapshot.firstOrNull { it.id == second.id }
+
+            helper.assertTrue(firstRecord != null, "Expected first instance seed to persist in saved data")
+            helper.assertTrue(secondRecord != null, "Expected second instance seed to persist in saved data")
+            helper.assertTrue(firstRecord?.instanceSeed != InstanceRecord.UNSET_SEED, "Expected first instance to store a resolved runtime seed")
+            helper.assertTrue(secondRecord?.instanceSeed != InstanceRecord.UNSET_SEED, "Expected second instance to store a resolved runtime seed")
+            helper.assertTrue(firstRecord?.instanceSeed != secondRecord?.instanceSeed, "Expected same-template instances to persist distinct seeds")
+            helper.assertTrue(firstLevel.seed == firstRecord?.instanceSeed, "Expected first runtime level to expose its persisted instance seed")
+            helper.assertTrue(secondLevel.seed == secondRecord?.instanceSeed, "Expected second runtime level to expose its persisted instance seed")
+            helper.assertTrue(firstLevel.seed != secondLevel.seed, "Expected same-template runtime levels to use distinct world seeds")
+
+            helper.assertTrue(InstanceManager.scheduleDestroy(server, first.id), "Expected first seeded instance cleanup to be accepted")
+            helper.assertTrue(InstanceManager.scheduleDestroy(server, second.id), "Expected second seeded instance cleanup to be accepted")
+
+            waitUntil(helper, 1200, failureMessage = {
+                listOf(first.id, second.id)
+                    .joinToString(separator = " || ") { destroyFailureMessage(server, it, "Expected seeded runtime instances to unload cleanly") }
+            }, condition = {
+                server.getLevel(first.levelKey) == null && server.getLevel(second.levelKey) == null
+            }, onSuccess = {
                 helper.succeed()
             })
         })

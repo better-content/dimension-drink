@@ -4,9 +4,11 @@ import com.google.gson.GsonBuilder
 import com.mojang.authlib.GameProfile
 import dev.yourname.instanceddimensions.MOD_ID as INSTANCED_DIMENSIONS_MOD_ID
 import dev.yourname.instanceddimensions.NETWORK_CHANNEL
+import dev.yourname.instanceddimensions.compat.C2meCompat
 import dev.yourname.instanceddimensions.engine.instance.InstanceManager
 import dev.yourname.instanceddimensions.engine.instance.InstanceState
 import dev.yourname.instanceddimensions.engine.travel.TravelManager
+import dev.yourname.obelisks.ObeliskConstants
 import dev.yourname.obelisks.api.ObeliskApi
 import dev.yourname.obelisks.content.ObeliskBlockEntity
 import dev.yourname.obelisks.data.ObeliskDataManager
@@ -161,6 +163,7 @@ object ObeliskGameTestSupport {
                 val returnPadPos = requireNotNull(run.spawnPos).below()
 
                 helper.assertTrue(runtimeLevel.getBlockState(returnPadPos).`is`(ModBlocks.RETURN_PAD.get()), "Expected spawn platform to place a return pad")
+                assertGenericSpawnPlatform(helper, runtimeLevel, returnPadPos)
                 helper.assertTrue(
                     player.serverLevel().dimension() == instance.levelKey,
                     "Expected activation to move the player into the runtime instance"
@@ -237,6 +240,57 @@ object ObeliskGameTestSupport {
         }
     }
 
+    fun relocatedSpawnRetargetsTravelWarmup(helper: GameTestHelper) {
+        val server = helper.level.server
+        val initialWarmupDeadline = server.overworld().gameTime + C2meCompat.warmupTicketTicks() + 1L
+        val run = RunRegistry.beginRun(server, UUID.randomUUID(), "end")
+
+        waitUntil(helper, 240, "Expected end run to prepare its relocated spawn platform", condition = {
+            RunRegistry.get(run.runId)?.spawnPos != null
+        }, onSuccess = {
+            val recordAfterPlatform = requireNotNull(RunRegistry.get(run.runId)) { "Expected run record after platform generation" }
+            val instance = requireNotNull(InstanceManager.getInstance(recordAfterPlatform.instanceId)) { "Expected active instance for end run" }
+            val runtimeLevel = requireNotNull(server.getLevel(instance.levelKey)) { "Expected end runtime level to be loaded" }
+            val spawnPos = requireNotNull(recordAfterPlatform.spawnPos) { "Expected relocated spawn position" }
+
+            val delayUntilInitialWarmupExpires = (initialWarmupDeadline - server.overworld().gameTime).coerceAtLeast(1L)
+            helper.runAfterDelay(delayUntilInitialWarmupExpires) {
+                helper.assertTrue(
+                    !InstanceManager.isTravelReady(recordAfterPlatform.instanceId),
+                    "Expected relocated spawn platform to keep travel warmup active beyond the original instance warmup window"
+                )
+
+                waitUntil(helper, 120, "Expected relocated spawn warmup to finish after retargeting", condition = {
+                    InstanceManager.isTravelReady(recordAfterPlatform.instanceId)
+                }, onSuccess = {
+                    helper.assertTrue(
+                        runtimeLevel.chunkSource.getChunkNow(spawnPos.x shr 4, spawnPos.z shr 4) != null,
+                        "Expected relocated spawn chunk to remain loaded when the instance becomes travel-ready"
+                    )
+
+                    helper.assertTrue(RunRegistry.finishRun(server, run.runId), "Expected relocated spawn test cleanup to finish the run")
+                    waitUntil(helper, 1200, failureMessage = {
+                        val runSnapshot = RunRegistry.get(run.runId)
+                        val instanceSnapshot = InstanceManager.getInstance(run.instanceId)
+                        buildString {
+                            append("Expected relocated spawn test cleanup to remove the run and background-destroy its instance")
+                            append(" | run=")
+                            append(runSnapshot?.state ?: "null")
+                            append(" instance=")
+                            append(instanceSnapshot?.state ?: "null")
+                            append(" close=")
+                            append(InstanceManager.describeCloseState(server, run.instanceId))
+                        }
+                    }, condition = {
+                        RunRegistry.get(run.runId) == null
+                    }, onSuccess = {
+                        helper.succeed()
+                    })
+                })
+            }
+        })
+    }
+
     fun successfulRunBuffersRewardsAndShowsBossBar(helper: GameTestHelper) {
         val server = helper.level.server
         val client = connectHeadlessPlayer(helper)
@@ -284,6 +338,7 @@ object ObeliskGameTestSupport {
                         val instance = requireNotNull(InstanceManager.getInstance(run.instanceId)) { "Expected runtime instance for reward test" }
                         val runtimeLevel = requireNotNull(server.getLevel(instance.levelKey)) { "Expected runtime level for reward test" }
                         val returnPadPos = requireNotNull(run.spawnPos).below()
+                        assertGenericSpawnPlatform(helper, runtimeLevel, returnPadPos)
 
                         waitUntil(helper, 120, "Expected reward test player to enter the initialized runtime instance", condition = {
                             client.pump(server)
@@ -398,8 +453,6 @@ object ObeliskGameTestSupport {
                 val liveObelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
                 helper.assertTrue(liveObelisk != null, "Expected live obelisk block entity for void-fall test")
                 val runId = requireNotNull(liveObelisk!!.activeRunId) { "Expected active run id for void-fall test" }
-                val run = requireNotNull(RunRegistry.get(runId)) { "Expected run record for void-fall test" }
-                val instance = requireNotNull(InstanceManager.getInstance(run.instanceId)) { "Expected instance handle for void-fall test" }
                 val returnAnchor = requireNotNull(TravelManager.peekReturnAnchor(player.uuid)) { "Expected return anchor before void fall" }
 
                 player.teleportTo(player.x, -80.0, player.z)
@@ -445,15 +498,13 @@ object ObeliskGameTestSupport {
             id = "test_shared_template_a",
             displayName = "Shared Template A",
             instanceTemplateId = "end",
-            rewardTableId = "test_shared_rewards_a",
-            worldgenFamilyId = "meteor"
+            rewardTableId = "test_shared_rewards_a"
         )
         val definitionB = ObeliskDefinition(
             id = "test_shared_template_b",
             displayName = "Shared Template B",
             instanceTemplateId = "end",
-            rewardTableId = "test_shared_rewards_b",
-            worldgenFamilyId = "meteor"
+            rewardTableId = "test_shared_rewards_b"
         )
         writeDefinition(definitionA)
         writeDefinition(definitionB)
@@ -506,8 +557,7 @@ object ObeliskGameTestSupport {
             id = definitionId,
             displayName = "Reload One",
             instanceTemplateId = "overworld",
-            rewardTableId = "overworld",
-            worldgenFamilyId = "meteor"
+            rewardTableId = "overworld"
         )
         writeDefinition(baseDefinition)
         reloadDataWithCommand(server)
@@ -526,50 +576,118 @@ object ObeliskGameTestSupport {
         helper.succeed()
     }
 
-    fun worldgenFamiliesProduceDistinctSiteShapes(helper: GameTestHelper) {
+    fun worldgenDefinitionsProduceCanonicalMeteorSites(helper: GameTestHelper) {
         deleteTestConfigs()
-        val spireDefinition = ObeliskDefinition(
-            id = "test_spire_definition",
-            displayName = "Test Spire",
+        val endDefinition = ObeliskDefinition(
+            id = "test_end_visual_definition",
+            displayName = "Test End Visual",
             instanceTemplateId = "end",
-            rewardTableId = "end",
-            worldgenFamilyId = "spire"
+            rewardTableId = "end"
         )
-        val ruinDefinition = ObeliskDefinition(
-            id = "test_ruin_definition",
-            displayName = "Test Ruin",
+        val netherDefinition = ObeliskDefinition(
+            id = "test_nether_visual_definition",
+            displayName = "Test Nether Visual",
             instanceTemplateId = "nether",
-            rewardTableId = "nether",
-            worldgenFamilyId = "ruin"
+            rewardTableId = "nether"
         )
-        writeDefinition(spireDefinition)
-        writeDefinition(ruinDefinition)
+        writeDefinition(endDefinition)
+        writeDefinition(netherDefinition)
         reloadData()
 
-        val spireCenter = helper.absolutePos(BlockPos(20, 3, 4))
-        val ruinCenter = helper.absolutePos(BlockPos(36, 3, 4))
-        prepareGenerationSurface(helper, spireCenter)
-        prepareGenerationSurface(helper, ruinCenter)
+        val endCenter = helper.absolutePos(BlockPos(20, 3, 4))
+        val netherCenter = helper.absolutePos(BlockPos(36, 3, 4))
+        prepareGenerationSurface(helper, endCenter)
+        prepareGenerationSurface(helper, netherCenter)
 
         helper.assertTrue(
-            ObeliskFeature.generateDefinitionSiteForTests(helper.level, spireCenter, spireDefinition.id, RandomSource.create(1234L)),
-            "Expected spire family test generation to succeed"
+            ObeliskFeature.generateDefinitionSiteForTests(helper.level, endCenter, endDefinition.id, RandomSource.create(1234L)),
+            "Expected end definition test generation to succeed"
         )
         helper.assertTrue(
-            ObeliskFeature.generateDefinitionSiteForTests(helper.level, ruinCenter, ruinDefinition.id, RandomSource.create(5678L)),
-            "Expected ruin family test generation to succeed"
+            ObeliskFeature.generateDefinitionSiteForTests(helper.level, netherCenter, netherDefinition.id, RandomSource.create(5678L)),
+            "Expected nether definition test generation to succeed"
         )
 
-        val spirePos = spireCenter.below()
-        val ruinPos = ruinCenter.below()
-        val spireObelisk = helper.level.getBlockEntity(spirePos) as? ObeliskBlockEntity
-        val ruinObelisk = helper.level.getBlockEntity(ruinPos) as? ObeliskBlockEntity
-        helper.assertTrue(spireObelisk?.definitionId == spireDefinition.id, "Expected generated spire obelisk to keep its definition id")
-        helper.assertTrue(ruinObelisk?.definitionId == ruinDefinition.id, "Expected generated ruin obelisk to keep its definition id")
-        helper.assertTrue(countNonAirColumn(helper, spirePos.above(1), 7) >= 4, "Expected spire family to create a tall vertical structure")
-        helper.assertTrue(countNonAirRing(helper, ruinPos, 4) >= 6, "Expected ruin family to create surrounding debris or pillars")
+        val endPos = endCenter.below()
+        val netherPos = netherCenter.below()
+        val endObelisk = helper.level.getBlockEntity(endPos) as? ObeliskBlockEntity
+        val netherObelisk = helper.level.getBlockEntity(netherPos) as? ObeliskBlockEntity
+        helper.assertTrue(endObelisk?.definitionId == endDefinition.id, "Expected generated end obelisk to keep its definition id")
+        helper.assertTrue(netherObelisk?.definitionId == netherDefinition.id, "Expected generated nether obelisk to keep its definition id")
+        helper.assertTrue(countNonAirRing(helper, endPos, 2) >= 6, "Expected end definition to generate as a canonical meteor")
+        helper.assertTrue(countNonAirRing(helper, netherPos, 2) >= 6, "Expected nether definition to generate as a canonical meteor")
+        helper.assertTrue(helper.level.getBlockState(endPos.east()).`is`(Blocks.STONE), "Expected generated end meteor to use stone")
+        helper.assertTrue(helper.level.getBlockState(netherPos.east()).`is`(Blocks.STONE), "Expected generated nether meteor to use stone")
         deleteTestConfigs()
         reloadData()
+        helper.succeed()
+    }
+
+    fun reloadSkipsDefinitionsWithMissingRequiredNamespace(helper: GameTestHelper) {
+        deleteTestConfigs()
+        val server = helper.level.server
+        val missingId = "test_missing_namespace_definition"
+        val presentId = "test_present_namespace_definition"
+
+        writeDefinition(
+            ObeliskDefinition(
+                id = missingId,
+                displayName = "Missing Namespace",
+                instanceTemplateId = "overworld",
+                requiredNamespace = "missing_test_namespace",
+                rewardTableId = "overworld"
+            )
+        )
+        writeDefinition(
+            ObeliskDefinition(
+                id = presentId,
+                displayName = "Present Namespace",
+                instanceTemplateId = "overworld",
+                requiredNamespace = "minecraft",
+                rewardTableId = "overworld"
+            )
+        )
+
+        reloadDataWithCommand(server)
+        helper.assertTrue(
+            ObeliskApi.getDefinition(missingId) == null,
+            "Expected reload to skip definitions whose required namespace is unavailable"
+        )
+        helper.assertTrue(
+            ObeliskApi.getDefinition(presentId)?.displayName == "Present Namespace",
+            "Expected reload to keep definitions whose required namespace is available"
+        )
+
+        deleteTestConfigs()
+        reloadDataWithCommand(server)
+        helper.succeed()
+    }
+
+    fun instanceTemplateIdSelectsRuntimeInstanceTemplate(helper: GameTestHelper) {
+        deleteTestConfigs()
+        val server = helper.level.server
+        val obeliskPos = helper.absolutePos(BlockPos(4, 2, 16))
+        val definition = ObeliskDefinition(
+            id = "test_instance_template_mapping",
+            displayName = "Template Mapping",
+            instanceTemplateId = "end",
+            rewardTableId = "end"
+        )
+        writeDefinition(definition)
+        reloadDataWithCommand(server)
+        placeChargedDefinitionObelisk(helper, obeliskPos, definition.id)
+        val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
+        helper.assertTrue(obelisk != null, "Expected placed obelisk block entity for template-mapping test")
+        helper.assertTrue(obelisk!!.targetTemplateId == "end", "Expected obelisk definition to resolve target template id to end")
+        val template = requireNotNull(InstanceManager.getTemplate(obelisk.targetTemplateId)) {
+            "Expected resolved obelisk template ${obelisk.targetTemplateId} to be registered"
+        }
+        helper.assertTrue(template.id == "end", "Expected resolved template id to remain end")
+        helper.assertTrue(template.stem == "minecraft:the_end", "Expected end template stem to target minecraft:the_end")
+        helper.assertTrue(template.requiredNamespace == "minecraft", "Expected built-in end template namespace requirement to remain minecraft")
+
+        deleteTestConfigs()
+        reloadDataWithCommand(server)
         helper.succeed()
     }
 
@@ -697,6 +815,44 @@ object ObeliskGameTestSupport {
             }
         }
         return count
+    }
+
+    private fun assertGenericSpawnPlatform(helper: GameTestHelper, level: Level, returnPadPos: BlockPos) {
+        helper.assertTrue(level.getBlockState(returnPadPos).`is`(ModBlocks.RETURN_PAD.get()), "Expected generic spawn platform center to be a return pad")
+
+        val floorCenter = returnPadPos.below()
+        for (x in -1..1) {
+            for (z in -1..1) {
+                if (x == 0 && z == 0) {
+                    continue
+                }
+                val framePos = returnPadPos.offset(x, 0, z)
+                helper.assertTrue(
+                    level.getBlockState(framePos).`is`(Blocks.OBSIDIAN),
+                    "Expected generic spawn platform frame to use obsidian at $framePos"
+                )
+            }
+        }
+
+        for (x in -ObeliskConstants.PLATFORM_RADIUS..ObeliskConstants.PLATFORM_RADIUS) {
+            for (z in -ObeliskConstants.PLATFORM_RADIUS..ObeliskConstants.PLATFORM_RADIUS) {
+                val floorPos = floorCenter.offset(x, 0, z)
+                helper.assertTrue(
+                    level.getBlockState(floorPos).`is`(Blocks.BEDROCK),
+                    "Expected generic spawn platform floor to use bedrock at $floorPos"
+                )
+
+                var supportPos = floorPos.below()
+                while (supportPos.y >= level.minBuildHeight && level.getBlockState(supportPos).`is`(Blocks.BEDROCK)) {
+                    supportPos = supportPos.below()
+                }
+
+                helper.assertTrue(
+                    supportPos.y < level.minBuildHeight || level.getBlockState(supportPos).isSolidRender(level, supportPos),
+                    "Expected bedrock-supported spawn platform column beneath $floorPos, found ${level.getBlockState(supportPos)} at $supportPos"
+                )
+            }
+        }
     }
 
     private fun countBufferedItem(obelisk: ObeliskBlockEntity?, item: net.minecraft.world.item.Item): Int {

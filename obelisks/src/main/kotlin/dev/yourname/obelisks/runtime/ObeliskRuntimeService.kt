@@ -51,7 +51,6 @@ object ObeliskRuntimeService : ObeliskService {
                 displayName = definition.displayName,
                 instanceTemplateId = definition.instanceTemplateId,
                 rewardTableId = definition.rewardTableId,
-                worldgenFamilyId = definition.worldgenFamilyId,
                 enabled = definition.enabled
             )
         }
@@ -64,7 +63,6 @@ object ObeliskRuntimeService : ObeliskService {
                 displayName = definition.displayName,
                 instanceTemplateId = definition.instanceTemplateId,
                 rewardTableId = definition.rewardTableId,
-                worldgenFamilyId = definition.worldgenFamilyId,
                 enabled = definition.enabled
             )
         }

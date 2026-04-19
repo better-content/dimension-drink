@@ -17,7 +17,12 @@ class ObeliskDataGameTests {
     }
 
     @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
-    fun worldgen_families_produce_distinct_site_shapes(helper: GameTestHelper) {
-        ObeliskGameTestSupport.worldgenFamiliesProduceDistinctSiteShapes(helper)
+    fun worldgen_definitions_produce_canonical_meteor_sites(helper: GameTestHelper) {
+        ObeliskGameTestSupport.worldgenDefinitionsProduceCanonicalMeteorSites(helper)
+    }
+
+    @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
+    fun reload_skips_definitions_with_missing_required_namespace(helper: GameTestHelper) {
+        ObeliskGameTestSupport.reloadSkipsDefinitionsWithMissingRequiredNamespace(helper)
     }
 }
