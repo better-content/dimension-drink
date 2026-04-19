@@ -1,0 +1,7 @@
+{
+  "id": "tropics",
+  "stem": "tropicraft:tropics",
+  "requiredNamespace": "tropicraft",
+  "ephemeral": true,
+  "description": "Runtime template for Tropicraft Tropics instances"
+}

@@ -1,0 +1,7 @@
+{
+  "id": "undergarden",
+  "stem": "undergarden:undergarden",
+  "requiredNamespace": "undergarden",
+  "ephemeral": true,
+  "description": "Runtime template for The Undergarden instances"
+}

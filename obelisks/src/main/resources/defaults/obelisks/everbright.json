@@ -1,10 +1,17 @@
 {
   "id": "everbright",
   "displayName": "Everbright Obelisk",
-  "instanceTemplateId": "overworld",
+  "instanceTemplateId": "everbright",
   "requiredNamespace": "blue_skies",
   "enabled": true,
   "worldgenWeight": 1.0,
+  "worldgenRarityChance": 200,
+  "worldgenFamilyId": "meteor",
+  "meteorCoreBlock": "blue_skies:turquoise_stonebrick",
+  "meteorShellBlock": "blue_skies:polished_taratite",
+  "pedestalBlock": "blue_skies:polished_rimestone",
+  "returnPadFrameBlock": "blue_skies:chiseled_turquoise_stonebrick",
+  "platformFloorBlock": "blue_skies:turquoise_stonebrick",
   "craterFillBlocks": [
     "blue_skies:turquoise_stonebrick",
     "blue_skies:polished_taratite",
@@ -12,5 +19,6 @@
     "blue_skies:chiseled_turquoise_stonebrick",
     "blue_skies:crystal_sandstone"
   ],
-  "rewardTableId": "default"
+  "rewardTableId": "default",
+  "useAe2Skystone": true
 }

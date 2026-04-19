@@ -1,16 +1,25 @@
 {
   "id": "otherside",
   "displayName": "Otherside Obelisk",
-  "instanceTemplateId": "overworld",
+  "instanceTemplateId": "otherside",
   "requiredNamespace": "deeperdarker",
   "enabled": true,
   "worldgenWeight": 1.0,
+  "worldgenRarityChance": 200,
+  "worldgenFamilyId": "meteor",
+  "meteorCoreBlock": "deeperdarker:sculk_stone",
+  "meteorShellBlock": "deeperdarker:sculk_gleam",
+  "pedestalBlock": "deeperdarker:polished_sculk_stone",
+  "returnPadFrameBlock": "deeperdarker:sculk_stone_bricks",
+  "platformFloorBlock": "deeperdarker:sculk_stone_tiles",
   "craterFillBlocks": [
     "minecraft:sculk",
     "minecraft:sculk_vein",
     "deeperdarker:sculk_stone",
     "deeperdarker:sculk_gleam",
-    "deeperdarker:echo_soil"
+    "deeperdarker:echo_soil",
+    "deeperdarker:sculk_grime"
   ],
-  "rewardTableId": "default"
+  "rewardTableId": "default",
+  "useAe2Skystone": true
 }

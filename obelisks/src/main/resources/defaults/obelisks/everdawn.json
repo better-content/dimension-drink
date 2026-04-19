@@ -1,10 +1,17 @@
 {
   "id": "everdawn",
   "displayName": "Everdawn Obelisk",
-  "instanceTemplateId": "overworld",
+  "instanceTemplateId": "everdawn",
   "requiredNamespace": "blue_skies",
   "enabled": true,
   "worldgenWeight": 1.0,
+  "worldgenRarityChance": 200,
+  "worldgenFamilyId": "meteor",
+  "meteorCoreBlock": "blue_skies:lunar_stonebrick",
+  "meteorShellBlock": "blue_skies:polished_umber",
+  "pedestalBlock": "blue_skies:polished_cinderstone",
+  "returnPadFrameBlock": "blue_skies:chiseled_lunar_stonebrick",
+  "platformFloorBlock": "blue_skies:lunar_stonebrick",
   "craterFillBlocks": [
     "blue_skies:lunar_stonebrick",
     "blue_skies:polished_umber",
@@ -12,5 +19,6 @@
     "blue_skies:chiseled_lunar_stonebrick",
     "blue_skies:midnight_sandstone"
   ],
-  "rewardTableId": "default"
+  "rewardTableId": "default",
+  "useAe2Skystone": true
 }

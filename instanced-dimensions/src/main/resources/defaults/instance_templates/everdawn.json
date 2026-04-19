@@ -1,0 +1,7 @@
+{
+  "id": "everdawn",
+  "stem": "blue_skies:everdawn",
+  "requiredNamespace": "blue_skies",
+  "ephemeral": true,
+  "description": "Runtime template for Blue Skies Everdawn instances"
+}

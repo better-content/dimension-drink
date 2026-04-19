@@ -1,0 +1,24 @@
+{
+  "id": "undergarden",
+  "displayName": "Undergarden Obelisk",
+  "instanceTemplateId": "undergarden",
+  "requiredNamespace": "undergarden",
+  "enabled": true,
+  "worldgenWeight": 1.0,
+  "worldgenRarityChance": 200,
+  "worldgenFamilyId": "meteor",
+  "meteorCoreBlock": "undergarden:depthrock",
+  "meteorShellBlock": "undergarden:depthrock_tiles",
+  "pedestalBlock": "undergarden:polished_depthrock",
+  "returnPadFrameBlock": "undergarden:shiverstone_bricks",
+  "platformFloorBlock": "undergarden:shiverstone",
+  "craterFillBlocks": [
+    "undergarden:depthrock",
+    "undergarden:deepsoil",
+    "undergarden:coarse_deepsoil",
+    "undergarden:shiverstone",
+    "undergarden:sediment"
+  ],
+  "rewardTableId": "default",
+  "useAe2Skystone": true
+}

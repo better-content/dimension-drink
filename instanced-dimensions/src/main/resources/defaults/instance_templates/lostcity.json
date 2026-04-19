@@ -1,0 +1,7 @@
+{
+  "id": "lostcity",
+  "stem": "lostcities:lostcity",
+  "requiredNamespace": "lostcities",
+  "ephemeral": true,
+  "description": "Runtime template for Lost Cities instances"
+}

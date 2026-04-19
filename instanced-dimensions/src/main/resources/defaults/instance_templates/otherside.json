@@ -1,0 +1,7 @@
+{
+  "id": "otherside",
+  "stem": "deeperdarker:otherside",
+  "requiredNamespace": "deeperdarker",
+  "ephemeral": true,
+  "description": "Runtime template for Deeper and Darker Otherside instances"
+}

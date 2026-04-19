@@ -1,0 +1,24 @@
+{
+  "id": "twilight_forest",
+  "displayName": "Twilight Forest Obelisk",
+  "instanceTemplateId": "twilight_forest",
+  "requiredNamespace": "twilightforest",
+  "enabled": true,
+  "worldgenWeight": 1.0,
+  "worldgenRarityChance": 200,
+  "worldgenFamilyId": "meteor",
+  "meteorCoreBlock": "twilightforest:mazestone",
+  "meteorShellBlock": "twilightforest:mossy_mazestone",
+  "pedestalBlock": "twilightforest:nagastone_pillar",
+  "returnPadFrameBlock": "twilightforest:underbrick",
+  "platformFloorBlock": "twilightforest:mossy_underbrick",
+  "craterFillBlocks": [
+    "twilightforest:mazestone",
+    "twilightforest:mazestone_brick",
+    "twilightforest:mossy_mazestone",
+    "twilightforest:nagastone",
+    "twilightforest:uberous_soil"
+  ],
+  "rewardTableId": "default",
+  "useAe2Skystone": true
+}

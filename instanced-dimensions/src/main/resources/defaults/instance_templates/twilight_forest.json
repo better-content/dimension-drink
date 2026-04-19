@@ -1,0 +1,7 @@
+{
+  "id": "twilight_forest",
+  "stem": "twilightforest:twilight_forest",
+  "requiredNamespace": "twilightforest",
+  "ephemeral": true,
+  "description": "Runtime template for Twilight Forest instances"
+}
