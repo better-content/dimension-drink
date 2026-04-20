@@ -1,5 +1,4 @@
 package dev.yourname.instanceddimensions.gametest
-
 import dev.yourname.instanceddimensions.MOD_ID
 import dev.yourname.instanceddimensions.NETWORK_CHANNEL
 import dev.yourname.instanceddimensions.compat.RuntimeDimensionAccess
@@ -39,16 +38,20 @@ import net.minecraftforge.eventbus.api.SubscribeEvent
 import org.slf4j.LoggerFactory
 import java.lang.reflect.Proxy
 import java.net.SocketAddress
+import java.nio.file.FileSystems
 import java.nio.file.Files
+import java.nio.file.Path
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.locks.LockSupport
 import java.util.UUID
 
 @GameTestHolder(MOD_ID)
 class BootstrapGameTests {
 
     companion object {
+        private const val DEFAULT_RUNTIME_TEMPLATE = "end"
         private val LOGGER = LoggerFactory.getLogger(BootstrapGameTests::class.java)
         private val RUNTIME_CHANNEL = ResourceLocation.fromNamespaceAndPath(MOD_ID, NETWORK_CHANNEL)
         private val MEMORY_CHANNELS = ConcurrentHashMap<net.minecraft.server.MinecraftServer, SocketAddress>()
@@ -57,6 +60,17 @@ class BootstrapGameTests {
     @GameTest(template = "bootstrap/empty", batch = "bootstrap")
     fun bootstrap_smoke_test(helper: GameTestHelper) {
         helper.assertTrue(InstanceManager.templates().isNotEmpty(), "Expected default instance templates to be loaded from data")
+        helper.succeed()
+    }
+
+    @GameTest(template = "bootstrap/empty", batch = "bootstrap")
+    fun default_template_index_matches_bundled_templates(helper: GameTestHelper) {
+        val indexed = indexedJsonNames("defaults/instance_templates")
+        val bundled = bundledJsonNames("defaults/instance_templates")
+        helper.assertTrue(
+            indexed == bundled,
+            "Expected defaults/instance_templates/.index to match bundled templates; index=$indexed bundled=$bundled"
+        )
         helper.succeed()
     }
 
@@ -108,53 +122,10 @@ class BootstrapGameTests {
         }
     }
 
-    @GameTest(template = "bootstrap/empty", batch = "bootstrap")
-    fun create_instance_rejects_runtime_incompatible_template(helper: GameTestHelper) {
-        val templatesDir = InstanceTemplateDataManager.templatesPath()
-        val incompatibleTemplatePath = templatesDir.resolve("test_runtime_incompatible_template.json")
-
-        Files.createDirectories(templatesDir)
-        Files.writeString(
-            incompatibleTemplatePath,
-            """
-            {
-              "id": "test_runtime_incompatible_template",
-              "stem": "examplemod:test_dimension",
-              "requiredNamespace": "minecraft",
-              "runtimeCompatible": false,
-              "description": "Should fail before runtime construction"
-            }
-            """.trimIndent()
-        )
-
-        try {
-            InstanceManager.reloadTemplates()
-            val template = InstanceManager.getTemplate("test_runtime_incompatible_template")
-            helper.assertTrue(template != null, "Expected runtime-incompatible template to load for validation testing")
-            helper.assertTrue(template?.runtimeCompatible == false, "Expected runtime-incompatible template to preserve its opt-out flag")
-            val validationError = InstanceManager.validateTemplateForRuntime(helper.level.server, "test_runtime_incompatible_template")
-            helper.assertTrue(
-                validationError?.contains("disabled for template 'test_runtime_incompatible_template'") == true,
-                "Expected template validation to reject runtime-incompatible templates, got '$validationError'"
-            )
-
-            val failure = runCatching { InstanceManager.createInstance(helper.level.server, "test_runtime_incompatible_template") }.exceptionOrNull()
-            helper.assertTrue(failure != null, "Expected runtime-incompatible template creation to fail")
-            helper.assertTrue(
-                failure?.message?.contains("disabled for template 'test_runtime_incompatible_template'") == true,
-                "Expected runtime-incompatible template failure to explain the validation error, got '${failure?.message}'"
-            )
-            helper.succeed()
-        } finally {
-            Files.deleteIfExists(incompatibleTemplatePath)
-            InstanceManager.reloadTemplates()
-        }
-    }
-
     @GameTest(template = "bootstrap/empty", batch = "instance_compat", timeoutTicks = 1600)
     fun runtime_dimension_access_tracks_runtime_levels(helper: GameTestHelper) {
         val server = helper.level.server
-        val created = InstanceManager.createInstance(server, "overworld")
+        val created = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
 
         waitUntil(helper, 30, "Expected runtime instance to become ACTIVE for compat queries", condition = {
             InstanceManager.getInstance(created.id)?.state == InstanceState.ACTIVE
@@ -162,7 +133,10 @@ class BootstrapGameTests {
             val level = server.getLevel(created.levelKey)
             helper.assertTrue(level != null, "Expected runtime level to be loaded for compat queries")
             helper.assertTrue(RuntimeDimensionAccess.templates().isNotEmpty(), "Expected compat template list to be populated")
-            helper.assertTrue(RuntimeDimensionAccess.getTemplate("overworld") != null, "Expected compat template lookup to resolve built-in template")
+            helper.assertTrue(
+                RuntimeDimensionAccess.getTemplate(DEFAULT_RUNTIME_TEMPLATE) != null,
+                "Expected compat template lookup to resolve the default runtime test template"
+            )
             helper.assertTrue(RuntimeDimensionAccess.getInstance(created.id)?.id == created.id, "Expected compat instance lookup by id to resolve the runtime instance")
             helper.assertTrue(RuntimeDimensionAccess.getInstance(created.levelKey)?.id == created.id, "Expected compat instance lookup by level key to resolve the runtime instance")
             helper.assertTrue(RuntimeDimensionAccess.getInstance(level!!)?.id == created.id, "Expected compat instance lookup by level to resolve the runtime instance")
@@ -185,7 +159,7 @@ class BootstrapGameTests {
     @GameTest(template = "bootstrap/empty", batch = "instance_create", timeoutTicks = 1600)
     fun instance_create_and_destroy_roundtrip(helper: GameTestHelper) {
         val server = helper.level.server
-        val created = InstanceManager.createInstance(server, "overworld")
+        val created = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
 
         waitUntil(helper, 20, "Expected runtime instance to become ACTIVE after server registration", condition = {
             InstanceManager.getInstance(created.id)?.state == InstanceState.ACTIVE
@@ -218,7 +192,7 @@ class BootstrapGameTests {
     @GameTest(template = "bootstrap/empty", batch = "instance_multi", timeoutTicks = 1600)
     fun multiple_instances_activate_and_cleanup(helper: GameTestHelper) {
         val server = helper.level.server
-        val overworldInstance = InstanceManager.createInstance(server, "overworld")
+        val overworldInstance = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
         val netherInstance = InstanceManager.createInstance(server, "nether")
 
         waitUntil(helper, 30, "Expected both runtime instances to become ACTIVE", condition = {
@@ -256,11 +230,11 @@ class BootstrapGameTests {
         })
     }
 
-    @GameTest(template = "bootstrap/empty", batch = "instance_state", timeoutTicks = 1600)
+    @GameTest(template = "bootstrap/empty", batch = "instance_state_persistence", timeoutTicks = 1600)
     fun instance_level_state_is_isolated_and_persisted(helper: GameTestHelper) {
         val server = helper.level.server
-        val first = InstanceManager.createInstance(server, "overworld")
-        val second = InstanceManager.createInstance(server, "overworld")
+        val first = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
+        val second = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
 
         waitUntil(helper, 30, "Expected both instance levels to become ACTIVE", condition = {
             InstanceManager.getInstance(first.id)?.state == InstanceState.ACTIVE &&
@@ -307,11 +281,11 @@ class BootstrapGameTests {
         })
     }
 
-    @GameTest(template = "bootstrap/empty", batch = "instance_state", timeoutTicks = 1600)
+    @GameTest(template = "bootstrap/empty", batch = "instance_state_seed", timeoutTicks = 1600)
     fun instance_seeds_are_randomized_per_instance(helper: GameTestHelper) {
         val server = helper.level.server
-        val first = InstanceManager.createInstance(server, "overworld")
-        val second = InstanceManager.createInstance(server, "overworld")
+        val first = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
+        val second = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
 
         waitUntil(helper, 30, "Expected both instance levels to become ACTIVE for seed checks", condition = {
             InstanceManager.getInstance(first.id)?.state == InstanceState.ACTIVE &&
@@ -349,7 +323,7 @@ class BootstrapGameTests {
     @GameTest(template = "bootstrap/empty", batch = "instance_travel", timeoutTicks = 1600)
     fun player_can_enter_and_exit_runtime_instance(helper: GameTestHelper) {
         val server = helper.level.server
-        val instance = InstanceManager.createInstance(server, "overworld")
+        val instance = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
 
         waitUntil(helper, 40, "Expected run-backed instance to become ACTIVE", condition = {
             InstanceManager.getInstance(instance.id)?.state == InstanceState.ACTIVE
@@ -443,7 +417,7 @@ class BootstrapGameTests {
                 return
             }
 
-            val instance = InstanceManager.createInstance(server, "overworld")
+            val instance = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
             waitUntil(helper, 60, "Expected stress-cycle instance $cycle to become ACTIVE", condition = {
                 InstanceManager.getInstance(instance.id)?.state == InstanceState.ACTIVE
             }, onSuccess = {
@@ -494,7 +468,7 @@ class BootstrapGameTests {
     @GameTest(template = "bootstrap/empty", batch = "instance_intercept", timeoutTicks = 1600)
     fun direct_dimension_change_is_intercepted_and_tracks_return_anchor(helper: GameTestHelper) {
         val server = helper.level.server
-        val instance = InstanceManager.createInstance(server, "overworld")
+        val instance = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
 
         waitUntil(helper, 40, "Expected interception test instance to become ACTIVE", condition = {
             InstanceManager.getInstance(instance.id)?.state == InstanceState.ACTIVE
@@ -529,7 +503,6 @@ class BootstrapGameTests {
                     player.teleportTo(targetLevel!!, 0.5, 80.0, 0.5, player.yRot, player.xRot)
 
                     waitUntil(helper, 40, "Expected intercepted direct travel to keep the player in the origin dimension", condition = {
-                        client.pump(server)
                         player.serverLevel().dimension() == originDimension
                     }, onSuccess = {
                         helper.assertTrue(
@@ -548,7 +521,6 @@ class BootstrapGameTests {
                             player.teleportTo(targetLevel, 0.5, 80.0, 0.5, player.yRot, player.xRot)
 
                             waitUntil(helper, 80, "Expected direct travel into runtime level after compat hook is released", condition = {
-                                client.pump(server)
                                 player.serverLevel().dimension() == instance.levelKey
                             }, onSuccess = {
                                 helper.assertTrue(
@@ -567,7 +539,6 @@ class BootstrapGameTests {
                                 player.teleportTo(server.overworld(), originX, originY, originZ, player.yRot, player.xRot)
 
                                 waitUntil(helper, 80, "Expected direct exit from runtime level to clear the return anchor", condition = {
-                                    client.pump(server)
                                     player.serverLevel().dimension() == originDimension && !RuntimeDimensionAccess.hasReturnAnchor(player.uuid)
                                 }, onSuccess = {
                                     helper.assertTrue(
@@ -606,7 +577,7 @@ class BootstrapGameTests {
     fun instance_creation_persists_owner_metadata(helper: GameTestHelper) {
         val server = helper.level.server
         val ownerId = UUID.randomUUID()
-        val instance = InstanceManager.createInstance(server, "overworld", ownerId = ownerId)
+        val instance = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE, ownerId = ownerId)
 
         waitUntil(helper, 30, "Expected owner-tagged instance to become ACTIVE", condition = {
             InstanceManager.getInstance(instance.id)?.state == InstanceState.ACTIVE
@@ -638,7 +609,7 @@ class BootstrapGameTests {
     @GameTest(template = "bootstrap/empty", batch = "instance_restore", timeoutTicks = 1600)
     fun saved_instances_restore_after_manager_reset(helper: GameTestHelper) {
         val server = helper.level.server
-        val created = InstanceManager.createInstance(server, "overworld")
+        val created = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
 
         waitUntil(helper, 40, "Expected restore test instance to become ACTIVE", condition = {
             InstanceManager.getInstance(created.id)?.state == InstanceState.ACTIVE
@@ -663,7 +634,7 @@ class BootstrapGameTests {
         })
     }
 
-    @GameTest(template = "bootstrap/empty", batch = "instance_restore", timeoutTicks = 120)
+    @GameTest(template = "bootstrap/empty", batch = "instance_restore_prune", timeoutTicks = 120)
     fun missing_template_records_are_pruned_on_restore(helper: GameTestHelper) {
         val server = helper.level.server
         val invalid = InstanceRecord(
@@ -748,14 +719,16 @@ class BootstrapGameTests {
         val server = helper.level.server
         val serverConnectionListener = requireNotNull(server.connection) { "Expected server connection listener to be available" }
         val existingConnections = serverConnectionListener.connections.toSet()
-        val address = MEMORY_CHANNELS.computeIfAbsent(server) { serverConnectionListener.startMemoryChannel() }
-        val clientConnection = Connection.connectToLocalServer(address)
         val recorder = HeadlessClientRecorder()
-        clientConnection.setListener(recorder.listener)
-        serverConnectionListener.tick()
-
-        val serverConnection = serverConnectionListener.connections.firstOrNull { it !in existingConnections && it.isConnected }
-            ?: error("Expected a new memory-channel server connection")
+        val initialAddress = MEMORY_CHANNELS.computeIfAbsent(server) { serverConnectionListener.startMemoryChannel() }
+        val initialAttempt = openLocalClient(serverConnectionListener, existingConnections, initialAddress, recorder)
+        val connected = initialAttempt ?: run {
+            MEMORY_CHANNELS.remove(server, initialAddress)
+            val fallbackAddress = serverConnectionListener.startMemoryChannel()
+            MEMORY_CHANNELS[server] = fallbackAddress
+            openLocalClient(serverConnectionListener, existingConnections, fallbackAddress, recorder)
+        } ?: error("Expected a new memory-channel server connection")
+        val (clientConnection, serverConnection) = connected
         NetworkHooks.registerServerLoginChannel(serverConnection, ClientIntentionPacket("localhost", 0, ConnectionProtocol.LOGIN))
 
         val player = server.playerList.getPlayerForLogin(GameProfile(UUID.randomUUID(), "test-runtime-player"))
@@ -764,6 +737,74 @@ class BootstrapGameTests {
         server.playerList.placeNewPlayer(serverConnection, player)
         recorder.pump(clientConnection)
         return ConnectedTestClient(player, clientConnection, recorder)
+    }
+
+    private fun openLocalClient(
+        serverConnectionListener: net.minecraft.server.network.ServerConnectionListener,
+        existingConnections: Set<Connection>,
+        address: SocketAddress,
+        recorder: HeadlessClientRecorder
+    ): Pair<Connection, Connection>? {
+        val clientConnection = Connection.connectToLocalServer(address)
+        clientConnection.setListener(recorder.listener)
+        val serverConnection = waitForServerConnection(serverConnectionListener, existingConnections, clientConnection, recorder)
+        if (serverConnection != null) {
+            return clientConnection to serverConnection
+        }
+        clientConnection.disconnect(Component.literal("Headless GameTest connection bootstrap timed out"))
+        clientConnection.handleDisconnection()
+        return null
+    }
+
+    private fun waitForServerConnection(
+        serverConnectionListener: net.minecraft.server.network.ServerConnectionListener,
+        existingConnections: Set<Connection>,
+        clientConnection: Connection,
+        recorder: HeadlessClientRecorder
+    ): Connection? {
+        repeat(80) {
+            serverConnectionListener.tick()
+            recorder.pump(clientConnection)
+            val serverConnection = serverConnectionListener.connections.firstOrNull { it !in existingConnections && it.isConnected }
+            if (serverConnection != null) {
+                return serverConnection
+            }
+            LockSupport.parkNanos(2_000_000L)
+        }
+        return null
+    }
+
+    private fun indexedJsonNames(resourceFolder: String): List<String> {
+        val indexStream = javaClass.classLoader.getResourceAsStream("$resourceFolder/.index")
+            ?: error("Missing resource index for $resourceFolder")
+        return indexStream.bufferedReader().useLines { lines ->
+            lines.map(String::trim)
+                .filter { it.isNotEmpty() }
+                .sorted()
+                .toList()
+        }
+    }
+
+    private fun bundledJsonNames(resourceFolder: String): List<String> {
+        val resourceUri = requireNotNull(javaClass.classLoader.getResource(resourceFolder)) {
+            "Missing resource folder $resourceFolder"
+        }.toURI()
+        return openResourceFolder(resourceUri, resourceFolder).use { resourcePath ->
+            Files.list(resourcePath.path).use { stream ->
+                stream.filter { entry -> Files.isRegularFile(entry) && entry.fileName.toString().endsWith(".json") }
+                    .map { entry -> entry.fileName.toString() }
+                    .sorted()
+                    .toList()
+            }
+        }
+    }
+
+    private fun openResourceFolder(resourceUri: java.net.URI, resourceFolder: String): AutoCloseablePath {
+        if (resourceUri.scheme == "jar") {
+            val fileSystem = FileSystems.newFileSystem(resourceUri, emptyMap<String, Any>())
+            return AutoCloseablePath(fileSystem.getPath("/$resourceFolder")) { fileSystem.close() }
+        }
+        return AutoCloseablePath(Path.of(resourceUri)) { }
     }
 
     private class ConnectedTestClient(
@@ -840,5 +881,9 @@ class BootstrapGameTests {
         fun pump(connection: Connection) {
             connection.tick()
         }
+    }
+
+    private class AutoCloseablePath(val path: Path, private val closeAction: () -> Unit) : AutoCloseable {
+        override fun close() = closeAction()
     }
 }

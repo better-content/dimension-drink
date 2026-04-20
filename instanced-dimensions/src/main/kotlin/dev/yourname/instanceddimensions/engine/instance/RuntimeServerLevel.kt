@@ -1,5 +1,6 @@
 package dev.yourname.instanceddimensions.engine.instance
 
+import com.mojang.logging.LogUtils
 import net.minecraft.resources.ResourceKey
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerLevel
@@ -43,6 +44,7 @@ class RuntimeServerLevel private constructor(
     override fun getSeed(): Long = INSTANCE_SEEDS[dimension()] ?: super.getSeed()
 
     companion object {
+        private val logger = LogUtils.getLogger()
         private val INSTANCE_SEEDS = ConcurrentHashMap<ResourceKey<Level>, Long>()
 
         fun create(
@@ -60,6 +62,16 @@ class RuntimeServerLevel private constructor(
             tickTime: Boolean,
             randomSequences: RandomSequences?
         ): RuntimeServerLevel {
+            val startedAt = System.nanoTime()
+            logger.info(
+                "Creating RuntimeServerLevel level={} stem={} instanceSeed={} biomeZoomSeed={} debugWorld={} tickTime={}",
+                levelKey.location(),
+                stem,
+                instanceSeed,
+                biomeZoomSeed,
+                debugWorld,
+                tickTime
+            )
             INSTANCE_SEEDS[levelKey] = instanceSeed
             return try {
                 RuntimeServerLevel(
@@ -75,18 +87,32 @@ class RuntimeServerLevel private constructor(
                     customSpawners,
                     tickTime,
                     randomSequences
-                )
+                ).also {
+                    logger.info(
+                        "Created RuntimeServerLevel level={} in {}ms",
+                        levelKey.location(),
+                        (System.nanoTime() - startedAt) / 1_000_000L
+                    )
+                }
             } catch (t: Throwable) {
                 INSTANCE_SEEDS.remove(levelKey)
+                logger.warn(
+                    "Failed to create RuntimeServerLevel level={} after {}ms",
+                    levelKey.location(),
+                    (System.nanoTime() - startedAt) / 1_000_000L,
+                    t
+                )
                 throw t
             }
         }
 
         fun forgetSeed(levelKey: ResourceKey<Level>) {
+            logger.info("Forgetting runtime seed for {}", levelKey.location())
             INSTANCE_SEEDS.remove(levelKey)
         }
 
         fun clearSeeds() {
+            logger.info("Clearing {} remembered runtime seeds", INSTANCE_SEEDS.size)
             INSTANCE_SEEDS.clear()
         }
     }

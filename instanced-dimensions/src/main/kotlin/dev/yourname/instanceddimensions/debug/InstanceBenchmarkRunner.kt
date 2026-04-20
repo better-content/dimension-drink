@@ -27,7 +27,7 @@ object InstanceBenchmarkRunner {
 
     private val logger = LogUtils.getLogger()
     private val enabled: Boolean = java.lang.Boolean.getBoolean(BENCHMARK_ENABLED_PROPERTY)
-    private val templateId: String = System.getProperty(BENCHMARK_TEMPLATE_PROPERTY, "overworld")
+    private val templateId: String = System.getProperty(BENCHMARK_TEMPLATE_PROPERTY, "end")
     private val steadyTicks: Int = System.getProperty(BENCHMARK_STEADY_TICKS_PROPERTY, "100").toIntOrNull()?.coerceAtLeast(20) ?: 100
     private val scenarioCounts: List<Int> = parseScenarioCounts(System.getProperty(BENCHMARK_COUNTS_PROPERTY, "1,5,10,20"))
     private val outputPath: Path = Path.of(System.getProperty(BENCHMARK_OUTPUT_PROPERTY, "benchmark-results/instance-benchmark.json"))

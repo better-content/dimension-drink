@@ -43,6 +43,9 @@ object InstanceManager : InstanceService {
     private val warmupChunks = linkedMapOf<UUID, Set<ChunkPos>>()
     private val warmupReadyGameTimes = linkedMapOf<UUID, Long>()
     private val closeGraceCounts = linkedMapOf<UUID, Int>()
+    private val instanceTraceStartedAtNanos = linkedMapOf<UUID, Long>()
+    private val warmupWaitLastLoggedAt = linkedMapOf<UUID, Long>()
+    private val closeWaitLastLoggedAt = linkedMapOf<UUID, Long>()
     private var savedDataDirty = false
 
     override fun templates(): Collection<InstanceTemplate> {
@@ -57,10 +60,8 @@ object InstanceManager : InstanceService {
 
     fun validateTemplateForRuntime(server: MinecraftServer, templateId: String): String? {
         ensureTemplatesLoaded()
+        logger.info("Validating runtime template {}", templateId)
         val template = templates[templateId] ?: return "unknown runtime template '$templateId'"
-        if (template.runtimeCompatible == false) {
-            return "runtime instancing is disabled for template '$templateId'"
-        }
 
         val stemLocation = ResourceLocation.tryParse(template.stem)
             ?: return "template '$templateId' has an invalid level stem '${template.stem}'"
@@ -69,11 +70,19 @@ object InstanceManager : InstanceService {
         if (!stemRegistry.containsKey(stemKey)) {
             return "level stem '$stemLocation' is unavailable"
         }
+        logger.info("Validated runtime template {} stem={} requiredNamespace={}", templateId, stemLocation, template.requiredNamespace ?: "<none>")
         return null
     }
 
     override fun registerTemplate(template: InstanceTemplate) {
         templates[template.id] = template
+        logger.info(
+            "Registered runtime template {} stem={} requiredNamespace={} ephemeral={}",
+            template.id,
+            template.stem,
+            template.requiredNamespace ?: "<none>",
+            template.ephemeral
+        )
     }
 
     override fun allInstances(): Collection<InstanceHandle> = instances.values.map { it.toHandle() }
@@ -105,6 +114,7 @@ object InstanceManager : InstanceService {
     fun retargetTravelWarmup(instanceId: UUID, level: ServerLevel, center: net.minecraft.core.BlockPos) {
         val previousChunks = warmupChunks.remove(instanceId)
         warmupReadyGameTimes.remove(instanceId)
+        warmupWaitLastLoggedAt.remove(instanceId)
         previousChunks?.forEach { chunk ->
             level.chunkSource.removeRegionTicket(TicketType.START, chunk, 1, Unit.INSTANCE)
         }
@@ -115,10 +125,16 @@ object InstanceManager : InstanceService {
         targetChunks.forEach { chunk ->
             level.chunkSource.addRegionTicket(TicketType.START, chunk, 1, Unit.INSTANCE)
         }
+        traceInstance(
+            instances[instanceId],
+            "warmup-retargeted",
+            "center=$center previousChunks=${previousChunks?.size ?: 0} targetChunks=${targetChunks.size} readyAt=${warmupReadyGameTimes[instanceId]}"
+        )
     }
 
     override fun createInstance(server: MinecraftServer, templateId: String, ownerId: UUID?): InstanceHandle {
         ensureTemplatesLoaded()
+        logger.info("Received createInstance request template={} owner={}", templateId, ownerId ?: "<none>")
         val validationError = validateTemplateForRuntime(server, templateId)
         check(validationError == null) { validationError ?: "runtime template validation failed for '$templateId'" }
         val template = templates[templateId] ?: error("Unknown instance template: $templateId")
@@ -135,8 +151,10 @@ object InstanceManager : InstanceService {
             updatedGameTime = currentGameTime(server),
             levelState = InstanceLevelState.createDefault(server, template.id, levelLocation)
         )
+        instanceTraceStartedAtNanos[instanceId] = System.nanoTime()
         register(record)
         lifecycleRequests.addLast(InstanceLifecycleRequest.Create(record.id))
+        traceInstance(record, "allocated", "queueDepth=${lifecycleRequests.size} levelLocation=$levelLocation seed=${record.instanceSeed}")
         markSavedDataDirty()
         return record.toHandle()
     }
@@ -144,9 +162,11 @@ object InstanceManager : InstanceService {
     override fun scheduleDestroy(server: MinecraftServer, id: UUID): Boolean {
         val record = instances[id] ?: return false
         if (record.state == InstanceState.DESTROYED) {
+            traceInstance(record, "destroy-ignored", "reason=already-destroyed")
             return false
         }
 
+        val previousState = record.state
         record.state = when (record.state) {
             InstanceState.ACTIVE,
             InstanceState.LOADING,
@@ -158,6 +178,7 @@ object InstanceManager : InstanceService {
         }
         record.updatedGameTime = currentGameTime(server)
         lifecycleRequests.addLast(InstanceLifecycleRequest.Destroy(id))
+        traceInstance(record, "destroy-requested", "fromState=$previousState toState=${record.state} queueDepth=${lifecycleRequests.size}")
         markSavedDataDirty()
         return true
     }
@@ -166,21 +187,35 @@ object InstanceManager : InstanceService {
         val record = instances[id] ?: return false
         val loadedLevel = server.getLevel(record.levelKey) ?: return false
         captureRuntimeState(record, loadedLevel)
-        markSavedDataDirty()
+        traceInstance(record, "snapshot-captured", "borderSize=${record.levelState.worldBorderSettings().size}")
+        sync(server)
         return true
     }
 
     fun register(record: InstanceRecord) {
         instances[record.id] = record
+        instanceTraceStartedAtNanos.putIfAbsent(record.id, System.nanoTime())
+        traceInstance(record, "registered", "instanceCount=${instances.size}")
     }
 
     fun clearInstances() {
+        logger.info(
+            "Clearing runtime instance manager instances={} lifecycleRequests={} liveLevelData={} warmups={} closeGraceCounts={}",
+            instances.size,
+            lifecycleRequests.size,
+            liveLevelData.size,
+            warmupChunks.size,
+            closeGraceCounts.size
+        )
         instances.clear()
         lifecycleRequests.clear()
         liveLevelData.clear()
         warmupChunks.clear()
         warmupReadyGameTimes.clear()
         closeGraceCounts.clear()
+        instanceTraceStartedAtNanos.clear()
+        warmupWaitLastLoggedAt.clear()
+        closeWaitLastLoggedAt.clear()
         RuntimeServerLevel.clearSeeds()
         savedDataDirty = false
     }
@@ -194,7 +229,7 @@ object InstanceManager : InstanceService {
         InstanceTemplateDataManager.reload()
         templates.clear()
         InstanceTemplateDataManager.allTemplates().forEach(::registerTemplate)
-        logger.info("Registered {} runtime instance templates", templates.size)
+        logger.info("Registered {} runtime instance templates after reload", templates.size)
     }
 
     fun allocatePlaceholder(templateId: String, levelKey: ResourceKey<Level>, ownerId: UUID? = null): InstanceHandle {
@@ -217,10 +252,12 @@ object InstanceManager : InstanceService {
 
     fun restoreFromSavedData(server: MinecraftServer) {
         ensureTemplatesLoaded()
+        logger.info("Restoring runtime instances from saved data")
         val restored = mutableListOf<InstanceRecord>()
         var pruned = false
         InstanceSavedData.get(server).snapshot().forEach { saved ->
             if (saved.state == InstanceState.DESTROYED) {
+                logger.info("Skipping destroyed saved runtime instance {}", saved.id)
                 pruned = true
                 return@forEach
             }
@@ -232,16 +269,19 @@ object InstanceManager : InstanceService {
             val record = saved.deepCopy()
             register(record)
             lifecycleRequests.addLast(InstanceLifecycleRequest.Create(record.id))
+            traceInstance(record, "restored", "queueDepth=${lifecycleRequests.size}")
             restored += record
         }
         if (pruned) {
             InstanceSavedData.get(server).replaceAll(restored)
             savedDataDirty = false
         }
+        logger.info("Restore complete restored={} pruned={} queueDepth={}", restored.size, pruned, lifecycleRequests.size)
     }
 
     @SubscribeEvent
     fun onServerStarted(event: ServerStartedEvent) {
+        logger.info("Server started; initializing runtime instance manager")
         clearInstances()
         reloadTemplates()
         restoreFromSavedData(event.server)
@@ -258,7 +298,9 @@ object InstanceManager : InstanceService {
 
     @SubscribeEvent
     fun onServerStopped(@Suppress("UNUSED_PARAMETER") event: ServerStoppedEvent) {
+        logger.info("Server stopped; resetting runtime instance manager")
         clearInstances()
+        RuntimeLevelKeySyncManager.reset()
     }
 
     @SubscribeEvent
@@ -266,6 +308,7 @@ object InstanceManager : InstanceService {
         val serverLevel = event.level as? ServerLevel ?: return
         val record = instances.values.firstOrNull { it.levelKey == serverLevel.dimension() } ?: return
         captureRuntimeState(record, serverLevel)
+        traceInstance(record, "level-saved", "loadedChunks=${serverLevel.chunkSource.gatherStats()}")
         markSavedDataDirty()
     }
 
@@ -275,18 +318,51 @@ object InstanceManager : InstanceService {
         val activeLevels = instances.values
             .filter { it.state == InstanceState.ACTIVE }
             .map { it.levelKey }
+        logger.info(
+            "Player {} logged in; syncing {} active runtime levels {}",
+            player.scoreboardName,
+            activeLevels.size,
+            activeLevels.map { it.location().toString() }
+        )
         RuntimeLevelKeySyncManager.syncRuntimeLevels(player, activeLevels)
     }
 
+    @SubscribeEvent
+    fun onPlayerLoggedOut(event: PlayerEvent.PlayerLoggedOutEvent) {
+        val player = event.entity as? net.minecraft.server.level.ServerPlayer ?: return
+        logger.info("Player {} logged out; forgetting runtime level sync state", player.scoreboardName)
+        RuntimeLevelKeySyncManager.forgetPlayer(player.uuid)
+    }
+
     private fun flushLifecycle(server: MinecraftServer) {
+        val initialQueueDepth = lifecycleRequests.size
+        val dirtyBefore = savedDataDirty
+        if (initialQueueDepth > 0 || dirtyBefore) {
+            logger.info(
+                "Lifecycle flush start queueDepth={} instanceCount={} savedDataDirty={}",
+                initialQueueDepth,
+                instances.size,
+                dirtyBefore
+            )
+        }
         var dirty = false
 
         while (lifecycleRequests.isNotEmpty()) {
             when (val request = lifecycleRequests.removeFirst()) {
                 is InstanceLifecycleRequest.Create -> {
+                    logger.info(
+                        "Lifecycle dequeue create instance={} remainingQueueDepth={}",
+                        request.instanceId,
+                        lifecycleRequests.size
+                    )
                     dirty = applyCreate(server, request.instanceId) || dirty
                 }
                 is InstanceLifecycleRequest.Destroy -> {
+                    logger.info(
+                        "Lifecycle dequeue destroy instance={} remainingQueueDepth={}",
+                        request.instanceId,
+                        lifecycleRequests.size
+                    )
                     dirty = applyDestroy(server, request.instanceId) || dirty
                 }
             }
@@ -297,9 +373,19 @@ object InstanceManager : InstanceService {
         if (dirty || savedDataDirty) {
             sync(server)
         }
+        if (initialQueueDepth > 0 || dirty || dirtyBefore || savedDataDirty) {
+            logger.info(
+                "Lifecycle flush end dirty={} remainingQueueDepth={} instanceCount={} savedDataDirty={}",
+                dirty,
+                lifecycleRequests.size,
+                instances.size,
+                savedDataDirty
+            )
+        }
     }
 
     private fun markSavedDataDirty() {
+        logger.info("Marked runtime instance saved data dirty")
         savedDataDirty = true
     }
 
@@ -311,13 +397,16 @@ object InstanceManager : InstanceService {
 
     private fun applyCreate(server: MinecraftServer, instanceId: UUID): Boolean {
         val record = instances[instanceId] ?: return false
+        traceInstance(record, "create-begin", "worldPresent=${server.getLevel(record.levelKey) != null}")
         if (server.getLevel(record.levelKey) != null) {
             if (record.state == InstanceState.ACTIVE) {
+                traceInstance(record, "create-skip", "reason=already-active")
                 return false
             }
 
             record.state = InstanceState.ACTIVE
             record.updatedGameTime = currentGameTime(server)
+            traceInstance(record, "create-promote-existing-level", "newState=${record.state}")
             return true
         }
 
@@ -330,6 +419,7 @@ object InstanceManager : InstanceService {
         }
 
         val template = templates[record.templateId] ?: error("Unknown instance template: ${record.templateId}")
+        traceInstance(record, "create-construct-level", "templateStem=${template.stem}")
         val created = runCatching { InstanceLevelFactory.create(server, template, record) }
             .getOrElse { throwable ->
                 logger.warn("Failed to construct runtime instance {} for template {}", record.id, record.templateId, throwable)
@@ -338,18 +428,23 @@ object InstanceManager : InstanceService {
                 warmupChunks.remove(instanceId)
                 warmupReadyGameTimes.remove(instanceId)
                 closeGraceCounts.remove(instanceId)
+                warmupWaitLastLoggedAt.remove(instanceId)
+                closeWaitLastLoggedAt.remove(instanceId)
                 instances.remove(instanceId)
                 markSavedDataDirty()
                 return true
             }
         (created.level.levelData as? InstanceLevelData)?.let { liveLevelData[record.id] = it }
+        traceInstance(record, "create-level-constructed", "spawn=${created.level.sharedSpawnPos}")
         putRuntimeLevel(server, created.level)
         scheduleWarmup(record.id, created.level)
         RuntimeLevelKeySyncManager.announceRuntimeLevel(server, created.level.dimension())
+        traceInstance(record, "create-level-announced", "players=${server.playerList.players.size}")
         MinecraftForge.EVENT_BUS.post(LevelEvent.Load(created.level))
         record.state = InstanceState.ACTIVE
         record.updatedGameTime = currentGameTime(server)
         MinecraftForge.EVENT_BUS.post(RuntimeInstanceEvent.Activated(server, record.toHandle(), created.level))
+        traceInstance(record, "create-complete", "state=${record.state}")
         return true
     }
 
@@ -357,6 +452,7 @@ object InstanceManager : InstanceService {
         val record = instances[instanceId] ?: return false
         val loadedLevel = server.getLevel(record.levelKey)
         val now = currentGameTime(server)
+        traceInstance(record, "destroy-begin", "loadedLevel=${loadedLevel != null} state=${record.state}")
 
         if (loadedLevel == null) {
             RuntimeServerLevel.forgetSeed(record.levelKey)
@@ -364,7 +460,11 @@ object InstanceManager : InstanceService {
             warmupChunks.remove(instanceId)
             warmupReadyGameTimes.remove(instanceId)
             closeGraceCounts.remove(instanceId)
+            warmupWaitLastLoggedAt.remove(instanceId)
+            closeWaitLastLoggedAt.remove(instanceId)
             instances.remove(instanceId)
+            traceInstance(record, "destroy-pruned-unloaded", "reason=level-missing")
+            instanceTraceStartedAtNanos.remove(instanceId)
             markSavedDataDirty()
             return true
         }
@@ -374,9 +474,11 @@ object InstanceManager : InstanceService {
             if (record.state != InstanceState.DRAINING) {
                 record.state = InstanceState.DRAINING
                 record.updatedGameTime = now
+                traceInstance(record, "destroy-waiting-for-players", "residentPlayers=${residentPlayers.map { it.scoreboardName }}")
                 markSavedDataDirty()
                 return true
             }
+            maybeLogDestroyWait(server, record, "players-still-present", "residentPlayers=${residentPlayers.map { it.scoreboardName }}")
             return false
         }
 
@@ -388,7 +490,9 @@ object InstanceManager : InstanceService {
             removeWarmupTicket(instanceId, loadedLevel)
             loadedLevel.chunkSource.removeTicketsOnClosing()
             closeGraceCounts.remove(instanceId)
+            closeWaitLastLoggedAt.remove(instanceId)
             MinecraftForge.EVENT_BUS.post(RuntimeInstanceEvent.Unloading(server, record.toHandle(), loadedLevel))
+            traceInstance(record, "destroy-transition-unloading", "level=${loadedLevel.dimension().location()}")
             markSavedDataDirty()
             return true
         }
@@ -399,6 +503,7 @@ object InstanceManager : InstanceService {
             val drainSnapshot = drainChunkWork(loadedLevel, closing = false)
             if (!isReadyForClose(instanceId, drainSnapshot)) {
                 record.updatedGameTime = now
+                maybeLogDestroyWait(server, record, "unloading-drain", formatDrainSnapshot(drainSnapshot))
                 return true
             }
 
@@ -407,6 +512,8 @@ object InstanceManager : InstanceService {
             record.state = InstanceState.CLOSING
             record.updatedGameTime = now
             closeGraceCounts.remove(instanceId)
+            closeWaitLastLoggedAt.remove(instanceId)
+            traceInstance(record, "destroy-transition-closing", formatDrainSnapshot(drainSnapshot))
             markSavedDataDirty()
             return true
         }
@@ -414,9 +521,11 @@ object InstanceManager : InstanceService {
         val preCloseSnapshot = drainChunkWork(loadedLevel, closing = true)
         if (!isReadyForClose(instanceId, preCloseSnapshot)) {
             record.updatedGameTime = now
+            maybeLogDestroyWait(server, record, "closing-drain", formatDrainSnapshot(preCloseSnapshot))
             return true
         }
 
+        traceInstance(record, "destroy-close-level", formatDrainSnapshot(preCloseSnapshot))
         MinecraftForge.EVENT_BUS.post(LevelEvent.Unload(loadedLevel))
         closeLevelWithoutSave(loadedLevel)
         removeRuntimeLevel(server, loadedLevel)
@@ -426,9 +535,12 @@ object InstanceManager : InstanceService {
         warmupChunks.remove(instanceId)
         warmupReadyGameTimes.remove(instanceId)
         closeGraceCounts.remove(instanceId)
+        warmupWaitLastLoggedAt.remove(instanceId)
+        closeWaitLastLoggedAt.remove(instanceId)
         instances.remove(instanceId)
         MinecraftForge.EVENT_BUS.post(RuntimeInstanceEvent.Destroyed(server, record.toHandle()))
         logger.info("Destroyed instance {} using {} teardown profile", instanceId, C2meCompat.profileName())
+        instanceTraceStartedAtNanos.remove(instanceId)
         markSavedDataDirty()
         return true
     }
@@ -454,6 +566,7 @@ object InstanceManager : InstanceService {
                 now - record.updatedGameTime >= C2meCompat.unloadDrainTicks()
             ) {
                 lifecycleRequests.addLast(InstanceLifecycleRequest.Destroy(record.id))
+                traceInstance(record, "reconcile-enqueue-destroy", "queueDepth=${lifecycleRequests.size} teardownBudgetBefore=$teardownBudget")
                 teardownBudget--
             }
             if (
@@ -466,6 +579,7 @@ object InstanceManager : InstanceService {
             ) {
                 record.state = InstanceState.ACTIVE
                 record.updatedGameTime = now
+                traceInstance(record, "reconcile-promote-active", "loadedLevelPresent=true")
                 dirty = true
             }
         }
@@ -474,6 +588,7 @@ object InstanceManager : InstanceService {
     }
 
     private fun sync(server: MinecraftServer) {
+        logger.info("Persisting {} runtime instances to saved data", instances.size)
         InstanceSavedData.get(server).replaceAll(instances.values)
         savedDataDirty = false
     }
@@ -488,18 +603,29 @@ object InstanceManager : InstanceService {
         val levelData = liveLevelData[record.id] ?: (level.levelData as? InstanceLevelData) ?: return
         record.levelState = levelData.snapshot(level.worldBorder.createSettings())
         record.updatedGameTime = currentGameTime(level.server)
+        traceInstance(record, "state-captured", "borderSize=${record.levelState.worldBorderSettings().size}")
     }
 
     @Suppress("DEPRECATION")
     private fun putRuntimeLevel(server: MinecraftServer, level: ServerLevel) {
         server.forgeGetWorldMap()[level.dimension()] = level
         server.markWorldsDirty()
+        logger.info(
+            "Inserted runtime level {} into forge world map size={}",
+            level.dimension().location(),
+            server.forgeGetWorldMap().size
+        )
     }
 
     @Suppress("DEPRECATION")
     private fun removeRuntimeLevel(server: MinecraftServer, level: ServerLevel) {
         server.forgeGetWorldMap().remove(level.dimension())
         server.markWorldsDirty()
+        logger.info(
+            "Removed runtime level {} from forge world map size={}",
+            level.dimension().location(),
+            server.forgeGetWorldMap().size
+        )
     }
 
     private fun nextLevelKey(templateId: String): ResourceKey<Level> {
@@ -514,16 +640,28 @@ object InstanceManager : InstanceService {
     }
 
     private fun scheduleWarmup(instanceId: UUID, level: ServerLevel) {
+        traceInstance(instances[instanceId], "warmup-schedule", "spawn=${level.sharedSpawnPos}")
         retargetTravelWarmup(instanceId, level, level.sharedSpawnPos)
     }
 
     private fun pruneCompletedWarmup(instanceId: UUID, level: ServerLevel) {
         val readyGameTime = warmupReadyGameTimes[instanceId] ?: return
-        if (currentGameTime(level.server) < readyGameTime) {
+        val now = currentGameTime(level.server)
+        if (now < readyGameTime) {
             return
         }
         val chunks = warmupChunks[instanceId] ?: return
-        if (chunks.any { level.chunkSource.getChunkNow(it.x, it.z) == null }) {
+        val missingChunks = chunks.count { level.chunkSource.getChunkNow(it.x, it.z) == null }
+        if (missingChunks > 0) {
+            val lastLoggedAt = warmupWaitLastLoggedAt[instanceId]
+            if (lastLoggedAt == null || now - lastLoggedAt >= 20L) {
+                traceInstance(
+                    instances[instanceId],
+                    "warmup-waiting",
+                    "gameTime=$now readyAt=$readyGameTime missingChunks=$missingChunks totalChunks=${chunks.size}"
+                )
+                warmupWaitLastLoggedAt[instanceId] = now
+            }
             return
         }
         removeWarmupTicket(instanceId, level)
@@ -532,9 +670,11 @@ object InstanceManager : InstanceService {
     private fun removeWarmupTicket(instanceId: UUID, level: ServerLevel) {
         val chunks = warmupChunks.remove(instanceId) ?: return
         warmupReadyGameTimes.remove(instanceId)
+        warmupWaitLastLoggedAt.remove(instanceId)
         chunks.forEach { chunk ->
             level.chunkSource.removeRegionTicket(TicketType.START, chunk, 1, Unit.INSTANCE)
         }
+        traceInstance(instances[instanceId], "warmup-complete", "releasedChunks=${chunks.size}")
     }
 
     private fun warmupChunksFor(center: net.minecraft.core.BlockPos): Set<ChunkPos> {
@@ -591,6 +731,7 @@ object InstanceManager : InstanceService {
     }
 
     private fun closeLevelWithoutSave(level: ServerLevel) {
+        logger.info("Closing runtime level without save level={}", level.dimension().location())
         level.chunkSource.lightEngine.close()
         accessChunkMap(level.chunkSource).close()
         accessEntityManager(level).close()
@@ -658,7 +799,7 @@ object InstanceManager : InstanceService {
         val storagePendingWrites: Int
     ) {
         val hasHardPendingCloseWork: Boolean
-            get() = loadedChunks > 0 || pendingTasks > 0 || storagePendingWrites > 0
+            get() = loadedChunks > 0 || pendingTasks > 0
     }
 
     private fun isReadyForClose(instanceId: UUID, snapshot: ChunkDrainSnapshot): Boolean {
@@ -674,5 +815,38 @@ object InstanceManager : InstanceService {
         val graceCount = (closeGraceCounts[instanceId] ?: 0) + 1
         closeGraceCounts[instanceId] = graceCount
         return graceCount > C2meCompat.closeGracePasses()
+    }
+
+    private fun traceInstance(record: InstanceRecord?, action: String, details: String) {
+        if (record == null) {
+            logger.info("Runtime instance trace action={} details={}", action, details)
+            return
+        }
+        val startedAt = instanceTraceStartedAtNanos.getOrPut(record.id) { System.nanoTime() }
+        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L
+        logger.info(
+            "Runtime instance trace id={} template={} state={} level={} owner={} elapsed={}ms action={} details={}",
+            record.id,
+            record.templateId,
+            record.state,
+            record.levelKey.location(),
+            record.ownerId ?: "<none>",
+            elapsedMs,
+            action,
+            details
+        )
+    }
+
+    private fun maybeLogDestroyWait(server: MinecraftServer, record: InstanceRecord, phase: String, details: String) {
+        val now = currentGameTime(server)
+        val lastLoggedAt = closeWaitLastLoggedAt[record.id]
+        if (lastLoggedAt == null || now - lastLoggedAt >= 20L) {
+            traceInstance(record, "destroy-wait-$phase", "gameTime=$now $details closeGrace=${closeGraceCounts[record.id] ?: 0}")
+            closeWaitLastLoggedAt[record.id] = now
+        }
+    }
+
+    private fun formatDrainSnapshot(snapshot: ChunkDrainSnapshot): String {
+        return "loadedChunks=${snapshot.loadedChunks} pendingTasks=${snapshot.pendingTasks} chunkMapHasWork=${snapshot.chunkMapHasWork} storagePendingWrites=${snapshot.storagePendingWrites}"
     }
 }

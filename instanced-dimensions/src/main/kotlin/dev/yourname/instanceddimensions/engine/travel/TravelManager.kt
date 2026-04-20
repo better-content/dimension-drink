@@ -1,5 +1,6 @@
 package dev.yourname.instanceddimensions.engine.travel
 
+import com.mojang.logging.LogUtils
 import dev.yourname.instanceddimensions.api.TravelService
 import dev.yourname.instanceddimensions.engine.instance.InstanceManager
 import dev.yourname.instanceddimensions.engine.instance.InstanceState
@@ -21,11 +22,14 @@ import java.util.UUID
 
 object TravelManager : TravelService {
 
+    private val logger = LogUtils.getLogger()
     private val returnAnchors = linkedMapOf<UUID, PlayerReturnAnchor>()
     private val pendingTransfers = ArrayDeque<PendingPlayerTransfer>()
     private val pendingTicketReleases = ArrayDeque<PendingChunkTicketRelease>()
+    private val pendingTransferWaitLogTimes = linkedMapOf<UUID, Long>()
 
     override fun enterInstance(player: ServerPlayer, instanceId: UUID) {
+        logger.info("Player {} requested runtime instance enter instance={}", player.scoreboardName, instanceId)
         val targetHandle = InstanceManager.getInstance(instanceId)
             ?: error("Unknown runtime instance: $instanceId")
         check(targetHandle.state == InstanceState.ACTIVE) {
@@ -42,9 +46,19 @@ object TravelManager : TravelService {
             xRot = player.xRot
         )
         if (MinecraftForge.EVENT_BUS.post(PlayerInstanceTravelEvent.Entering(player, targetHandle, returnAnchor))) {
+            logger.info("Player {} runtime enter cancelled by event for instance={}", player.scoreboardName, targetHandle.id)
             return
         }
         returnAnchors[player.uuid] = returnAnchor
+        logger.info(
+            "Stored return anchor for player {} level={} pos=({}, {}, {}) instance={}",
+            player.scoreboardName,
+            returnAnchor.levelKey.location(),
+            returnAnchor.x,
+            returnAnchor.y,
+            returnAnchor.z,
+            targetHandle.id
+        )
 
         val targetPos = resolveSpawn(targetLevel)
         if (hasLiveConnection(player) && !InstanceManager.isTravelReady(targetHandle.id)) {
@@ -60,9 +74,24 @@ object TravelManager : TravelService {
                     xRot = player.xRot
                 )
             )
+            logger.info(
+                "Queued delayed runtime enter for player {} instance={} targetLevel={} targetPos={} queueDepth={}",
+                player.scoreboardName,
+                targetHandle.id,
+                targetLevel.dimension().location(),
+                targetPos,
+                pendingTransfers.size
+            )
             return
         }
 
+        logger.info(
+            "Entering runtime instance immediately for player {} instance={} targetLevel={} targetPos={}",
+            player.scoreboardName,
+            targetHandle.id,
+            targetLevel.dimension().location(),
+            targetPos
+        )
         transferPlayer(
             player = player,
             targetLevel = targetLevel,
@@ -72,15 +101,26 @@ object TravelManager : TravelService {
             yRot = player.yRot,
             xRot = player.xRot
         ) {
+            logger.info("Player {} entered runtime instance {}", player.scoreboardName, targetHandle.id)
             MinecraftForge.EVENT_BUS.post(PlayerInstanceTravelEvent.Entered(player, targetHandle, returnAnchor))
         }
     }
 
     override fun returnPlayer(player: ServerPlayer): Boolean {
         val anchor = returnAnchors.remove(player.uuid) ?: defaultAnchor(player)
+        logger.info(
+            "Player {} requested runtime return sourceLevel={} targetLevel={} targetPos=({}, {}, {})",
+            player.scoreboardName,
+            player.serverLevel().dimension().location(),
+            anchor.levelKey.location(),
+            anchor.x,
+            anchor.y,
+            anchor.z
+        )
         val sourceInstance = InstanceManager.getInstance(player.serverLevel().dimension())
         if (sourceInstance != null && MinecraftForge.EVENT_BUS.post(PlayerInstanceTravelEvent.Returning(player, sourceInstance, anchor))) {
             returnAnchors[player.uuid] = anchor
+            logger.info("Player {} runtime return cancelled by event for instance={}", player.scoreboardName, sourceInstance.id)
             return false
         }
         val targetLevel = player.server.getLevel(anchor.levelKey) ?: player.server.overworld()
@@ -95,6 +135,7 @@ object TravelManager : TravelService {
             xRot = anchor.xRot
         ) {
             if (sourceInstance != null) {
+                logger.info("Player {} returned from runtime instance {}", player.scoreboardName, sourceInstance.id)
                 MinecraftForge.EVENT_BUS.post(PlayerInstanceTravelEvent.Returned(player, sourceInstance, anchor))
             }
         }
@@ -107,20 +148,30 @@ object TravelManager : TravelService {
 
     fun rememberReturnAnchor(playerId: UUID, anchor: PlayerReturnAnchor): Boolean {
         if (returnAnchors.containsKey(playerId)) {
+            logger.info("Skipping rememberReturnAnchor for player {} because an anchor already exists", playerId)
             return false
         }
         returnAnchors[playerId] = anchor
+        logger.info("Remembered external return anchor for player {} level={}", playerId, anchor.levelKey.location())
         return true
     }
 
     fun clearReturnAnchor(playerId: UUID) {
+        logger.info("Clearing return anchor for player {}", playerId)
         returnAnchors.remove(playerId)
     }
 
     fun reset() {
+        logger.info(
+            "Resetting travel manager returnAnchors={} pendingTransfers={} pendingTicketReleases={}",
+            returnAnchors.size,
+            pendingTransfers.size,
+            pendingTicketReleases.size
+        )
         returnAnchors.clear()
         pendingTransfers.clear()
         pendingTicketReleases.clear()
+        pendingTransferWaitLogTimes.clear()
     }
 
     private fun transferPlayer(
@@ -133,6 +184,15 @@ object TravelManager : TravelService {
         xRot: Float,
         afterMove: () -> Unit
     ) {
+        logger.info(
+            "Transferring player {} to level={} pos=({}, {}, {}) networkMode={}",
+            player.scoreboardName,
+            targetLevel.dimension().location(),
+            x,
+            y,
+            z,
+            if (hasLiveConnection(player)) "live" else "headless"
+        )
         if (hasLiveConnection(player)) {
             moveWithNetwork(player, targetLevel, x, y, z, yRot, xRot)
             afterMove()
@@ -152,6 +212,14 @@ object TravelManager : TravelService {
         xRot: Float
     ) {
         val targetChunk = ChunkPos(BlockPos.containing(x, y, z))
+        logger.info(
+            "moveWithNetwork player={} targetLevel={} chunk={} yRot={} xRot={}",
+            player.scoreboardName,
+            targetLevel.dimension().location(),
+            targetChunk,
+            yRot,
+            xRot
+        )
         RuntimeLevelKeySyncManager.ensurePlayerKnowsLevel(player, targetLevel.dimension())
         targetLevel.chunkSource.addRegionTicket(TicketType.POST_TELEPORT, targetChunk, 1, player.id)
         player.teleportTo(targetLevel, x, y, z, yRot, xRot)
@@ -162,6 +230,12 @@ object TravelManager : TravelService {
                 passengerId = player.id,
                 releaseGameTime = targetLevel.server.overworld().gameTime + 1L
             )
+        )
+        logger.info(
+            "moveWithNetwork complete player={} targetLevel={} releaseQueueDepth={}",
+            player.scoreboardName,
+            targetLevel.dimension().location(),
+            pendingTicketReleases.size
         )
     }
 
@@ -176,6 +250,7 @@ object TravelManager : TravelService {
     ) {
         val currentLevel = player.serverLevel()
         if (currentLevel == targetLevel) {
+            logger.info("moveWithoutNetwork player={} staying within level={}", player.scoreboardName, targetLevel.dimension().location())
             player.absMoveTo(x, y, z, yRot, xRot)
             player.connection.resetPosition()
             currentLevel.chunkSource.move(player)
@@ -184,6 +259,13 @@ object TravelManager : TravelService {
         }
 
         val targetChunk = ChunkPos(BlockPos.containing(x, y, z))
+        logger.info(
+            "moveWithoutNetwork player={} sourceLevel={} targetLevel={} targetChunk={}",
+            player.scoreboardName,
+            currentLevel.dimension().location(),
+            targetLevel.dimension().location(),
+            targetChunk
+        )
         targetLevel.chunkSource.addRegionTicket(TicketType.POST_TELEPORT, targetChunk, 1, player.id)
         currentLevel.removePlayerImmediately(player, Entity.RemovalReason.CHANGED_DIMENSION)
         player.revive()
@@ -223,6 +305,12 @@ object TravelManager : TravelService {
         if (event.phase != TickEvent.Phase.END || (pendingTransfers.isEmpty() && pendingTicketReleases.isEmpty())) {
             return
         }
+        logger.info(
+            "TravelManager tick pendingTransfers={} pendingTicketReleases={} gameTime={}",
+            pendingTransfers.size,
+            pendingTicketReleases.size,
+            event.server.overworld().gameTime
+        )
 
         val remaining = pendingTransfers.size
         repeat(remaining) {
@@ -230,16 +318,39 @@ object TravelManager : TravelService {
             val player = event.server.playerList.getPlayer(transfer.playerId)
             val targetLevel = event.server.getLevel(transfer.targetLevelKey)
             if (player == null || targetLevel == null || !hasLiveConnection(player)) {
+                logger.info(
+                    "Dropping pending transfer player={} targetLevel={} playerPresent={} levelPresent={} liveConnection={}",
+                    transfer.playerId,
+                    transfer.targetLevelKey.location(),
+                    player != null,
+                    targetLevel != null,
+                    player?.let(::hasLiveConnection) == true
+                )
+                pendingTransferWaitLogTimes.remove(transfer.playerId)
                 return@repeat
             }
             if (!InstanceManager.isTravelReadyForLevel(targetLevel.dimension())) {
+                val now = event.server.overworld().gameTime
+                val lastLoggedAt = pendingTransferWaitLogTimes[transfer.playerId]
+                if (lastLoggedAt == null || now - lastLoggedAt >= 20L) {
+                    logger.info(
+                        "Pending transfer still waiting player={} instance={} targetLevel={} gameTime={}",
+                        player.scoreboardName,
+                        transfer.instanceId,
+                        targetLevel.dimension().location(),
+                        now
+                    )
+                    pendingTransferWaitLogTimes[transfer.playerId] = now
+                }
                 pendingTransfers.addLast(transfer)
                 return@repeat
             }
 
             moveWithNetwork(player, targetLevel, transfer.x, transfer.y, transfer.z, transfer.yRot, transfer.xRot)
+            pendingTransferWaitLogTimes.remove(transfer.playerId)
             val instance = InstanceManager.getInstance(transfer.instanceId) ?: return@repeat
             val returnAnchor = returnAnchors[player.uuid] ?: return@repeat
+            logger.info("Pending transfer completed player={} instance={}", player.scoreboardName, transfer.instanceId)
             MinecraftForge.EVENT_BUS.post(PlayerInstanceTravelEvent.Entered(player, instance, returnAnchor))
         }
 
@@ -247,6 +358,13 @@ object TravelManager : TravelService {
             val release = pendingTicketReleases.removeFirst()
             val level = event.server.getLevel(release.levelKey) ?: continue
             level.chunkSource.removeRegionTicket(TicketType.POST_TELEPORT, release.chunkPos, 1, release.passengerId)
+            logger.info(
+                "Released POST_TELEPORT ticket level={} chunk={} passengerId={} remainingReleases={}",
+                release.levelKey.location(),
+                release.chunkPos,
+                release.passengerId,
+                pendingTicketReleases.size
+            )
         }
     }
 

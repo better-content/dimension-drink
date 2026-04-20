@@ -1,6 +1,7 @@
 package dev.yourname.instanceddimensions.engine.instance
 
 import com.google.common.collect.ImmutableList
+import com.mojang.logging.LogUtils
 import net.minecraft.resources.ResourceLocation
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerLevel
@@ -11,10 +12,28 @@ import net.minecraft.world.level.storage.LevelStorageSource
 
 object InstanceLevelFactory {
 
+    private val logger = LogUtils.getLogger()
+
     fun create(server: MinecraftServer, template: InstanceTemplate, record: InstanceRecord): CreatedInstanceLevel {
+        val startedAt = System.nanoTime()
+        logger.info(
+            "InstanceLevelFactory.create start instance={} template={} level={} stem={}",
+            record.id,
+            template.id,
+            record.levelKey.location(),
+            template.stem
+        )
         val stem = resolveStem(server, template)
         val createdLevel = createLevel(server, record, stem)
         createdLevel.worldBorder.applySettings(record.levelState.worldBorderSettings())
+        logger.info(
+            "InstanceLevelFactory.create complete instance={} level={} elapsed={}ms spawn={} borderSize={}",
+            record.id,
+            record.levelKey.location(),
+            (System.nanoTime() - startedAt) / 1_000_000L,
+            createdLevel.sharedSpawnPos,
+            createdLevel.worldBorder.size
+        )
         return CreatedInstanceLevel(createdLevel)
     }
 
@@ -23,6 +42,14 @@ object InstanceLevelFactory {
         val debugWorld = server.worldData.isDebugWorld
         val instanceSeed = resolveInstanceSeed(server, record)
         val obfuscatedSeed = BiomeManager.obfuscateSeed(instanceSeed)
+        logger.info(
+            "Creating runtime level backing objects instance={} level={} seed={} obfuscatedSeed={} debugWorld={}",
+            record.id,
+            record.levelKey.location(),
+            instanceSeed,
+            obfuscatedSeed,
+            debugWorld
+        )
 
         return RuntimeServerLevel.create(
             server,
@@ -44,9 +71,13 @@ object InstanceLevelFactory {
     private fun resolveStem(server: MinecraftServer, template: InstanceTemplate): LevelStem {
         val stemLocation = ResourceLocation.tryParse(template.stem)
             ?: error("Invalid level stem for template ${template.id}: ${template.stem}")
+        logger.info("Resolving level stem {} for template {}", stemLocation, template.id)
         return server.registryAccess()
             .registryOrThrow(net.minecraft.core.registries.Registries.LEVEL_STEM)
             .get(net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.LEVEL_STEM, stemLocation))
+            ?.also {
+                logger.info("Resolved level stem {} for template {}", stemLocation, template.id)
+            }
             ?: error("Unknown level stem for template ${template.id}: $stemLocation")
     }
 
@@ -59,10 +90,12 @@ object InstanceLevelFactory {
 
         preferredNames.forEach { fieldName ->
             runCatching {
-                return serverClass
+                val resolved = serverClass
                     .getDeclaredField(fieldName)
                     .apply { isAccessible = true }
                     .get(server) as LevelStorageSource.LevelStorageAccess
+                logger.info("Resolved MinecraftServer LevelStorageAccess via field {}", fieldName)
+                return resolved
             }
         }
 
@@ -70,6 +103,7 @@ object InstanceLevelFactory {
             .firstOrNull { LevelStorageSource.LevelStorageAccess::class.java.isAssignableFrom(it.type) }
             ?.let { field ->
                 field.isAccessible = true
+                logger.info("Resolved MinecraftServer LevelStorageAccess via fallback field {}", field.name)
                 return field.get(server) as LevelStorageSource.LevelStorageAccess
             }
 

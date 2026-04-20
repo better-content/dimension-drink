@@ -1,0 +1,20 @@
+{
+  "id": "overworld",
+  "displayName": "Overworld Obelisk",
+  "instanceTemplateId": "overworld",
+  "enabled": false,
+  "worldgenWeight": 0.0,
+  "worldgenRarityChance": 200,
+  "worldgenFamilyId": "meteor",
+  "meteorCoreBlock": "minecraft:stone",
+  "meteorShellBlock": "minecraft:stone",
+  "pedestalBlock": "minecraft:stone",
+  "returnPadFrameBlock": "minecraft:obsidian",
+  "platformFloorBlock": "minecraft:bedrock",
+  "craterFillBlocks": [
+    "minecraft:gravel",
+    "minecraft:coarse_dirt"
+  ],
+  "rewardTableId": "overworld",
+  "useAe2Skystone": true
+}

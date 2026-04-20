@@ -31,12 +31,13 @@ object InstanceTemplateDataManager {
 
     @Synchronized
     fun reload() {
+        logger.info("Reloading instance templates from {}", templatesDir.toAbsolutePath())
         copyDefaultsIfMissing()
         templates = loadDirectory(templatesDir, InstanceTemplate::class.java)
             .mapNotNull(::normalizeTemplate)
             .associateBy { it.id }
         loaded = true
-        logger.info("Loaded {} instance templates", templates.size)
+        logger.info("Loaded {} instance templates: {}", templates.size, templates.keys.sorted())
     }
 
     fun allTemplates(): Collection<InstanceTemplate> {
@@ -62,6 +63,13 @@ object InstanceTemplateDataManager {
             logger.info("Skipping instance template {} because required namespace {} is unavailable", id, requiredNamespace)
             return null
         }
+        logger.info(
+            "Accepted instance template {} stem={} requiredNamespace={} ephemeral={}",
+            id,
+            stem,
+            requiredNamespace ?: "<none>",
+            template.ephemeral
+        )
         return template.copy(
             id = id,
             stem = stem,
@@ -78,6 +86,7 @@ object InstanceTemplateDataManager {
 
     private fun copyDefaultsIfMissing() {
         templatesDir.createDirectories()
+        logger.info("Ensuring default instance templates exist in {}", templatesDir.toAbsolutePath())
         copyDefaultFolder("defaults/instance_templates", templatesDir)
     }
 
@@ -91,6 +100,7 @@ object InstanceTemplateDataManager {
                     if (target.exists()) return@forEach
                     val resource = javaClass.classLoader.getResourceAsStream("$resourceFolder/$fileName") ?: return@forEach
                     resource.use { input ->
+                        logger.info("Copying bundled instance template {} to {}", fileName, target.toAbsolutePath())
                         target.outputStream().use { output ->
                             input.copyTo(output)
                         }
@@ -105,6 +115,7 @@ object InstanceTemplateDataManager {
             stream.filter { path -> path.name.endsWith(".json") }
                 .sorted()
                 .map { path ->
+                    logger.info("Reading instance template file {}", path.toAbsolutePath())
                     path.inputStream().use { input ->
                         gson.fromJson(input.reader(), type)
                     }

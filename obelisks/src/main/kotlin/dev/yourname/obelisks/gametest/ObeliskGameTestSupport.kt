@@ -62,6 +62,7 @@ import java.util.Collections
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.locks.LockSupport
 
 object ObeliskGameTestSupport {
     private val gson = GsonBuilder().setPrettyPrinting().create()
@@ -70,7 +71,7 @@ object ObeliskGameTestSupport {
 
     fun runCreationPersistsOwnedInstanceMetadata(helper: GameTestHelper) {
         val server = helper.level.server
-        val run = RunRegistry.beginRun(server, UUID.randomUUID(), "overworld")
+        val run = RunRegistry.beginRun(server, UUID.randomUUID(), "end")
 
         waitUntil(helper, 40, "Expected run-backed instance to become ACTIVE", condition = {
             InstanceManager.getInstance(run.instanceId)?.state == InstanceState.ACTIVE
@@ -294,23 +295,39 @@ object ObeliskGameTestSupport {
     }
 
     fun successfulRunBuffersRewardsAndShowsBossBar(helper: GameTestHelper) {
+        deleteTestConfigs()
         val server = helper.level.server
         val client = connectHeadlessPlayer(helper)
         val player = client.player
         val obeliskPos = helper.absolutePos(BlockPos(4, 2, 4))
         val originDimension = player.serverLevel().dimension()
+        val definitionId = "test_reward_success_definition"
 
         try {
-            helper.level.setBlock(obeliskPos.below(), Blocks.OBSIDIAN.defaultBlockState(), 3)
-            helper.level.setBlock(obeliskPos, ModBlocks.OBELISK.get().defaultBlockState(), 3)
+            writeDefinition(
+                ObeliskDefinition(
+                    id = definitionId,
+                    displayName = "Reward Success",
+                    instanceTemplateId = "end",
+                    rewardTableId = "test_reward_success_rewards"
+                )
+            )
+            writeRewardTable(
+                RewardTableDefinition(
+                    id = "test_reward_success_rewards",
+                    baseRolls = 2,
+                    damagePerBonusRoll = 9999.0f,
+                    pools = listOf(poolOf("emeralds", "minecraft:emerald"))
+                )
+            )
+            reloadDataWithCommand(server)
+            placeChargedDefinitionObelisk(helper, obeliskPos, definitionId)
             helper.level.setBlock(obeliskPos.east(), Blocks.HOPPER.defaultBlockState(), 3)
 
             val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
             helper.assertTrue(obelisk != null, "Expected placed obelisk block entity to exist")
-            prepareTestObelisk(obelisk!!)
-            obelisk.regenerateEnergy(obelisk.getMaxEnergyStored())
 
-            val activationMessage = RunRegistry.activateObelisk(player, obelisk, obeliskPos)
+            val activationMessage = RunRegistry.activateObelisk(player, obelisk!!, obeliskPos)
             helper.assertTrue(
                 activationMessage?.startsWith("Initializing") == true,
                 "Expected reward test activation to initialize a run, got: $activationMessage"
@@ -409,6 +426,9 @@ object ObeliskGameTestSupport {
         } catch (t: Throwable) {
             client.close(server)
             throw t
+        } finally {
+            deleteTestConfigs()
+            reloadDataWithCommand(server)
         }
     }
 
@@ -734,70 +754,6 @@ object ObeliskGameTestSupport {
         helper.succeed()
     }
 
-    fun runtimeIncompatibleTemplateFailsObeliskActivationCleanly(helper: GameTestHelper) {
-        deleteTestConfigs()
-        deleteTestInstanceTemplates()
-        val server = helper.level.server
-        val obeliskPos = helper.absolutePos(BlockPos(4, 2, 19))
-        val templateId = "test_runtime_incompatible_template"
-        val definitionId = "test_runtime_incompatible_definition"
-        val client = connectHeadlessPlayer(helper)
-        val player = client.player
-        val originDimension = player.serverLevel().dimension()
-
-        writeInstanceTemplate(
-            InstanceTemplate(
-                id = templateId,
-                stem = "examplemod:test_dimension",
-                requiredNamespace = "minecraft",
-                runtimeCompatible = false,
-                description = "Should fail before runtime world creation"
-            )
-        )
-        writeDefinition(
-            ObeliskDefinition(
-                id = definitionId,
-                displayName = "Blocked Runtime Template",
-                instanceTemplateId = templateId,
-                rewardTableId = "default"
-            )
-        )
-
-        try {
-            InstanceManager.reloadTemplates()
-            reloadDataWithCommand(server)
-            placeChargedDefinitionObelisk(helper, obeliskPos, definitionId)
-            val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
-            helper.assertTrue(obelisk != null, "Expected placed obelisk block entity for runtime-incompatible template test")
-
-            val message = RunRegistry.activateObelisk(player, obelisk!!, obeliskPos)
-            helper.assertTrue(
-                message?.startsWith("Cannot initialize Blocked Runtime Template run:") == true,
-                "Expected incompatible template activation to fail immediately, got '$message'"
-            )
-            helper.assertTrue(
-                message?.contains("disabled for template '$templateId'") == true,
-                "Expected incompatible template activation message to explain the runtime block, got '$message'"
-            )
-            helper.assertTrue(obelisk.activeRunId == null, "Expected failed activation to leave the obelisk without an active run")
-            helper.assertTrue(
-                RunRegistry.snapshot().none { it.obeliskId == obelisk.obeliskId },
-                "Expected failed activation to avoid registering a run"
-            )
-            helper.assertTrue(
-                player.serverLevel().dimension() == originDimension,
-                "Expected failed activation to keep the player in the origin dimension"
-            )
-            helper.succeed()
-        } finally {
-            client.close(server)
-            deleteTestConfigs()
-            deleteTestInstanceTemplates()
-            reloadDataWithCommand(server)
-            InstanceManager.reloadTemplates()
-        }
-    }
-
     fun secondPlayerJoinsExistingRunAndBothReturn(helper: GameTestHelper) {
         val server = helper.level.server
         val clientA = connectHeadlessPlayer(helper)
@@ -893,14 +849,16 @@ object ObeliskGameTestSupport {
         val server = helper.level.server
         val serverConnectionListener = requireNotNull(server.connection) { "Expected server connection listener to be available" }
         val existingConnections = serverConnectionListener.connections.toSet()
-        val address = memoryChannels.computeIfAbsent(server) { serverConnectionListener.startMemoryChannel() }
-        val clientConnection = Connection.connectToLocalServer(address)
         val recorder = HeadlessClientRecorder()
-        clientConnection.setListener(recorder.listener)
-        serverConnectionListener.tick()
-
-        val serverConnection = serverConnectionListener.connections.firstOrNull { it !in existingConnections && it.isConnected }
-            ?: error("Expected a new memory-channel server connection")
+        val initialAddress = memoryChannels.computeIfAbsent(server) { serverConnectionListener.startMemoryChannel() }
+        val initialAttempt = openLocalClient(serverConnectionListener, existingConnections, initialAddress, recorder)
+        val connected = initialAttempt ?: run {
+            memoryChannels.remove(server, initialAddress)
+            val fallbackAddress = serverConnectionListener.startMemoryChannel()
+            memoryChannels[server] = fallbackAddress
+            openLocalClient(serverConnectionListener, existingConnections, fallbackAddress, recorder)
+        } ?: error("Expected a new memory-channel server connection")
+        val (clientConnection, serverConnection) = connected
         NetworkHooks.registerServerLoginChannel(serverConnection, ClientIntentionPacket("localhost", 0, ConnectionProtocol.LOGIN))
 
         val player = server.playerList.getPlayerForLogin(GameProfile(UUID.randomUUID(), "test-obelisk-player"))
@@ -909,6 +867,41 @@ object ObeliskGameTestSupport {
         server.playerList.placeNewPlayer(serverConnection, player)
         recorder.pump(clientConnection)
         return ConnectedTestClient(player, clientConnection, recorder)
+    }
+
+    private fun openLocalClient(
+        serverConnectionListener: net.minecraft.server.network.ServerConnectionListener,
+        existingConnections: Set<Connection>,
+        address: SocketAddress,
+        recorder: HeadlessClientRecorder
+    ): Pair<Connection, Connection>? {
+        val clientConnection = Connection.connectToLocalServer(address)
+        clientConnection.setListener(recorder.listener)
+        val serverConnection = waitForServerConnection(serverConnectionListener, existingConnections, clientConnection, recorder)
+        if (serverConnection != null) {
+            return clientConnection to serverConnection
+        }
+        clientConnection.disconnect(Component.literal("Headless GameTest connection bootstrap timed out"))
+        clientConnection.handleDisconnection()
+        return null
+    }
+
+    private fun waitForServerConnection(
+        serverConnectionListener: net.minecraft.server.network.ServerConnectionListener,
+        existingConnections: Set<Connection>,
+        clientConnection: Connection,
+        recorder: HeadlessClientRecorder
+    ): Connection? {
+        repeat(80) {
+            serverConnectionListener.tick()
+            recorder.pump(clientConnection)
+            val serverConnection = serverConnectionListener.connections.firstOrNull { it !in existingConnections && it.isConnected }
+            if (serverConnection != null) {
+                return serverConnection
+            }
+            LockSupport.parkNanos(2_000_000L)
+        }
+        return null
     }
 
     private fun emeraldCount(obelisk: ObeliskBlockEntity?): Int {
