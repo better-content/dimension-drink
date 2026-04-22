@@ -1,6 +1,8 @@
 package dev.yourname.obelisks.runtime.run
 
 import com.mojang.logging.LogUtils
+import dev.yourname.instanceddimensions.api.InstanceCreateResult
+import dev.yourname.instanceddimensions.api.TravelEnterResult
 import dev.yourname.instanceddimensions.engine.instance.InstanceManager
 import dev.yourname.instanceddimensions.engine.instance.InstanceState
 import dev.yourname.instanceddimensions.engine.travel.TravelManager
@@ -8,6 +10,7 @@ import dev.yourname.instanceddimensions.events.PlayerInstanceTravelEvent
 import dev.yourname.instanceddimensions.events.RuntimeDimensionTransitionEvent
 import dev.yourname.instanceddimensions.events.RuntimeInstanceEvent
 import dev.yourname.obelisks.ObeliskConstants
+import dev.yourname.obelisks.api.RunBeginResult
 import dev.yourname.obelisks.api.RunHandle
 import dev.yourname.obelisks.api.RunService
 import dev.yourname.obelisks.content.ObeliskBlockEntity
@@ -18,10 +21,12 @@ import net.minecraft.network.chat.Component
 import net.minecraft.resources.ResourceKey
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.level.ChunkPos
 import net.minecraft.world.level.Level
 import net.minecraftforge.event.TickEvent
 import net.minecraftforge.event.entity.player.PlayerEvent
 import net.minecraftforge.event.server.ServerStartedEvent
+import net.minecraftforge.event.server.ServerStoppingEvent
 import net.minecraftforge.event.server.ServerStoppedEvent
 import net.minecraftforge.eventbus.api.SubscribeEvent
 import java.util.UUID
@@ -30,8 +35,57 @@ import kotlin.math.exp
 object RunRegistry : RunService {
 
     private const val VOID_FALL_Y = -64.0
+    private const val PREPARED_INSTANCE_RETRY_DELAY_TICKS = 40L
+    private const val PREPARED_INSTANCE_FAILURE_RETRY_DELAY_TICKS = 20L * 15L
+    private const val MAX_CONCURRENT_PREPARED_WORLDGEN = 1
+    private const val PREPARED_SUMMARY_ACTIVE_INTERVAL_TICKS = 100L
+    private const val PREPARED_SUMMARY_IDLE_INTERVAL_TICKS = 20L * 60L
     private val logger = LogUtils.getLogger()
     private val runs = linkedMapOf<UUID, RunRecord>()
+    private val preparedInstances = linkedMapOf<String, PreparedInstanceSlot>()
+    private val preparedRequestQueue = linkedSetOf<String>()
+    private val preparedRetryAfter = linkedMapOf<String, Long>()
+    private var preparedSummaryLastLogGameTime = Long.MIN_VALUE
+    private var shuttingDown = false
+
+    private data class PreparedInstanceSlot(
+        val templateId: String,
+        val instanceId: UUID,
+        val requestedGameTime: Long,
+        var spawnPos: BlockPos? = null,
+        var readyGameTime: Long? = null
+    )
+
+    private data class PreparedWorkSnapshot(
+        val templateId: String,
+        val phase: String,
+        val completed: Int? = null,
+        val total: Int? = null,
+        val detail: String? = null
+    ) {
+        fun describe(): String {
+            val progress = if (completed == null || total == null || total <= 0) {
+                null
+            } else {
+                val percent = ((completed.toDouble() / total.toDouble()) * 100.0).toInt().coerceIn(0, 100)
+                "${percent}% ($completed/$total)"
+            }
+            return listOfNotNull(templateId, phase, progress, detail).joinToString(" ")
+        }
+    }
+
+    private data class AcquiredRunInstance(
+        val instanceId: UUID,
+        val spawnPos: BlockPos? = null,
+        val source: String,
+        val activationPending: Boolean = false
+    )
+
+    private sealed interface RunEntryAttempt {
+        data object Entered : RunEntryAttempt
+        data class Waiting(val message: String) : RunEntryAttempt
+        data class Rejected(val message: String) : RunEntryAttempt
+    }
 
     override fun getRun(playerId: UUID): RunHandle? {
         return runs.values.firstOrNull { playerId in it.activePlayers || playerId in it.pendingPlayers }?.toHandle()
@@ -43,6 +97,23 @@ object RunRegistry : RunService {
 
     fun snapshot(): List<RunRecord> = runs.values.map { it.deepCopy() }
 
+    fun isPreparedInstanceReady(templateId: String): Boolean {
+        return preparedInstances[templateId]?.readyGameTime != null
+    }
+
+    fun describePreparedInstances(): String {
+        if (preparedInstances.isEmpty() && preparedRequestQueue.isEmpty()) {
+            return "[]"
+        }
+        val entries = preparedInstances.values.map { slot ->
+            val state = InstanceManager.getInstance(slot.instanceId)?.state ?: "<missing>"
+            "template=${slot.templateId},instance=${slot.instanceId},state=$state,spawn=${slot.spawnPos},ready=${slot.readyGameTime != null}"
+        } + preparedRequestQueue.map { templateId ->
+            "template=$templateId,instance=<queued>,spawn=null,ready=false"
+        }
+        return entries.joinToString(prefix = "[", postfix = "]")
+    }
+
     fun clearPlayerAssignment(server: MinecraftServer, playerId: UUID): Boolean {
         val record = mutableRunForPlayer(playerId) ?: return false
         removePlayer(record, playerId)
@@ -50,15 +121,16 @@ object RunRegistry : RunService {
         return true
     }
 
-    override fun beginRun(server: MinecraftServer, obeliskId: UUID, definitionId: String): RunHandle {
-        return createRun(
+    override fun beginRun(server: MinecraftServer, obeliskId: UUID, definitionId: String): RunBeginResult {
+        val created = createRun(
             server = server,
             obeliskId = obeliskId,
             definitionId = definitionId,
             originLevelKey = null,
             originObeliskPos = null,
             queuedPlayerId = null
-        ).toHandle()
+        ) ?: return RunBeginResult.Rejected("Run is still preparing for ${displayName(definitionId)} - try again in a moment")
+        return RunBeginResult.Accepted(created.toHandle())
     }
 
     override fun finishRun(server: MinecraftServer, runId: UUID): Boolean {
@@ -123,8 +195,11 @@ object RunRegistry : RunService {
             existingRun.pendingPlayers += player.uuid
             existingRun.updatedGameTime = currentGameTime(server)
             sync(server)
-            tryQueueEntry(server, existingRun, player)
-            return "Joining active ${displayName(existingRun.definitionId)} run..."
+            return when (val entry = tryQueueEntry(server, existingRun, player)) {
+                RunEntryAttempt.Entered -> "Joining active ${displayName(existingRun.definitionId)} run..."
+                is RunEntryAttempt.Waiting -> entry.message
+                is RunEntryAttempt.Rejected -> entry.message
+            }
         }
 
         if (obelisk.isOnCooldown()) {
@@ -139,7 +214,7 @@ object RunRegistry : RunService {
             return "Obelisk not fully charged ($percent% - wait for 100%)"
         }
 
-        val instanceTemplateId = ObeliskDataManager.getObelisk(obelisk.definitionId)?.instanceTemplateId ?: obelisk.definitionId
+        val instanceTemplateId = templateIdForDefinition(obelisk.definitionId)
         val validationError = InstanceManager.validateTemplateForRuntime(server, instanceTemplateId)
         if (validationError != null) {
             return "Cannot initialize ${displayName(obelisk.definitionId)} run: $validationError"
@@ -152,24 +227,47 @@ object RunRegistry : RunService {
             originLevelKey = player.serverLevel().dimension(),
             originObeliskPos = pos,
             queuedPlayerId = player.uuid
-        )
+        ) ?: return buildString {
+            append("Run is still preparing for ")
+            append(displayName(obelisk.definitionId))
+            append(" - try again in a moment")
+        }
         obelisk.setActiveRun(created.id)
         sync(server)
-        return "Initializing ${displayName(created.definitionId)} run..."
+        return when (val entry = tryQueueEntry(server, created, player)) {
+            RunEntryAttempt.Entered -> "Entering ${displayName(created.definitionId)} run..."
+            is RunEntryAttempt.Waiting -> entry.message
+            is RunEntryAttempt.Rejected -> {
+                discardEmptyRun(server, created, "initial-entry-rejected")
+                entry.message
+            }
+        }
     }
 
     @SubscribeEvent
     fun onServerStarted(event: ServerStartedEvent) {
+        shuttingDown = false
+        preparedInstances.clear()
+        preparedRequestQueue.clear()
+        preparedRetryAfter.clear()
+        preparedSummaryLastLogGameTime = Long.MIN_VALUE
         restoreFromSavedData(event.server)
     }
 
     @SubscribeEvent
     fun onServerTick(event: TickEvent.ServerTickEvent) {
-        if (event.phase != TickEvent.Phase.END || runs.isEmpty()) {
+        if (event.phase != TickEvent.Phase.END) {
+            return
+        }
+        if (shuttingDown) {
             return
         }
 
         val server = event.server
+        maintainPreparedInstances(server)
+        if (runs.isEmpty()) {
+            return
+        }
         var dirty = false
         runs.values.toList().forEach { record ->
             dirty = tickRun(server, record) || dirty
@@ -191,6 +289,18 @@ object RunRegistry : RunService {
 
     @SubscribeEvent
     fun onRuntimeInstanceDestroyed(event: RuntimeInstanceEvent.Destroyed) {
+        preparedSlotForInstance(event.instance.id)?.let { slot ->
+            logger.warn(
+                "Prepared runtime instance destroyed template={} instance={} ready={} level={}",
+                slot.templateId,
+                slot.instanceId,
+                slot.readyGameTime != null,
+                event.instance.levelKey.location()
+            )
+            preparedInstances.remove(slot.templateId)
+            preparedRetryAfter[slot.templateId] = currentGameTime(event.server) + PREPARED_INSTANCE_RETRY_DELAY_TICKS
+            return
+        }
         val run = runForInstance(event.instance.id) ?: return
         clearOriginObelisk(event.server, run, startCooldown = false)
         runs.remove(run.id)
@@ -252,15 +362,75 @@ object RunRegistry : RunService {
     }
 
     @SubscribeEvent
-    fun onServerStopped(@Suppress("UNUSED_PARAMETER") event: ServerStoppedEvent) {
+    fun onServerStopping(event: ServerStoppingEvent) {
+        shuttingDown = true
+        if (runs.isEmpty() && preparedInstances.isEmpty() && preparedRequestQueue.isEmpty() && preparedRetryAfter.isEmpty()) {
+            return
+        }
+        logger.info(
+            "Server stopping; clearing run registry runs={} preparedInstances={} queuedRequests={} retryEntries={}",
+            runs.size,
+            preparedInstances.size,
+            preparedRequestQueue.size,
+            preparedRetryAfter.size
+        )
+        runs.values.toList().forEach { record ->
+            clearOriginObelisk(event.server, record, startCooldown = false)
+        }
         runs.clear()
+        preparedInstances.clear()
+        preparedRequestQueue.clear()
+        preparedRetryAfter.clear()
+        preparedSummaryLastLogGameTime = Long.MIN_VALUE
+        sync(event.server)
+    }
+
+    @SubscribeEvent
+    fun onServerStopped(@Suppress("UNUSED_PARAMETER") event: ServerStoppedEvent) {
+        shuttingDown = false
+        runs.clear()
+        preparedInstances.clear()
+        preparedRequestQueue.clear()
+        preparedRetryAfter.clear()
+        preparedSummaryLastLogGameTime = Long.MIN_VALUE
     }
 
     fun restoreFromSavedData(server: MinecraftServer) {
         runs.clear()
+        preparedInstances.clear()
         RunSavedData.get(server).snapshot().forEach { record ->
             runs[record.id] = record.deepCopy()
         }
+        val desiredTemplates = ObeliskDataManager.enabledObelisks()
+            .map { it.instanceTemplateId }
+            .toCollection(linkedSetOf())
+        val seenTemplates = linkedSetOf<String>()
+        InstanceManager.records()
+            .filter { it.ownerId == null && (it.state == InstanceState.PREPARING || it.state == InstanceState.PREPARED) }
+            .sortedWith(compareByDescending<dev.yourname.instanceddimensions.engine.instance.InstanceRecord> { it.state == InstanceState.PREPARED }.thenByDescending { it.updatedGameTime })
+            .forEach { record ->
+                if (record.templateId !in desiredTemplates) {
+                    InstanceManager.scheduleDestroy(server, record.id)
+                    return@forEach
+                }
+                if (!seenTemplates.add(record.templateId)) {
+                    logger.warn(
+                        "Discarding duplicate recovered prepared runtime instance template={} instance={} state={}",
+                        record.templateId,
+                        record.id,
+                        record.state
+                    )
+                    InstanceManager.scheduleDestroy(server, record.id)
+                    return@forEach
+                }
+                preparedInstances[record.templateId] = PreparedInstanceSlot(
+                    templateId = record.templateId,
+                    instanceId = record.id,
+                    requestedGameTime = record.createdGameTime,
+                    spawnPos = record.preparedSpawnPos,
+                    readyGameTime = if (record.state == InstanceState.PREPARED) record.updatedGameTime else null
+                )
+            }
     }
 
     private fun createRun(
@@ -270,29 +440,551 @@ object RunRegistry : RunService {
         originLevelKey: ResourceKey<Level>?,
         originObeliskPos: BlockPos?,
         queuedPlayerId: UUID?
-    ): RunRecord {
+    ): RunRecord? {
         val runId = UUID.randomUUID()
-        val instanceTemplateId = ObeliskDataManager.getObelisk(definitionId)?.instanceTemplateId ?: definitionId
-        val instance = InstanceManager.createInstance(server, instanceTemplateId, ownerId = runId)
-        logger.info("Created obelisk run {} definition={} template={} instance={}", runId, definitionId, instanceTemplateId, instance.id)
+        val instanceTemplateId = templateIdForDefinition(definitionId)
+        val acquired = consumePreparedInstance(server, instanceTemplateId, runId) ?: return null
+        logger.info(
+            "Created obelisk run {} definition={} template={} instance={} source={}",
+            runId,
+            definitionId,
+            instanceTemplateId,
+            acquired.instanceId,
+            acquired.source
+        )
         val record = RunRecord(
             id = runId,
-            instanceId = instance.id,
+            instanceId = acquired.instanceId,
             obeliskId = obeliskId,
             definitionId = definitionId,
             instanceTemplateId = instanceTemplateId,
             originLevelKey = originLevelKey,
             originObeliskPos = originObeliskPos,
+            spawnPos = acquired.spawnPos,
             createdGameTime = currentGameTime(server),
             updatedGameTime = currentGameTime(server)
         )
         if (queuedPlayerId != null) {
             record.pendingPlayers += queuedPlayerId
+        }
+        if (queuedPlayerId != null || acquired.activationPending) {
             record.state = RunState.WARMING_UP
         }
         runs[record.id] = record
         sync(server)
         return record
+    }
+
+    private fun consumePreparedInstance(server: MinecraftServer, templateId: String, runId: UUID): AcquiredRunInstance? {
+        val slot = preparedInstances[templateId]
+        if (slot == null) {
+            logger.info("Prepared runtime instance missing for template={} when creating run={}", templateId, runId)
+            return null
+        }
+
+        val instance = InstanceManager.getInstance(slot.instanceId)
+        if (instance == null) {
+            logger.warn("Prepared runtime instance vanished before consumption template={} instance={}", templateId, slot.instanceId)
+            preparedInstances.remove(templateId)
+            preparedRetryAfter[templateId] = currentGameTime(server) + PREPARED_INSTANCE_RETRY_DELAY_TICKS
+            ensurePreparedInstanceRequested(server, templateId, reason = "missing-before-consume")
+            return null
+        }
+        val arrivalStatus = InstanceManager.arrivalStatus(slot.instanceId)
+        if (
+            slot.spawnPos == null ||
+            slot.readyGameTime == null ||
+            instance.state != InstanceState.PREPARED
+        ) {
+            logger.info(
+                "Prepared runtime instance not ready for consumption template={} instance={} state={} spawn={} ready={} arrivalPhase={} arrivalFailure={}",
+                templateId,
+                slot.instanceId,
+                instance.state,
+                slot.spawnPos,
+                slot.readyGameTime != null,
+                arrivalStatus.phase,
+                arrivalStatus.failureReason
+            )
+            return null
+        }
+
+        preparedInstances.remove(templateId)
+        preparedRetryAfter.remove(templateId)
+        val activationError = InstanceManager.activatePreparedInstance(server, slot.instanceId, runId)
+        if (activationError != null) {
+            logger.warn(
+                "Failed to activate prepared runtime instance {} for run {} reason={}",
+                slot.instanceId,
+                runId,
+                activationError
+            )
+            ensurePreparedInstanceRequested(server, templateId, reason = "owner-assign-failed")
+            return null
+        }
+        logger.info(
+            "Consumed prepared runtime instance template={} instance={} run={} spawn={} requestedAt={} readyAt={}",
+            templateId,
+            slot.instanceId,
+            runId,
+            slot.spawnPos,
+            slot.requestedGameTime,
+            slot.readyGameTime
+        )
+        ensurePreparedInstanceRequested(server, templateId, reason = "consumed")
+        return AcquiredRunInstance(
+            instanceId = slot.instanceId,
+            spawnPos = slot.spawnPos,
+            source = "prepared",
+            activationPending = true
+        )
+    }
+
+    private fun maintainPreparedInstances(server: MinecraftServer) {
+        val desiredTemplates = ObeliskDataManager.enabledObelisks()
+            .map { it.instanceTemplateId }
+            .toCollection(linkedSetOf())
+        preparedInstances.entries.toList().forEach { (templateId, slot) ->
+            if (templateId !in desiredTemplates) {
+                retirePreparedInstance(server, slot, reason = "template-no-longer-enabled")
+            }
+        }
+        preparedRetryAfter.keys.toList().forEach { templateId ->
+            if (templateId !in desiredTemplates) {
+                preparedRetryAfter.remove(templateId)
+            }
+        }
+        preparedRequestQueue.removeIf { it !in desiredTemplates }
+        desiredTemplates.forEach { templateId ->
+            val slot = preparedInstances[templateId]
+            if (slot == null) {
+                ensurePreparedInstanceRequested(server, templateId, reason = "ensure")
+                return@forEach
+            }
+            advancePreparedInstance(server, slot)
+        }
+        admitQueuedPreparedInstances(server)
+        maybeLogPreparedSummary(server, desiredTemplates)
+    }
+
+    private fun ensurePreparedInstanceRequested(server: MinecraftServer, templateId: String, reason: String) {
+        if (preparedInstances.containsKey(templateId) || templateId in preparedRequestQueue) {
+            return
+        }
+        val now = currentGameTime(server)
+        val retryAt = preparedRetryAfter[templateId]
+        if (retryAt != null && now < retryAt) {
+            return
+        }
+        preparedRequestQueue += templateId
+        logger.info(
+            "Queued prepared runtime instance request template={} reason={} queueDepth={} inFlightWorldgen={} budget={}",
+            templateId,
+            reason,
+            preparedRequestQueue.size,
+            currentPreparedWorldgenCount(),
+            MAX_CONCURRENT_PREPARED_WORLDGEN
+        )
+    }
+
+    private fun admitQueuedPreparedInstances(server: MinecraftServer) {
+        var availableBudget = MAX_CONCURRENT_PREPARED_WORLDGEN - currentPreparedWorldgenCount()
+        if (availableBudget <= 0) {
+            maybeLogPreparedQueueState(server, "budget-full", "queued=${preparedRequestQueue.size} inFlight=${currentPreparedWorldgenCount()}")
+            return
+        }
+        preparedRequestQueue.toList().forEach { templateId ->
+            if (availableBudget <= 0) {
+                return@forEach
+            }
+            if (preparedInstances.containsKey(templateId)) {
+                preparedRequestQueue.remove(templateId)
+                return@forEach
+            }
+            val now = currentGameTime(server)
+            val retryAt = preparedRetryAfter[templateId]
+            if (retryAt != null && now < retryAt) {
+                return@forEach
+            }
+            val validationError = InstanceManager.validateTemplateForRuntime(server, templateId)
+            if (validationError != null) {
+                logger.warn("Prepared runtime instance request rejected template={} error={}", templateId, validationError)
+                preparedRetryAfter[templateId] = now + PREPARED_INSTANCE_RETRY_DELAY_TICKS
+                return@forEach
+            }
+
+            val instance = when (val created = InstanceManager.createPreparedInstance(server, templateId)) {
+                is InstanceCreateResult.Accepted -> created.instance
+                is InstanceCreateResult.Rejected -> {
+                    logger.warn("Prepared runtime instance creation rejected template={} error={}", templateId, created.reason)
+                    preparedRetryAfter[templateId] = now + PREPARED_INSTANCE_RETRY_DELAY_TICKS
+                    return@forEach
+                }
+            }
+            if (!InstanceManager.deferDefaultArrivalPreparation(instance.id)) {
+                logger.warn(
+                    "Prepared runtime instance could not defer default arrival preparation template={} instance={}",
+                    templateId,
+                    instance.id
+                )
+            }
+            preparedInstances[templateId] = PreparedInstanceSlot(
+                templateId,
+                instanceId = instance.id,
+                requestedGameTime = now
+            )
+            preparedRequestQueue.remove(templateId)
+            preparedRetryAfter.remove(templateId)
+            availableBudget--
+            logger.info(
+                "Admitted prepared runtime instance template={} instance={} level={} queueDepth={} inFlightWorldgen={} budget={}",
+                templateId,
+                instance.id,
+                instance.levelKey.location(),
+                preparedRequestQueue.size,
+                currentPreparedWorldgenCount(),
+                MAX_CONCURRENT_PREPARED_WORLDGEN
+            )
+        }
+    }
+
+    private fun advancePreparedInstance(server: MinecraftServer, slot: PreparedInstanceSlot) {
+        val instance = InstanceManager.getInstance(slot.instanceId)
+        if (instance == null) {
+            logger.warn("Prepared runtime instance missing template={} instance={}", slot.templateId, slot.instanceId)
+            preparedInstances.remove(slot.templateId)
+            preparedRetryAfter[slot.templateId] = currentGameTime(server) + PREPARED_INSTANCE_RETRY_DELAY_TICKS
+            return
+        }
+        if (slot.readyGameTime != null) {
+            return
+        }
+        if (slot.spawnPos == null) {
+            slot.spawnPos = InstanceManager.preparedSpawnPos(slot.instanceId)
+        }
+        if (instance.state == InstanceState.PREPARED && !InstanceManager.isLevelLoaded(server, slot.instanceId)) {
+            slot.spawnPos = slot.spawnPos ?: InstanceManager.preparedSpawnPos(slot.instanceId)
+            if (slot.spawnPos == null) {
+                logger.warn(
+                    "Prepared runtime instance reached cold-ready state without a spawn position template={} instance={}",
+                    slot.templateId,
+                    slot.instanceId
+                )
+                retirePreparedInstance(server, slot, reason = "missing-prepared-spawn")
+                return
+            }
+            slot.readyGameTime = currentGameTime(server)
+            logger.info(
+                "Prepared runtime instance ready template={} instance={} spawn={} requestedAt={} readyAt={}",
+                slot.templateId,
+                slot.instanceId,
+                slot.spawnPos,
+                slot.requestedGameTime,
+                slot.readyGameTime
+            )
+            return
+        }
+        val initialArrivalStatus = InstanceManager.arrivalStatus(slot.instanceId)
+        if (initialArrivalStatus.phase == dev.yourname.instanceddimensions.engine.instance.InstanceArrivalPhase.FAILED) {
+            logger.warn(
+                "Prepared runtime instance arrival preparation failed template={} instance={} reason={}",
+                slot.templateId,
+                slot.instanceId,
+                initialArrivalStatus.failureReason ?: "<unknown>"
+            )
+            retirePreparedInstance(server, slot, reason = "arrival-failed")
+            return
+        }
+        if (instance.state == InstanceState.DRAINING || instance.state == InstanceState.UNLOADING || instance.state == InstanceState.CLOSING) {
+            maybeLogPreparedProgress(server, slot, "cooling-down", "state=${instance.state}")
+            return
+        }
+        if (instance.state != InstanceState.PREPARING && instance.state != InstanceState.ACTIVE) {
+            maybeLogPreparedProgress(server, slot, "waiting-runtime-load", "state=${instance.state}")
+            return
+        }
+
+        val level = InstanceManager.loadedLevel(server, slot.instanceId)
+        if (level == null) {
+            maybeLogPreparedProgress(server, slot, "waiting-level", "level=${instance.levelKey.location()}")
+            return
+        }
+
+        if (slot.spawnPos == null) {
+            val spawnPos = SpawnPlatformGenerator.ensurePlatform(level)
+            if (spawnPos == null) {
+                val bootstrapError = InstanceManager.ensurePlatformBootstrap(slot.instanceId, level, level.sharedSpawnPos)
+                if (bootstrapError != null) {
+                    logger.warn(
+                        "Prepared runtime instance platform bootstrap rejected template={} instance={} level={} center={} reason={}",
+                        slot.templateId,
+                        slot.instanceId,
+                        instance.levelKey.location(),
+                        level.sharedSpawnPos,
+                        bootstrapError
+                    )
+                    retirePreparedInstance(server, slot, reason = "platform-bootstrap-rejected")
+                    return
+                }
+                val bootstrapStatus = InstanceManager.platformBootstrapStatus(slot.instanceId)
+                if (bootstrapStatus.phase == dev.yourname.instanceddimensions.engine.instance.InstancePlatformBootstrapPhase.FAILED) {
+                    logger.warn(
+                        "Prepared runtime instance platform bootstrap failed template={} instance={} level={} reason={}",
+                        slot.templateId,
+                        slot.instanceId,
+                        instance.levelKey.location(),
+                        bootstrapStatus.failureReason ?: "<unknown>"
+                    )
+                    retirePreparedInstance(server, slot, reason = "platform-bootstrap-failed")
+                    return
+                }
+                maybeLogPreparedProgress(
+                    server,
+                    slot,
+                    "waiting-platform",
+                    "level=${instance.levelKey.location()} bootstrapPhase=${bootstrapStatus.phase}"
+                )
+                return
+            }
+            InstanceManager.clearPlatformBootstrap(slot.instanceId, level)
+            slot.spawnPos = spawnPos
+            val preparationError = InstanceManager.prepareArrivalRegion(slot.instanceId, level, spawnPos)
+            if (preparationError != null) {
+                logger.warn(
+                    "Prepared runtime instance arrival preparation rejected template={} instance={} level={} spawn={} reason={}",
+                    slot.templateId,
+                    slot.instanceId,
+                    instance.levelKey.location(),
+                    spawnPos,
+                    preparationError
+                )
+                retirePreparedInstance(server, slot, reason = "arrival-preparation-rejected")
+                return
+            }
+            logger.info(
+                "Prepared runtime instance platform ready template={} instance={} level={} spawn={}",
+                slot.templateId,
+                slot.instanceId,
+                instance.levelKey.location(),
+                spawnPos
+            )
+        }
+
+        val arrivalStatus = InstanceManager.arrivalStatus(slot.instanceId)
+        if (arrivalStatus.phase == dev.yourname.instanceddimensions.engine.instance.InstanceArrivalPhase.IDLE) {
+            val spawnPos = slot.spawnPos ?: return
+            val preparationError = InstanceManager.prepareArrivalRegion(slot.instanceId, level, spawnPos)
+            if (preparationError != null) {
+                logger.warn(
+                    "Prepared runtime instance arrival preparation restart rejected template={} instance={} level={} spawn={} reason={}",
+                    slot.templateId,
+                    slot.instanceId,
+                    instance.levelKey.location(),
+                    spawnPos,
+                    preparationError
+                )
+                retirePreparedInstance(server, slot, reason = "arrival-preparation-restart-rejected")
+                return
+            }
+            maybeLogPreparedProgress(server, slot, "arrival-restarted", "spawn=$spawnPos")
+            return
+        }
+
+        if (!InstanceManager.isTravelReady(slot.instanceId)) {
+            val currentArrival = InstanceManager.arrivalStatus(slot.instanceId)
+            maybeLogPreparedProgress(
+                server,
+                slot,
+                "waiting-arrival",
+                "spawn=${slot.spawnPos} arrivalPhase=${currentArrival.phase} completedChunks=${currentArrival.completedChunks}/${currentArrival.totalChunks}"
+            )
+            return
+        }
+
+        val suspendError = InstanceManager.suspendPreparedInstance(server, slot.instanceId, slot.spawnPos ?: return)
+        if (suspendError != null) {
+            logger.warn(
+                "Prepared runtime instance suspend rejected template={} instance={} level={} spawn={} reason={}",
+                slot.templateId,
+                slot.instanceId,
+                instance.levelKey.location(),
+                slot.spawnPos,
+                suspendError
+            )
+            retirePreparedInstance(server, slot, reason = "suspend-rejected")
+            return
+        }
+        maybeLogPreparedProgress(server, slot, "cooling-requested", "spawn=${slot.spawnPos} state=${instance.state}")
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun maybeLogPreparedProgress(_server: MinecraftServer, _slot: PreparedInstanceSlot, _phase: String, _details: String) = Unit
+
+    private fun retirePreparedInstance(server: MinecraftServer, slot: PreparedInstanceSlot, reason: String) {
+        preparedInstances.remove(slot.templateId)
+        val retryDelay = retryDelayForRetiredPreparedInstance(reason)
+        if (retryDelay > 0L) {
+            preparedRetryAfter[slot.templateId] = currentGameTime(server) + retryDelay
+        } else {
+            preparedRetryAfter.remove(slot.templateId)
+        }
+        logger.info(
+            "Retiring prepared runtime instance template={} instance={} reason={} ready={} spawn={} retryDelayTicks={}",
+            slot.templateId,
+            slot.instanceId,
+            reason,
+            slot.readyGameTime != null,
+            slot.spawnPos,
+            retryDelay
+        )
+        InstanceManager.scheduleDestroy(server, slot.instanceId)
+    }
+
+    private fun currentPreparedWorldgenCount(): Int {
+        return preparedInstances.values.count { it.readyGameTime == null }
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun maybeLogPreparedQueueState(_server: MinecraftServer, _phase: String, _details: String) = Unit
+
+    private fun maybeLogPreparedSummary(server: MinecraftServer, desiredTemplates: Set<String>) {
+        val now = currentGameTime(server)
+        val slotStates = preparedInstances.values.mapNotNull { slot ->
+            InstanceManager.getInstance(slot.instanceId)?.state
+        }
+        val coldReady = preparedInstances.values.count { it.readyGameTime != null }
+        val hotLoaded = preparedInstances.values.count { slot -> InstanceManager.isLevelLoaded(server, slot.instanceId) }
+        val preparing = slotStates.count { it == InstanceState.PREPARING }
+        val cooling = slotStates.count { it == InstanceState.DRAINING || it == InstanceState.UNLOADING || it == InstanceState.CLOSING }
+        val summaryInterval = if (preparedRequestQueue.isEmpty() && preparing == 0 && cooling == 0 && hotLoaded == 0 && coldReady == desiredTemplates.size) {
+            PREPARED_SUMMARY_IDLE_INTERVAL_TICKS
+        } else {
+            PREPARED_SUMMARY_ACTIVE_INTERVAL_TICKS
+        }
+        if (preparedSummaryLastLogGameTime != Long.MIN_VALUE && now - preparedSummaryLastLogGameTime < summaryInterval) {
+            return
+        }
+        preparedSummaryLastLogGameTime = now
+        val working = preparedInstances.values
+            .filter { it.readyGameTime == null }
+            .map { describePreparedWork(server, it) }
+            .joinToString(prefix = "[", postfix = "]") { it.describe() }
+            .ifEmpty { "[]" }
+        val queueLeft = desiredTemplates
+            .filter { it !in preparedInstances.keys }
+            .joinToString(prefix = "[", postfix = "]") { templateId ->
+                val retryAt = preparedRetryAfter[templateId]
+                if (retryAt != null && retryAt > now) {
+                    val remainingTicks = retryAt - now
+                    val remaining = formatTickDuration(now = remainingTicks, since = 0L) ?: "retry"
+                    "$templateId retry $remaining"
+                } else {
+                    templateId
+                }
+            }
+            .ifEmpty { "[]" }
+        logger.info(
+            "Prepared runtime pool ready={}/{} working={} queueLeft={} preparing={} cooling={} hotLoaded={}",
+            coldReady,
+            desiredTemplates.size,
+            working,
+            queueLeft,
+            preparing,
+            cooling,
+            hotLoaded
+        )
+    }
+
+    private fun describePreparedWork(server: MinecraftServer, slot: PreparedInstanceSlot): PreparedWorkSnapshot {
+        val instance = InstanceManager.getInstance(slot.instanceId)
+            ?: return PreparedWorkSnapshot(slot.templateId, "missing")
+        if (slot.readyGameTime != null) {
+            return PreparedWorkSnapshot(slot.templateId, "ready", 1, 1)
+        }
+
+        val arrivalStatus = InstanceManager.arrivalStatus(slot.instanceId)
+        if (arrivalStatus.phase == dev.yourname.instanceddimensions.engine.instance.InstanceArrivalPhase.FAILED) {
+            return PreparedWorkSnapshot(
+                templateId = slot.templateId,
+                phase = "failed",
+                detail = summarizeFailure("arrival", arrivalStatus.failureReason)
+            )
+        }
+        if (arrivalStatus.phase == dev.yourname.instanceddimensions.engine.instance.InstanceArrivalPhase.PREPARING) {
+            val totalChunks = arrivalStatus.totalChunks.coerceAtLeast(1)
+            return PreparedWorkSnapshot(
+                templateId = slot.templateId,
+                phase = "arrival",
+                completed = arrivalStatus.completedChunks.coerceIn(0, totalChunks),
+                total = totalChunks,
+                detail = formatTickDuration(now = currentGameTime(server), since = arrivalStatus.requestedGameTime)
+            )
+        }
+
+        val bootstrapStatus = InstanceManager.platformBootstrapStatus(slot.instanceId)
+        if (bootstrapStatus.phase == dev.yourname.instanceddimensions.engine.instance.InstancePlatformBootstrapPhase.FAILED) {
+            return PreparedWorkSnapshot(
+                templateId = slot.templateId,
+                phase = "failed",
+                detail = summarizeFailure("platform", bootstrapStatus.failureReason)
+            )
+        }
+        if (bootstrapStatus.phase == dev.yourname.instanceddimensions.engine.instance.InstancePlatformBootstrapPhase.PREPARING) {
+            val waited = formatTickDuration(now = currentGameTime(server), since = bootstrapStatus.requestedGameTime)
+            val targetChunk = bootstrapStatus.center?.let(::ChunkPos)
+            val detail = buildString {
+                append("waiting")
+                waited?.let {
+                    append(' ')
+                    append(it)
+                }
+                targetChunk?.let {
+                    append(" @ [")
+                    append(it.x)
+                    append(',')
+                    append(it.z)
+                    append(']')
+                }
+            }
+            return PreparedWorkSnapshot(slot.templateId, "platform", detail = detail)
+        }
+
+        if (instance.state == InstanceState.DRAINING || instance.state == InstanceState.UNLOADING || instance.state == InstanceState.CLOSING) {
+            return PreparedWorkSnapshot(slot.templateId, "cooling")
+        }
+        if (!InstanceManager.isLevelLoaded(server, slot.instanceId)) {
+            return PreparedWorkSnapshot(slot.templateId, "loading")
+        }
+        if (slot.spawnPos == null) {
+            return PreparedWorkSnapshot(slot.templateId, "platform", detail = "pending")
+        }
+        return PreparedWorkSnapshot(slot.templateId, instance.state.name.lowercase())
+    }
+
+    private fun formatTickDuration(now: Long, since: Long?): String? {
+        since ?: return null
+        val elapsedTicks = (now - since).coerceAtLeast(0L)
+        val totalSeconds = elapsedTicks / 20L
+        val minutes = totalSeconds / 60L
+        val seconds = totalSeconds % 60L
+        return if (minutes > 0L) {
+            "${minutes}m${seconds}s"
+        } else {
+            "${seconds}s"
+        }
+    }
+
+    private fun summarizeFailure(phase: String, reason: String?): String {
+        val normalized = reason?.lineSequence()?.firstOrNull()?.take(72)?.ifBlank { null } ?: "<unknown>"
+        return "$phase $normalized"
+    }
+
+    private fun retryDelayForRetiredPreparedInstance(reason: String): Long {
+        return when {
+            reason.contains("failed") || reason.contains("rejected") || reason.contains("missing") ->
+                PREPARED_INSTANCE_FAILURE_RETRY_DELAY_TICKS
+            else -> 0L
+        }
     }
 
     private fun tickRun(server: MinecraftServer, record: RunRecord): Boolean {
@@ -335,24 +1027,85 @@ object RunRegistry : RunService {
         if (record.spawnPos == null) {
             val spawnPos = SpawnPlatformGenerator.ensurePlatform(level)
             if (spawnPos != null) {
+                InstanceManager.clearPlatformBootstrap(record.instanceId, level)
                 record.spawnPos = spawnPos
                 record.state = RunState.WARMING_UP
-                InstanceManager.retargetTravelWarmup(record.instanceId, level, spawnPos)
+                val preparationError = InstanceManager.prepareArrivalRegion(record.instanceId, level, spawnPos)
+                if (preparationError != null) {
+                    logger.warn(
+                        "Obelisk run {} could not prepare arrival region in {}: {}",
+                        record.id,
+                        instance.levelKey.location(),
+                        preparationError
+                    )
+                    collapseRun(server, record, "Dimension failed to prepare a safe arrival region")
+                    return true
+                }
                 logger.info("Prepared spawn platform for obelisk run {} at {} in {}", record.id, spawnPos, instance.levelKey.location())
                 dirty = true
             } else {
-                logger.warn("Obelisk run {} could not prepare spawn platform in {}", record.id, instance.levelKey.location())
+                val bootstrapError = InstanceManager.ensurePlatformBootstrap(record.instanceId, level, level.sharedSpawnPos)
+                if (bootstrapError != null) {
+                    logger.warn(
+                        "Obelisk run {} could not bootstrap spawn platform generation in {}: {}",
+                        record.id,
+                        instance.levelKey.location(),
+                        bootstrapError
+                    )
+                    collapseRun(server, record, "Dimension failed to bootstrap a safe arrival region")
+                    return true
+                }
+                val bootstrapStatus = InstanceManager.platformBootstrapStatus(record.instanceId)
+                if (bootstrapStatus.phase == dev.yourname.instanceddimensions.engine.instance.InstancePlatformBootstrapPhase.FAILED) {
+                    collapseRun(
+                        server,
+                        record,
+                        bootstrapStatus.failureReason ?: "Dimension failed to bootstrap a safe arrival region"
+                    )
+                    return true
+                }
+                logger.info(
+                    "Obelisk run {} is waiting for spawn platform bootstrap in {} phase={}",
+                    record.id,
+                    instance.levelKey.location(),
+                    bootstrapStatus.phase
+                )
             }
+        }
+
+        val arrivalStatus = InstanceManager.arrivalStatus(record.instanceId)
+        if (record.spawnPos != null && arrivalStatus.phase == dev.yourname.instanceddimensions.engine.instance.InstanceArrivalPhase.IDLE) {
+            val spawnPos = record.spawnPos ?: return dirty
+            val preparationError = InstanceManager.prepareArrivalRegion(record.instanceId, level, spawnPos)
+            if (preparationError != null) {
+                logger.warn(
+                    "Obelisk run {} could not resume arrival region preparation in {}: {}",
+                    record.id,
+                    instance.levelKey.location(),
+                    preparationError
+                )
+                collapseRun(server, record, "Dimension failed to resume a safe arrival region")
+                return true
+            }
+            logger.info("Resumed arrival preparation for obelisk run {} at {} in {}", record.id, spawnPos, instance.levelKey.location())
+            dirty = true
+        }
+
+        if (arrivalStatus.phase == dev.yourname.instanceddimensions.engine.instance.InstanceArrivalPhase.FAILED) {
+            collapseRun(server, record, arrivalStatus.failureReason ?: "Dimension failed to prepare a safe arrival region")
+            return true
         }
 
         if (!InstanceManager.isTravelReady(record.instanceId)) {
             return dirty
         }
 
-        if (record.spawnPos != null && record.pendingPlayers.isNotEmpty()) {
-            record.pendingPlayers.toList().forEach { playerId ->
-                val player = server.playerList.getPlayer(playerId) ?: return@forEach
-                tryQueueEntry(server, record, player)
+        record.pendingPlayers.toList().forEach { playerId ->
+            val player = server.playerList.getPlayer(playerId) ?: return@forEach
+            when (val entry = tryQueueEntry(server, record, player)) {
+                RunEntryAttempt.Entered -> dirty = true
+                is RunEntryAttempt.Waiting -> dirty = true
+                is RunEntryAttempt.Rejected -> dirty = true
             }
         }
         return dirty
@@ -434,26 +1187,60 @@ object RunRegistry : RunService {
         record.activePlayers.clear()
     }
 
-    private fun tryQueueEntry(server: MinecraftServer, record: RunRecord, player: ServerPlayer) {
-        val instance = InstanceManager.getInstance(record.instanceId) ?: return
+    private fun tryQueueEntry(server: MinecraftServer, record: RunRecord, player: ServerPlayer): RunEntryAttempt {
+        val instance = InstanceManager.getInstance(record.instanceId)
+            ?: return RunEntryAttempt.Rejected("Run is unavailable right now - runtime instance is missing")
         if (instance.state != InstanceState.ACTIVE || record.spawnPos == null) {
-            return
+            record.pendingPlayers += player.uuid
+            record.updatedGameTime = currentGameTime(server)
+            sync(server)
+            return RunEntryAttempt.Waiting("Run is still preparing for ${displayName(record.definitionId)} - try again in a moment")
         }
         if (player.serverLevel().dimension() == instance.levelKey) {
             record.pendingPlayers.remove(player.uuid)
             record.activePlayers.add(player.uuid)
             record.state = RunState.ACTIVE
+            record.updatedGameTime = currentGameTime(server)
+            sync(server)
+            return RunEntryAttempt.Entered
+        }
+        return when (val result = TravelManager.enterInstance(player, record.instanceId)) {
+            TravelEnterResult.Entered -> {
+                logger.info("Entered player {} into obelisk run {} instance {}", player.gameProfile.name, record.id, record.instanceId)
+                record.updatedGameTime = currentGameTime(server)
+                RunEntryAttempt.Entered
+            }
+            is TravelEnterResult.Rejected -> {
+                logger.warn(
+                    "Rejected player {} entry into obelisk run {} instance {} reason={}",
+                    player.gameProfile.name,
+                    record.id,
+                    record.instanceId,
+                    result.reason
+                )
+                removePlayer(record, player.uuid)
+                sync(server)
+                player.sendSystemMessage(Component.literal("Failed to enter obelisk run: ${result.reason}"))
+                RunEntryAttempt.Rejected("Run is unavailable right now - ${result.reason}")
+            }
+        }
+    }
+
+    private fun discardEmptyRun(server: MinecraftServer, record: RunRecord, reason: String) {
+        if (record.activePlayers.isNotEmpty() || record.pendingPlayers.isNotEmpty()) {
             return
         }
-        runCatching { TravelManager.enterInstance(player, record.instanceId) }
-            .onSuccess {
-                logger.info("Queued player {} into obelisk run {} instance {}", player.gameProfile.name, record.id, record.instanceId)
-            }
-            .onFailure { throwable ->
-                logger.warn("Failed to queue player {} into obelisk run {}", player.gameProfile.name, record.id, throwable)
-                player.sendSystemMessage(Component.literal("Failed to enter obelisk run: ${throwable.message ?: throwable.javaClass.simpleName}"))
-            }
-        record.updatedGameTime = currentGameTime(server)
+        logger.warn(
+            "Discarding empty obelisk run {} definition={} instance={} reason={}",
+            record.id,
+            record.definitionId,
+            record.instanceId,
+            reason
+        )
+        clearOriginObelisk(server, record, startCooldown = false)
+        InstanceManager.scheduleDestroy(server, record.instanceId)
+        runs.remove(record.id)
+        sync(server)
     }
 
     private fun clearOriginObelisk(server: MinecraftServer, record: RunRecord, startCooldown: Boolean) {
@@ -490,6 +1277,14 @@ object RunRegistry : RunService {
     }
 
     private fun runForInstance(instanceId: UUID): RunRecord? = runs.values.firstOrNull { it.instanceId == instanceId }
+
+    private fun preparedSlotForInstance(instanceId: UUID): PreparedInstanceSlot? {
+        return preparedInstances.values.firstOrNull { it.instanceId == instanceId }
+    }
+
+    private fun templateIdForDefinition(definitionId: String): String {
+        return ObeliskDataManager.getObelisk(definitionId)?.instanceTemplateId ?: definitionId
+    }
 
     private fun currentGameTime(server: MinecraftServer): Long = server.overworld().gameTime
 

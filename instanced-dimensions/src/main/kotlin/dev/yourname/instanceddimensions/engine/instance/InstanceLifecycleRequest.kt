@@ -7,5 +7,7 @@ sealed interface InstanceLifecycleRequest {
 
     data class Create(override val instanceId: UUID) : InstanceLifecycleRequest
 
+    data class Suspend(override val instanceId: UUID) : InstanceLifecycleRequest
+
     data class Destroy(override val instanceId: UUID) : InstanceLifecycleRequest
 }

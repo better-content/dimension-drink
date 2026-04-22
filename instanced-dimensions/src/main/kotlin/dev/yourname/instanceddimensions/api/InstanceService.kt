@@ -15,6 +15,6 @@ interface InstanceService {
     fun getInstance(id: UUID): InstanceHandle?
     fun getInstance(levelKey: ResourceKey<Level>): InstanceHandle?
     fun isRuntimeLevel(levelKey: ResourceKey<Level>): Boolean
-    fun createInstance(server: MinecraftServer, templateId: String, ownerId: UUID? = null): InstanceHandle
+    fun createInstance(server: MinecraftServer, templateId: String, ownerId: UUID? = null): InstanceCreateResult
     fun scheduleDestroy(server: MinecraftServer, id: UUID): Boolean
 }

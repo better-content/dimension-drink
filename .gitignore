@@ -26,3 +26,6 @@ prod-run/server
 
 # Files from Forge MDK
 forge*changelog.txt
+
+*.jar
+/pack-repro/mods/

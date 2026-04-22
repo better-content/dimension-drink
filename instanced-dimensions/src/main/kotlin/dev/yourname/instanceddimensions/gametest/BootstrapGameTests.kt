@@ -1,7 +1,10 @@
 package dev.yourname.instanceddimensions.gametest
 import dev.yourname.instanceddimensions.MOD_ID
 import dev.yourname.instanceddimensions.NETWORK_CHANNEL
+import dev.yourname.instanceddimensions.api.InstanceCreateResult
+import dev.yourname.instanceddimensions.api.TravelEnterResult
 import dev.yourname.instanceddimensions.compat.RuntimeDimensionAccess
+import dev.yourname.instanceddimensions.engine.instance.InstanceHandle
 import dev.yourname.instanceddimensions.engine.levelsync.RuntimeLevelKeysPacket
 import dev.yourname.instanceddimensions.engine.instance.InstanceManager
 import dev.yourname.instanceddimensions.engine.instance.InstanceSavedData
@@ -9,6 +12,7 @@ import dev.yourname.instanceddimensions.engine.instance.InstanceState
 import dev.yourname.instanceddimensions.engine.instance.InstanceRecord
 import dev.yourname.instanceddimensions.engine.instance.InstanceLevelState
 import dev.yourname.instanceddimensions.engine.instance.InstanceTemplateDataManager
+import dev.yourname.instanceddimensions.engine.travel.RuntimePlayerChunkWindowProfile
 import dev.yourname.instanceddimensions.engine.travel.TravelManager
 import dev.yourname.instanceddimensions.events.RuntimeDimensionTransitionEvent
 import com.mojang.authlib.GameProfile
@@ -23,8 +27,10 @@ import net.minecraft.network.protocol.handshake.ClientIntentionPacket
 import net.minecraft.network.protocol.login.ClientLoginPacketListener
 import net.minecraft.network.protocol.game.ClientGamePacketListener
 import net.minecraft.network.protocol.game.ClientboundCustomPayloadPacket
+import net.minecraft.network.protocol.game.ClientboundKeepAlivePacket
 import net.minecraft.network.protocol.game.ClientboundLoginPacket
 import net.minecraft.network.protocol.game.ClientboundRespawnPacket
+import net.minecraft.network.protocol.game.ServerboundKeepAlivePacket
 import net.minecraft.resources.ResourceKey
 import net.minecraft.resources.ResourceLocation
 import net.minecraft.world.entity.Entity
@@ -125,7 +131,7 @@ class BootstrapGameTests {
     @GameTest(template = "bootstrap/empty", batch = "instance_compat", timeoutTicks = 1600)
     fun runtime_dimension_access_tracks_runtime_levels(helper: GameTestHelper) {
         val server = helper.level.server
-        val created = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
+        val created = createInstanceOrFail(server, DEFAULT_RUNTIME_TEMPLATE)
 
         waitUntil(helper, 30, "Expected runtime instance to become ACTIVE for compat queries", condition = {
             InstanceManager.getInstance(created.id)?.state == InstanceState.ACTIVE
@@ -159,7 +165,7 @@ class BootstrapGameTests {
     @GameTest(template = "bootstrap/empty", batch = "instance_create", timeoutTicks = 1600)
     fun instance_create_and_destroy_roundtrip(helper: GameTestHelper) {
         val server = helper.level.server
-        val created = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
+        val created = createInstanceOrFail(server, DEFAULT_RUNTIME_TEMPLATE)
 
         waitUntil(helper, 20, "Expected runtime instance to become ACTIVE after server registration", condition = {
             InstanceManager.getInstance(created.id)?.state == InstanceState.ACTIVE
@@ -192,8 +198,8 @@ class BootstrapGameTests {
     @GameTest(template = "bootstrap/empty", batch = "instance_multi", timeoutTicks = 1600)
     fun multiple_instances_activate_and_cleanup(helper: GameTestHelper) {
         val server = helper.level.server
-        val overworldInstance = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
-        val netherInstance = InstanceManager.createInstance(server, "nether")
+        val overworldInstance = createInstanceOrFail(server, DEFAULT_RUNTIME_TEMPLATE)
+        val netherInstance = createInstanceOrFail(server, "nether")
 
         waitUntil(helper, 30, "Expected both runtime instances to become ACTIVE", condition = {
             InstanceManager.getInstance(overworldInstance.id)?.state == InstanceState.ACTIVE &&
@@ -221,10 +227,10 @@ class BootstrapGameTests {
                 listOf(overworldInstance.id, netherInstance.id)
                     .joinToString(separator = " || ") { destroyFailureMessage(server, it, "Expected both runtime instances to enter background teardown after cleanup") }
             }, condition = {
-                isQueuedForTeardown(server, overworldInstance.id) && isQueuedForTeardown(server, netherInstance.id)
+                isQueuedForTeardown(overworldInstance.id) && isQueuedForTeardown(netherInstance.id)
             }, onSuccess = {
-                helper.assertTrue(isQueuedForTeardown(server, overworldInstance.id), "Expected overworld instance to enter background teardown after cleanup")
-                helper.assertTrue(isQueuedForTeardown(server, netherInstance.id), "Expected nether instance to enter background teardown after cleanup")
+                helper.assertTrue(isQueuedForTeardown(overworldInstance.id), "Expected overworld instance to enter background teardown after cleanup")
+                helper.assertTrue(isQueuedForTeardown(netherInstance.id), "Expected nether instance to enter background teardown after cleanup")
                 helper.succeed()
             })
         })
@@ -233,8 +239,8 @@ class BootstrapGameTests {
     @GameTest(template = "bootstrap/empty", batch = "instance_state_persistence", timeoutTicks = 1600)
     fun instance_level_state_is_isolated_and_persisted(helper: GameTestHelper) {
         val server = helper.level.server
-        val first = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
-        val second = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
+        val first = createInstanceOrFail(server, DEFAULT_RUNTIME_TEMPLATE)
+        val second = createInstanceOrFail(server, DEFAULT_RUNTIME_TEMPLATE)
 
         waitUntil(helper, 30, "Expected both instance levels to become ACTIVE", condition = {
             InstanceManager.getInstance(first.id)?.state == InstanceState.ACTIVE &&
@@ -284,8 +290,8 @@ class BootstrapGameTests {
     @GameTest(template = "bootstrap/empty", batch = "instance_state_seed", timeoutTicks = 1600)
     fun instance_seeds_are_randomized_per_instance(helper: GameTestHelper) {
         val server = helper.level.server
-        val first = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
-        val second = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
+        val first = createInstanceOrFail(server, DEFAULT_RUNTIME_TEMPLATE)
+        val second = createInstanceOrFail(server, DEFAULT_RUNTIME_TEMPLATE)
 
         waitUntil(helper, 30, "Expected both instance levels to become ACTIVE for seed checks", condition = {
             InstanceManager.getInstance(first.id)?.state == InstanceState.ACTIVE &&
@@ -320,10 +326,10 @@ class BootstrapGameTests {
         })
     }
 
-    @GameTest(template = "bootstrap/empty", batch = "instance_travel", timeoutTicks = 1600)
+    @GameTest(template = "bootstrap/empty", batch = "instance_travel_enter_exit", timeoutTicks = 2400)
     fun player_can_enter_and_exit_runtime_instance(helper: GameTestHelper) {
         val server = helper.level.server
-        val instance = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
+        val instance = createInstanceOrFail(server, DEFAULT_RUNTIME_TEMPLATE)
 
         waitUntil(helper, 40, "Expected run-backed instance to become ACTIVE", condition = {
             InstanceManager.getInstance(instance.id)?.state == InstanceState.ACTIVE
@@ -347,55 +353,62 @@ class BootstrapGameTests {
                     "Expected login sync to send the runtime level-key payload channel"
                 )
 
-                LOGGER.info("Travel test: entering runtime instance")
-                TravelManager.enterInstance(player, instance.id)
-                waitUntil(helper, 80, "Expected player to enter the runtime instance level", condition = {
+                waitUntil(helper, 1200, failureMessage = {
+                    travelReadyFailureMessage(server, instance.id, "Expected runtime instance enter test level to become travel-ready")
+                }, condition = {
                     client.pump(server)
-                    player.serverLevel().dimension() == instance.levelKey
+                    InstanceManager.isTravelReady(instance.id)
                 }, onSuccess = {
-                    client.pump(server)
-                    LOGGER.info("Travel test: entered runtime instance")
-
-                    helper.assertTrue(player.serverLevel().dimension() == instance.levelKey, "Expected player to enter the runtime instance level")
-                    helper.assertTrue(
-                        client.respawnDimensions.contains(instance.levelKey),
-                        "Expected connection-backed client to receive a respawn into the runtime instance"
-                    )
-
-                    LOGGER.info("Travel test: exiting runtime instance")
-                    helper.assertTrue(TravelManager.returnPlayer(player), "Expected instance return travel to be accepted")
-                    waitUntil(helper, 40, "Expected player to return to the origin dimension", condition = {
+                    LOGGER.info("Travel test: entering runtime instance")
+                    assertEnterAccepted(player, instance.id)
+                    waitUntil(helper, 80, "Expected player to enter the runtime instance level", condition = {
                         client.pump(server)
-                        player.serverLevel().dimension() == originDimension
+                        player.serverLevel().dimension() == instance.levelKey
                     }, onSuccess = {
                         client.pump(server)
-                        LOGGER.info("Travel test: exited runtime instance")
+                        LOGGER.info("Travel test: entered runtime instance")
 
-                        helper.assertTrue(player.serverLevel().dimension() == originDimension, "Expected player to return to the origin dimension")
+                        helper.assertTrue(player.serverLevel().dimension() == instance.levelKey, "Expected player to enter the runtime instance level")
                         helper.assertTrue(
-                            client.respawnDimensions.lastOrNull() == originDimension,
-                            "Expected connection-backed client to receive a respawn back to the origin dimension"
+                            client.respawnDimensions.contains(instance.levelKey),
+                            "Expected connection-backed client to receive a respawn into the runtime instance"
                         )
-                        helper.assertTrue(
-                            server.getLevel(instance.levelKey)?.players()?.isEmpty() == true,
-                            "Expected runtime instance to be empty after the player exits"
-                        )
-                        helper.assertTrue(
-                            server.getLevel(instance.levelKey)?.getEntity(player.uuid) == null,
-                            "Expected runtime instance entity lookup to be empty after the player exits"
-                        )
-                        LOGGER.info("Travel test: finishing run")
-                        helper.assertTrue(InstanceManager.scheduleDestroy(server, instance.id), "Expected runtime instance cleanup to be accepted")
-                        waitUntil(helper, 240, failureMessage = {
-                            destroyFailureMessage(server, instance.id, "Expected exiting the run to queue the owned runtime instance for teardown")
-                        }, condition = {
+
+                        LOGGER.info("Travel test: exiting runtime instance")
+                        helper.assertTrue(TravelManager.returnPlayer(player), "Expected instance return travel to be accepted")
+                        waitUntil(helper, 40, "Expected player to return to the origin dimension", condition = {
                             client.pump(server)
-                            isQueuedForTeardown(server, instance.id)
+                            player.serverLevel().dimension() == originDimension
                         }, onSuccess = {
                             client.pump(server)
-                            helper.assertTrue(isQueuedForTeardown(server, instance.id), "Expected exiting the runtime instance to queue the owned runtime level for teardown")
-                            client.close(server)
-                            helper.succeed()
+                            LOGGER.info("Travel test: exited runtime instance")
+
+                            helper.assertTrue(player.serverLevel().dimension() == originDimension, "Expected player to return to the origin dimension")
+                            helper.assertTrue(
+                                client.respawnDimensions.lastOrNull() == originDimension,
+                                "Expected connection-backed client to receive a respawn back to the origin dimension"
+                            )
+                            helper.assertTrue(
+                                server.getLevel(instance.levelKey)?.players()?.isEmpty() == true,
+                                "Expected runtime instance to be empty after the player exits"
+                            )
+                            helper.assertTrue(
+                                server.getLevel(instance.levelKey)?.getEntity(player.uuid) == null,
+                                "Expected runtime instance entity lookup to be empty after the player exits"
+                            )
+                            LOGGER.info("Travel test: finishing run")
+                            helper.assertTrue(InstanceManager.scheduleDestroy(server, instance.id), "Expected runtime instance cleanup to be accepted")
+                            waitUntil(helper, 240, failureMessage = {
+                                destroyFailureMessage(server, instance.id, "Expected exiting the run to queue the owned runtime instance for teardown")
+                            }, condition = {
+                                client.pump(server)
+                                isQueuedForTeardown(instance.id)
+                            }, onSuccess = {
+                                client.pump(server)
+                                helper.assertTrue(isQueuedForTeardown(instance.id), "Expected exiting the runtime instance to queue the owned runtime level for teardown")
+                                client.close(server)
+                                helper.succeed()
+                            })
                         })
                     })
                 })
@@ -403,7 +416,78 @@ class BootstrapGameTests {
         })
     }
 
-    @GameTest(template = "bootstrap/empty", batch = "instance_stress", timeoutTicks = 3200)
+    @GameTest(template = "bootstrap/empty", batch = "instance_travel_window", timeoutTicks = 2800)
+    fun runtime_player_chunk_window_stays_loaded_after_entry_and_move(helper: GameTestHelper) {
+        val server = helper.level.server
+        val instance = createInstanceOrFail(server, DEFAULT_RUNTIME_TEMPLATE)
+
+        waitUntil(helper, 60, "Expected runtime chunk-window test instance to become ACTIVE", condition = {
+            InstanceManager.getInstance(instance.id)?.state == InstanceState.ACTIVE
+        }, onSuccess = {
+            val client = connectHeadlessPlayer(helper)
+            val player = client.player
+
+            try {
+                waitUntil(helper, 40, "Expected chunk-window test client to learn the runtime level", condition = {
+                    client.pump(server)
+                    client.knownLevels.contains(instance.levelKey)
+                }, onSuccess = {
+                    waitUntil(helper, 1200, failureMessage = {
+                        travelReadyFailureMessage(server, instance.id, "Expected chunk-window runtime instance to become travel-ready")
+                    }, condition = {
+                        client.pump(server)
+                        InstanceManager.isTravelReady(instance.id)
+                    }, onSuccess = {
+                        assertEnterAccepted(player, instance.id)
+                        waitUntil(helper, 100, "Expected player to enter the runtime level for chunk-window coverage", condition = {
+                            client.pump(server)
+                            player.serverLevel().dimension() == instance.levelKey
+                        }, onSuccess = {
+                            val runtimeLevel = requireNotNull(server.getLevel(instance.levelKey)) { "Expected runtime level for chunk-window coverage test" }
+                            waitUntil(helper, 120, "Expected runtime chunk window to fully load after entry", condition = {
+                                client.pump(server)
+                                runtimeWindowLoaded(runtimeLevel, player.chunkPosition())
+                            }, onSuccess = {
+                                val movedX = player.x + 20.0
+                                val movedZ = player.z + 20.0
+                                player.teleportTo(runtimeLevel, movedX, player.y, movedZ, player.yRot, player.xRot)
+                                waitUntil(helper, 120, "Expected runtime chunk window to follow the player after movement", condition = {
+                                    client.pump(server)
+                                    runtimeWindowLoaded(runtimeLevel, player.chunkPosition())
+                                }, onSuccess = {
+                                    helper.assertTrue(
+                                        runtimeWindowLoaded(runtimeLevel, player.chunkPosition()),
+                                        "Expected runtime player chunk window to keep the moved player fully covered"
+                                    )
+                                    helper.assertTrue(TravelManager.returnPlayer(player), "Expected chunk-window test player to be able to leave the runtime level")
+                                    waitUntil(helper, 60, "Expected chunk-window test player to return from the runtime level", condition = {
+                                        client.pump(server)
+                                        player.serverLevel().dimension() != instance.levelKey
+                                    }, onSuccess = {
+                                        helper.assertTrue(InstanceManager.scheduleDestroy(server, instance.id), "Expected chunk-window test instance cleanup to be accepted")
+                                        waitUntil(helper, 240, failureMessage = {
+                                            destroyFailureMessage(server, instance.id, "Expected chunk-window test instance to queue for teardown")
+                                        }, condition = {
+                                            client.pump(server)
+                                            isQueuedForTeardown(instance.id)
+                                        }, onSuccess = {
+                                            client.close(server)
+                                            helper.succeed()
+                                        })
+                                    })
+                                })
+                            })
+                        })
+                    })
+                })
+            } catch (t: Throwable) {
+                client.close(server)
+                throw t
+            }
+        })
+    }
+
+    @GameTest(template = "bootstrap/empty", batch = "instance_stress", timeoutTicks = 6400)
     fun repeated_runtime_lifecycle_cycles_cleanup_cleanly(helper: GameTestHelper) {
         val server = helper.level.server
         val client = connectHeadlessPlayer(helper)
@@ -417,7 +501,7 @@ class BootstrapGameTests {
                 return
             }
 
-            val instance = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
+            val instance = createInstanceOrFail(server, DEFAULT_RUNTIME_TEMPLATE)
             waitUntil(helper, 60, "Expected stress-cycle instance $cycle to become ACTIVE", condition = {
                 InstanceManager.getInstance(instance.id)?.state == InstanceState.ACTIVE
             }, onSuccess = {
@@ -425,31 +509,38 @@ class BootstrapGameTests {
                     client.pump(server)
                     client.knownLevels.contains(instance.levelKey)
                 }, onSuccess = {
-                    TravelManager.enterInstance(player, instance.id)
-                    waitUntil(helper, 100, "Expected player to enter stress-cycle runtime level $cycle", condition = {
+                    waitUntil(helper, 1200, failureMessage = {
+                        travelReadyFailureMessage(server, instance.id, "Expected stress-cycle runtime instance $cycle to become travel-ready")
+                    }, condition = {
                         client.pump(server)
-                        player.serverLevel().dimension() == instance.levelKey
+                        InstanceManager.isTravelReady(instance.id)
                     }, onSuccess = {
-                        helper.assertTrue(
-                            TravelManager.returnPlayer(player),
-                            "Expected stress-cycle return travel $cycle to be accepted"
-                        )
-                        waitUntil(helper, 100, "Expected player to return from stress-cycle runtime level $cycle", condition = {
+                        assertEnterAccepted(player, instance.id)
+                        waitUntil(helper, 100, "Expected player to enter stress-cycle runtime level $cycle", condition = {
                             client.pump(server)
-                            player.serverLevel().dimension() == originDimension
+                            player.serverLevel().dimension() == instance.levelKey
                         }, onSuccess = {
                             helper.assertTrue(
-                                InstanceManager.scheduleDestroy(server, instance.id),
-                                "Expected stress-cycle instance cleanup $cycle to be accepted"
+                                TravelManager.returnPlayer(player),
+                                "Expected stress-cycle return travel $cycle to be accepted"
                             )
-                            waitUntil(helper, 1200, failureMessage = {
-                                destroyFailureMessage(server, instance.id, "Expected stress-cycle runtime level $cycle to be removed cleanly")
-                            }, condition = {
+                            waitUntil(helper, 100, "Expected player to return from stress-cycle runtime level $cycle", condition = {
                                 client.pump(server)
-                                InstanceManager.getInstance(instance.id) == null &&
-                                    !client.knownLevels.contains(instance.levelKey)
+                                player.serverLevel().dimension() == originDimension
                             }, onSuccess = {
-                                runCycle(cycle + 1)
+                                helper.assertTrue(
+                                    InstanceManager.scheduleDestroy(server, instance.id),
+                                    "Expected stress-cycle instance cleanup $cycle to be accepted"
+                                )
+                                waitUntil(helper, 1200, failureMessage = {
+                                    destroyFailureMessage(server, instance.id, "Expected stress-cycle runtime level $cycle to be removed cleanly")
+                                }, condition = {
+                                    client.pump(server)
+                                    InstanceManager.getInstance(instance.id) == null &&
+                                        !client.knownLevels.contains(instance.levelKey)
+                                }, onSuccess = {
+                                    runCycle(cycle + 1)
+                                })
                             })
                         })
                     })
@@ -465,10 +556,10 @@ class BootstrapGameTests {
         }
     }
 
-    @GameTest(template = "bootstrap/empty", batch = "instance_intercept", timeoutTicks = 1600)
+    @GameTest(template = "bootstrap/empty", batch = "instance_intercept", timeoutTicks = 2400)
     fun direct_dimension_change_is_intercepted_and_tracks_return_anchor(helper: GameTestHelper) {
         val server = helper.level.server
-        val instance = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
+        val instance = createInstanceOrFail(server, DEFAULT_RUNTIME_TEMPLATE)
 
         waitUntil(helper, 40, "Expected interception test instance to become ACTIVE", condition = {
             InstanceManager.getInstance(instance.id)?.state == InstanceState.ACTIVE
@@ -514,7 +605,10 @@ class BootstrapGameTests {
                             "Expected canceled direct travel to avoid creating a return anchor"
                         )
 
-                        waitUntil(helper, 80, "Expected runtime instance to become travel-ready before uncanceled direct entry", condition = {
+                        waitUntil(helper, 1200, failureMessage = {
+                            travelReadyFailureMessage(server, instance.id, "Expected runtime instance to become travel-ready before uncanceled direct entry")
+                        }, condition = {
+                            client.pump(server)
                             InstanceManager.isTravelReady(instance.id)
                         }, onSuccess = {
                             gate.cancelExternalEntry = false
@@ -554,7 +648,7 @@ class BootstrapGameTests {
                                     waitUntil(helper, 240, failureMessage = {
                                         destroyFailureMessage(server, instance.id, "Expected interception test instance to enter background teardown")
                                     }, condition = {
-                                        isQueuedForTeardown(server, instance.id)
+                                        isQueuedForTeardown(instance.id)
                                     }, onSuccess = {
                                         MinecraftForge.EVENT_BUS.unregister(gate)
                                         client.close(server)
@@ -577,7 +671,7 @@ class BootstrapGameTests {
     fun instance_creation_persists_owner_metadata(helper: GameTestHelper) {
         val server = helper.level.server
         val ownerId = UUID.randomUUID()
-        val instance = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE, ownerId = ownerId)
+        val instance = createInstanceOrFail(server, DEFAULT_RUNTIME_TEMPLATE, ownerId)
 
         waitUntil(helper, 30, "Expected owner-tagged instance to become ACTIVE", condition = {
             InstanceManager.getInstance(instance.id)?.state == InstanceState.ACTIVE
@@ -609,7 +703,7 @@ class BootstrapGameTests {
     @GameTest(template = "bootstrap/empty", batch = "instance_restore", timeoutTicks = 1600)
     fun saved_instances_restore_after_manager_reset(helper: GameTestHelper) {
         val server = helper.level.server
-        val created = InstanceManager.createInstance(server, DEFAULT_RUNTIME_TEMPLATE)
+        val created = createInstanceOrFail(server, DEFAULT_RUNTIME_TEMPLATE)
 
         waitUntil(helper, 40, "Expected restore test instance to become ACTIVE", condition = {
             InstanceManager.getInstance(created.id)?.state == InstanceState.ACTIVE
@@ -710,9 +804,51 @@ class BootstrapGameTests {
         }
     }
 
-    private fun isQueuedForTeardown(server: net.minecraft.server.MinecraftServer, instanceId: UUID): Boolean {
+    private fun travelReadyFailureMessage(server: net.minecraft.server.MinecraftServer, instanceId: UUID, prefix: String): String {
+        val current = InstanceManager.getInstance(instanceId)
+        val arrival = InstanceManager.arrivalStatus(instanceId)
+        return buildString {
+            append(prefix)
+            append(" | instance=")
+            append(current?.state ?: "null")
+            append(" levelLoaded=")
+            append(current?.levelKey?.let(server::getLevel) != null)
+            append(" arrivalPhase=")
+            append(arrival.phase)
+            append(" completedChunks=")
+            append(arrival.completedChunks)
+            append("/")
+            append(arrival.totalChunks)
+            append(" center=")
+            append(arrival.center ?: "<none>")
+            append(" failure=")
+            append(arrival.failureReason ?: "<none>")
+        }
+    }
+
+    private fun isQueuedForTeardown(instanceId: UUID): Boolean {
         val current = InstanceManager.getInstance(instanceId)
         return current == null || current.state == InstanceState.DRAINING || current.state == InstanceState.UNLOADING || current.state == InstanceState.CLOSING
+    }
+
+    private fun createInstanceOrFail(server: net.minecraft.server.MinecraftServer, templateId: String, ownerId: UUID? = null): InstanceHandle {
+        return when (val created = InstanceManager.createInstance(server, templateId, ownerId)) {
+            is InstanceCreateResult.Accepted -> created.instance
+            is InstanceCreateResult.Rejected -> error("Expected runtime instance creation to succeed for template '$templateId': ${created.reason}")
+        }
+    }
+
+    private fun assertEnterAccepted(player: ServerPlayer, instanceId: UUID) {
+        when (val result = TravelManager.enterInstance(player, instanceId)) {
+            TravelEnterResult.Entered -> Unit
+            is TravelEnterResult.Rejected -> error("Expected runtime instance enter to succeed for instance $instanceId: ${result.reason}")
+        }
+    }
+
+    private fun runtimeWindowLoaded(level: net.minecraft.server.level.ServerLevel, center: net.minecraft.world.level.ChunkPos): Boolean {
+        return RuntimePlayerChunkWindowProfile.coveredChunks(center).all { chunk ->
+            level.chunkSource.getChunkNow(chunk.x, chunk.z) != null
+        }
     }
 
     private fun connectHeadlessPlayer(helper: GameTestHelper): ConnectedTestClient {
@@ -836,6 +972,8 @@ class BootstrapGameTests {
     }
 
     private class HeadlessClientRecorder {
+        @Volatile
+        private var clientConnection: Connection? = null
         val knownLevels: MutableSet<ResourceKey<Level>> =
             Collections.newSetFromMap(ConcurrentHashMap<ResourceKey<Level>, Boolean>())
         val customPayloadChannels = CopyOnWriteArrayList<ResourceLocation>()
@@ -859,6 +997,11 @@ class BootstrapGameTests {
                     respawnDimensions += packet.dimension
                     null
                 }
+                "handleKeepAlive" -> {
+                    val packet = args!![0] as ClientboundKeepAlivePacket
+                    clientConnection?.send(ServerboundKeepAlivePacket(packet.id))
+                    null
+                }
                 "handleCustomPayload" -> {
                     val packet = args!![0] as ClientboundCustomPayloadPacket
                     customPayloadChannels += packet.identifier
@@ -879,6 +1022,7 @@ class BootstrapGameTests {
         } as PacketListener
 
         fun pump(connection: Connection) {
+            clientConnection = connection
             connection.tick()
         }
     }

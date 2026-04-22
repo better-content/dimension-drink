@@ -2,6 +2,7 @@ package dev.yourname.instanceddimensions.engine.instance
 
 import net.minecraft.core.registries.Registries
 import net.minecraft.nbt.CompoundTag
+import net.minecraft.core.BlockPos
 import net.minecraft.resources.ResourceKey
 import net.minecraft.resources.ResourceLocation
 import net.minecraft.world.level.Level
@@ -12,7 +13,8 @@ data class InstanceRecord(
     val templateId: String,
     val levelKey: ResourceKey<Level>,
     var state: InstanceState,
-    val ownerId: UUID? = null,
+    var ownerId: UUID? = null,
+    var preparedSpawnPos: BlockPos? = null,
     val instanceSeed: Long = UNSET_SEED,
     val createdGameTime: Long = 0L,
     var updatedGameTime: Long = createdGameTime,
@@ -34,6 +36,11 @@ data class InstanceRecord(
         putString("level_key", levelKey.location().toString())
         putString("state", state.name)
         ownerId?.let { putString("owner_id", it.toString()) }
+        preparedSpawnPos?.let { spawn ->
+            putInt("prepared_spawn_x", spawn.x)
+            putInt("prepared_spawn_y", spawn.y)
+            putInt("prepared_spawn_z", spawn.z)
+        }
         if (instanceSeed != UNSET_SEED) {
             putLong("instance_seed", instanceSeed)
         }
@@ -50,6 +57,15 @@ data class InstanceRecord(
             val levelLocation = ResourceLocation.tryParse(tag.getString("level_key")) ?: return null
             val state = runCatching { InstanceState.valueOf(tag.getString("state")) }.getOrDefault(InstanceState.ALLOCATED)
             val ownerId = parseUuid(tag.getString("owner_id")) ?: parseUuid(tag.getString("owner_run_id"))
+            val preparedSpawnPos = if (
+                tag.contains("prepared_spawn_x") &&
+                    tag.contains("prepared_spawn_y") &&
+                    tag.contains("prepared_spawn_z")
+            ) {
+                BlockPos(tag.getInt("prepared_spawn_x"), tag.getInt("prepared_spawn_y"), tag.getInt("prepared_spawn_z"))
+            } else {
+                null
+            }
 
             return InstanceRecord(
                 id = id,
@@ -57,6 +73,7 @@ data class InstanceRecord(
                 levelKey = ResourceKey.create(Registries.DIMENSION, levelLocation),
                 state = state,
                 ownerId = ownerId,
+                preparedSpawnPos = preparedSpawnPos,
                 instanceSeed = if (tag.contains("instance_seed")) tag.getLong("instance_seed") else UNSET_SEED,
                 createdGameTime = tag.getLong("created_game_time"),
                 updatedGameTime = tag.getLong("updated_game_time"),

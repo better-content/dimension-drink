@@ -6,7 +6,7 @@ import java.util.UUID
 interface RunService {
     fun getRun(playerId: UUID): RunHandle?
     fun getRunById(runId: UUID): RunHandle?
-    fun beginRun(server: MinecraftServer, obeliskId: UUID, definitionId: String): RunHandle
+    fun beginRun(server: MinecraftServer, obeliskId: UUID, definitionId: String): RunBeginResult
     fun finishRun(server: MinecraftServer, runId: UUID): Boolean
 }
 

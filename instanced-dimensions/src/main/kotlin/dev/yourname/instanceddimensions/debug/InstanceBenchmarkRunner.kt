@@ -1,6 +1,7 @@
 package dev.yourname.instanceddimensions.debug
 
 import com.mojang.logging.LogUtils
+import dev.yourname.instanceddimensions.api.InstanceCreateResult
 import dev.yourname.instanceddimensions.compat.C2meCompat
 import dev.yourname.instanceddimensions.engine.instance.InstanceManager
 import dev.yourname.instanceddimensions.engine.instance.InstanceState
@@ -266,7 +267,11 @@ object InstanceBenchmarkRunner {
             scenarioStartTick = server.overworld().gameTime
             logger.info("Benchmark scenario {} starting create", count)
             repeat(count) {
-                currentScenario!!.instanceIds += InstanceManager.createInstance(server, templateId).id
+                val instance = when (val created = InstanceManager.createInstance(server, templateId)) {
+                    is InstanceCreateResult.Accepted -> created.instance
+                    is InstanceCreateResult.Rejected -> error("Benchmark instance creation rejected for template '$templateId': ${created.reason}")
+                }
+                currentScenario!!.instanceIds += instance.id
             }
             state = State.CREATING
         }

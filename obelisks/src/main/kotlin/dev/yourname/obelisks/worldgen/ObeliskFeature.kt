@@ -18,6 +18,8 @@ import net.minecraft.world.level.levelgen.feature.Feature
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext
 import net.minecraft.world.level.levelgen.feature.configurations.NoneFeatureConfiguration
 import net.minecraftforge.fml.ModList
+import kotlin.math.max
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatureConfiguration>(codec) {
@@ -48,8 +50,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         family: WorldgenFamilyDefinition
     ): Boolean {
         val materials = resolveMaterials(definition)
-        carveCrater(level, surfacePos, random, family, materials.craterFill)
-        buildSite(level, surfacePos, random, definition, family, materials)
+        val crater = carveCrater(level, surfacePos, random, family, materials.craterFill)
+        buildSite(level, crater, random, definition, family, materials)
         return true
     }
 
@@ -87,37 +89,74 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         random: RandomSource,
         family: WorldgenFamilyDefinition,
         craterFill: List<Block>
-    ) {
+    ): CraterProfile {
         val radius = random.nextIntBetweenInclusive(family.craterRadiusMin, family.craterRadiusMax.coerceAtLeast(family.craterRadiusMin))
         val depth = random.nextIntBetweenInclusive(family.craterDepthMin, family.craterDepthMax.coerceAtLeast(family.craterDepthMin))
-        for (dx in -radius..radius) {
-            for (dz in -radius..radius) {
-                val distance = sqrt((dx * dx + dz * dz).toDouble())
-                if (distance > radius) continue
+        val impactY = sampleImpactSurfaceY(level, center)
+        val rimWidth = max(2, family.debrisRadius)
+        val rimHeight = max(1, depth / 2)
+        val outerRadius = radius + rimWidth
 
-                val depthFactor = 1.0 - (distance / radius.toDouble())
-                val actualDepth = (depth * depthFactor).toInt().coerceAtLeast(1)
-                for (dy in 0 until actualDepth) {
-                    level.setBlock(center.offset(dx, -dy, dz), Blocks.AIR.defaultBlockState(), 3)
-                }
+        for (dx in -outerRadius..outerRadius) {
+            for (dz in -outerRadius..outerRadius) {
+                val distance = sqrt((dx * dx + dz * dz).toDouble())
+                if (distance > outerRadius) continue
+
+                val columnPos = center.offset(dx, 0, dz)
+                val localSurfaceY = topSolidY(level, columnPos)
                 val fillBlock = craterFill.random(random.asKotlinRandom())
-                level.setBlock(center.offset(dx, -actualDepth, dz), fillBlock.defaultBlockState(), 3)
+
+                if (distance <= radius) {
+                    val normalized = distance / radius.toDouble()
+                    val depthFactor = 1.0 - (normalized * normalized)
+                    val actualDepth = (depth * depthFactor).roundToInt().coerceAtLeast(0)
+                    val floorY = impactY - actualDepth
+                    if (localSurfaceY > floorY) {
+                        for (y in localSurfaceY downTo (floorY + 1)) {
+                            level.setBlock(BlockPos(columnPos.x, y, columnPos.z), Blocks.AIR.defaultBlockState(), 3)
+                        }
+                    }
+                    level.setBlock(BlockPos(columnPos.x, floorY, columnPos.z), fillBlock.defaultBlockState(), 3)
+                    continue
+                }
+
+                val rimFactor = 1.0 - ((distance - radius) / rimWidth.toDouble())
+                if (rimFactor <= 0.0) {
+                    continue
+                }
+                val targetRimY = impactY + max(1, (rimHeight * rimFactor).roundToInt())
+                if (targetRimY <= localSurfaceY) {
+                    continue
+                }
+                for (y in (localSurfaceY + 1)..targetRimY) {
+                    level.setBlock(BlockPos(columnPos.x, y, columnPos.z), fillBlock.defaultBlockState(), 3)
+                }
             }
         }
+
+        val meteorSink = max(1, (depth * 0.5).roundToInt())
+        val obeliskPos = BlockPos(center.x, impactY - depth + 1, center.z)
+        val meteorCenter = BlockPos(center.x, impactY - meteorSink, center.z)
+        return CraterProfile(
+            impactY = impactY,
+            radius = radius,
+            depth = depth,
+            obeliskPos = obeliskPos,
+            meteorCenter = meteorCenter
+        )
     }
 
     private fun buildSite(
         level: WorldGenLevel,
-        center: BlockPos,
+        crater: CraterProfile,
         random: RandomSource,
         definition: ObeliskDefinition,
         family: WorldgenFamilyDefinition,
         materials: WorldgenMaterials
     ) {
-        val obeliskPos = center.below()
-        buildMeteor(level, obeliskPos, random, family, materials)
-        level.setBlock(obeliskPos, ModBlocks.OBELISK.get().defaultBlockState(), 3)
-        val obelisk = level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity ?: return
+        buildMeteor(level, crater.meteorCenter, crater.obeliskPos, random, family, materials)
+        level.setBlock(crater.obeliskPos, ModBlocks.OBELISK.get().defaultBlockState(), 3)
+        val obelisk = level.getBlockEntity(crater.obeliskPos) as? ObeliskBlockEntity ?: return
         obelisk.setDefinition(definition.id)
         obelisk.fillToCapacity()
         obelisk.syncToClients()
@@ -125,7 +164,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
     private fun buildMeteor(
         level: WorldGenLevel,
-        obeliskPos: BlockPos,
+        meteorCenter: BlockPos,
+        protectedPos: BlockPos,
         random: RandomSource,
         family: WorldgenFamilyDefinition,
         materials: WorldgenMaterials
@@ -136,12 +176,31 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 for (dz in -radius..radius) {
                     val distance = sqrt((dx * dx + dy * dy + dz * dz).toDouble())
                     if (distance > radius) continue
-                    if (dx == 0 && dy == 0 && dz == 0) continue
+                    val targetPos = meteorCenter.offset(dx, dy, dz)
+                    if (targetPos == protectedPos) continue
 
-                    level.setBlock(obeliskPos.offset(dx, dy, dz), materials.meteor.defaultBlockState(), 3)
+                    level.setBlock(targetPos, materials.meteor.defaultBlockState(), 3)
                 }
             }
         }
+    }
+
+    private fun sampleImpactSurfaceY(level: WorldGenLevel, center: BlockPos): Int {
+        val samples = mutableListOf<Int>()
+        for (dx in -2..2) {
+            for (dz in -2..2) {
+                if ((dx * dx) + (dz * dz) > 4) continue
+                samples += topSolidY(level, center.offset(dx, 0, dz))
+            }
+        }
+        if (samples.isEmpty()) {
+            return center.y - 1
+        }
+        return samples.sorted()[samples.size / 2]
+    }
+
+    private fun topSolidY(level: WorldGenLevel, pos: BlockPos): Int {
+        return level.getHeight(Heightmap.Types.WORLD_SURFACE_WG, pos.x, pos.z) - 1
     }
 
     private fun resolveMaterials(definition: ObeliskDefinition): WorldgenMaterials {
@@ -166,6 +225,14 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
     private data class WorldgenMaterials(
         val meteor: Block,
         val craterFill: List<Block>
+    )
+
+    private data class CraterProfile(
+        val impactY: Int,
+        val radius: Int,
+        val depth: Int,
+        val obeliskPos: BlockPos,
+        val meteorCenter: BlockPos
     )
 
     private fun RandomSource.asKotlinRandom(): kotlin.random.Random = object : kotlin.random.Random() {

@@ -2,6 +2,7 @@ package dev.yourname.instanceddimensions.engine.instance
 
 import com.google.common.collect.ImmutableList
 import com.mojang.logging.LogUtils
+import dev.yourname.instanceddimensions.compat.BetterCavesCompat
 import net.minecraft.resources.ResourceLocation
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerLevel
@@ -25,6 +26,7 @@ object InstanceLevelFactory {
         )
         val stem = resolveStem(server, template)
         val createdLevel = createLevel(server, record, stem)
+        BetterCavesCompat.installRuntimeNoOpController(createdLevel)
         createdLevel.worldBorder.applySettings(record.levelState.worldBorderSettings())
         logger.info(
             "InstanceLevelFactory.create complete instance={} level={} elapsed={}ms spawn={} borderSize={}",
