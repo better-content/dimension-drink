@@ -143,6 +143,10 @@ object InstanceManager : InstanceService {
 
         fun isVisible(levelKey: ResourceKey<Level>): Boolean = visibleLevels.containsKey(levelKey)
 
+        fun resolveMounted(levelKey: ResourceKey<Level>): ServerLevel? {
+            return visibleLevels[levelKey] ?: hiddenLevels[levelKey]
+        }
+
         fun clearHidden() {
             hiddenLevels.clear()
         }
@@ -151,15 +155,15 @@ object InstanceManager : InstanceService {
             get() = visibleLevels.size
 
         override fun containsKey(key: ResourceKey<Level>): Boolean {
-            return hiddenLevels.containsKey(key) || visibleLevels.containsKey(key)
+            return visibleLevels.containsKey(key)
         }
 
         override fun containsValue(value: ServerLevel): Boolean {
-            return hiddenLevels.containsValue(value) || visibleLevels.containsValue(value)
+            return visibleLevels.containsValue(value)
         }
 
         override fun get(key: ResourceKey<Level>): ServerLevel? {
-            return hiddenLevels[key] ?: visibleLevels[key]
+            return visibleLevels[key]
         }
 
         override fun isEmpty(): Boolean = visibleLevels.isEmpty()
@@ -175,6 +179,7 @@ object InstanceManager : InstanceService {
 
         override fun clear() {
             visibleLevels.clear()
+            hiddenLevels.clear()
         }
 
         override fun put(key: ResourceKey<Level>, value: ServerLevel): ServerLevel? {
@@ -272,7 +277,12 @@ object InstanceManager : InstanceService {
     }
 
     fun loadedLevel(server: MinecraftServer, levelKey: ResourceKey<Level>): ServerLevel? {
-        return loadedRuntimeLevels[levelKey] ?: server.getLevel(levelKey)
+        loadedRuntimeLevels[levelKey]?.let { return it }
+        val current = serverLevelMapField.get(server)
+        if (current is HiddenResolvableLevelMap) {
+            current.resolveMounted(levelKey)?.let { return it }
+        }
+        return server.getLevel(levelKey)
     }
 
     fun createPreparedInstance(server: MinecraftServer, templateId: String): InstanceCreateResult {

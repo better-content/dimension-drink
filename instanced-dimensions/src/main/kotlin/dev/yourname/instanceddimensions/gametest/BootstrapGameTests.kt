@@ -195,6 +195,38 @@ class BootstrapGameTests {
         })
     }
 
+    @GameTest(template = "bootstrap/empty", batch = "instance_create", timeoutTicks = 1600)
+    fun hidden_runtime_levels_stay_out_of_public_server_lookup(helper: GameTestHelper) {
+        val server = helper.level.server
+        val created = when (val result = InstanceManager.createPreparedInstance(server, DEFAULT_RUNTIME_TEMPLATE)) {
+            is InstanceCreateResult.Accepted -> result.instance
+            is InstanceCreateResult.Rejected -> throw AssertionError("Expected prepared instance creation to succeed: ${result.reason}")
+        }
+
+        waitUntil(helper, 60, "Expected prepared runtime instance to mount privately while remaining hidden", condition = {
+            InstanceManager.getInstance(created.id)?.state == InstanceState.PREPARING &&
+                InstanceManager.loadedLevel(server, created.levelKey) != null
+        }, onSuccess = {
+            helper.assertTrue(
+                server.getLevel(created.levelKey) == null,
+                "Expected hidden preparing runtime instance to stay out of the public server world map"
+            )
+            helper.assertTrue(
+                InstanceManager.loadedLevel(server, created.levelKey) != null,
+                "Expected hidden preparing runtime instance to remain privately mounted for runtime-owned work"
+            )
+
+            helper.assertTrue(InstanceManager.scheduleDestroy(server, created.id), "Expected hidden prepared instance cleanup to be accepted")
+            waitUntil(helper, 1200, failureMessage = {
+                destroyFailureMessage(server, created.id, "Expected hidden prepared instance to clean up after the visibility test")
+            }, condition = {
+                InstanceManager.getInstance(created.id) == null
+            }, onSuccess = {
+                helper.succeed()
+            })
+        })
+    }
+
     @GameTest(template = "bootstrap/empty", batch = "instance_multi", timeoutTicks = 1600)
     fun multiple_instances_activate_and_cleanup(helper: GameTestHelper) {
         val server = helper.level.server

@@ -40,7 +40,7 @@ object TravelManager : TravelService {
         if (targetHandle.state != InstanceState.ACTIVE) {
             return TravelEnterResult.Rejected("Runtime instance ${targetHandle.id} is not active: ${targetHandle.state}")
         }
-        val targetLevel = player.server.getLevel(targetHandle.levelKey)
+        val targetLevel = InstanceManager.loadedLevel(player.server, targetHandle.levelKey)
             ?: return TravelEnterResult.Rejected("Runtime level not loaded for instance ${targetHandle.id}")
         val arrivalStatus = InstanceManager.arrivalStatus(targetHandle.id)
         if (!InstanceManager.isTravelReady(targetHandle.id)) {
@@ -160,7 +160,7 @@ object TravelManager : TravelService {
             logger.info("Player {} runtime return cancelled by event for instance={}", player.scoreboardName, sourceInstance.id)
             return false
         }
-        val targetLevel = player.server.getLevel(anchor.levelKey) ?: player.server.overworld()
+        val targetLevel = InstanceManager.loadedLevel(player.server, anchor.levelKey) ?: player.server.overworld()
         return runCatching {
             transferPlayer(
                 player = player,
@@ -395,7 +395,7 @@ object TravelManager : TravelService {
             return "not-needed currentLevel=${player.serverLevel().dimension().location()}"
         }
 
-        val rollbackLevel = player.server.getLevel(snapshot.levelKey) ?: player.server.overworld()
+        val rollbackLevel = InstanceManager.loadedLevel(player.server, snapshot.levelKey) ?: player.server.overworld()
         return runCatching {
             logger.warn(
                 "Attempting travel rollback reason={} player={} currentLevel={} rollbackLevel={} rollbackPos=({}, {}, {})",
@@ -446,7 +446,7 @@ object TravelManager : TravelService {
 
         while (pendingTicketReleases.isNotEmpty() && pendingTicketReleases.first().releaseGameTime <= event.server.overworld().gameTime) {
             val release = pendingTicketReleases.removeFirst()
-            val level = event.server.getLevel(release.levelKey) ?: continue
+            val level = InstanceManager.loadedLevel(event.server, release.levelKey) ?: continue
             level.chunkSource.removeRegionTicket(net.minecraft.server.level.TicketType.POST_TELEPORT, release.chunkPos, 1, release.passengerId)
             logger.info(
                 "Released POST_TELEPORT ticket level={} chunk={} passengerId={} remainingReleases={}",
@@ -573,7 +573,7 @@ object TravelManager : TravelService {
         )
 
         if (previous != null && previous != nextWindow) {
-            val previousLevel = server.getLevel(previous.levelKey)
+            val previousLevel = InstanceManager.loadedLevel(server, previous.levelKey)
             if (previousLevel != null) {
                 removedChunks.forEach { chunk ->
                     previousLevel.chunkSource.removeRegionTicket(
@@ -602,7 +602,7 @@ object TravelManager : TravelService {
     ) {
         val previous = runtimePlayerChunkWindows.remove(playerId) ?: return
         runtimePlayerWindowLastMissingChunks.remove(playerId)
-        val level = server.getLevel(previous.levelKey)
+        val level = InstanceManager.loadedLevel(server, previous.levelKey)
         if (level != null) {
             previous.coveredChunks.forEach { chunk ->
                 level.chunkSource.removeRegionTicket(

@@ -289,7 +289,7 @@ object InstanceBenchmarkRunner {
             val handle = InstanceManager.getInstance(instanceId) ?: return false
             return handle.state == InstanceState.ACTIVE &&
                 InstanceManager.isTravelReady(instanceId) &&
-                server.getLevel(handle.levelKey) != null
+                InstanceManager.loadedLevel(server, handle.levelKey) != null
         }
 
         private fun heapUsageMiB(): Double {

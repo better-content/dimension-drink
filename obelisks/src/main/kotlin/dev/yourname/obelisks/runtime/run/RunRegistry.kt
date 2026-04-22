@@ -1018,7 +1018,7 @@ object RunRegistry : RunService {
             return false
         }
 
-        val level = server.getLevel(instance.levelKey)
+        val level = InstanceManager.loadedLevel(server, instance.levelKey)
         if (level == null) {
             logger.warn("Obelisk run {} instance {} is active but level {} is not loaded", record.id, record.instanceId, instance.levelKey.location())
             return false
