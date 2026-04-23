@@ -1,4 +1,6 @@
 {
-  "block.obelisks.obelisk": "Obelisk",
-  "item.obelisks.obelisk": "Obelisk"
+  "block.obelisks.meteoric_rift_anchor": "Meteoric Rift Anchor",
+  "item.obelisks.meteoric_rift_anchor": "Meteoric Rift Anchor",
+  "block.obelisks.return_pad": "Return Pad",
+  "item.obelisks.return_pad": "Return Pad"
 }

@@ -1,7 +1,6 @@
 package dev.yourname.obelisks.runtime.player
 
-import dev.yourname.instanceddimensions.engine.instance.InstanceManager
-import dev.yourname.instanceddimensions.engine.travel.TravelManager
+import dev.yourname.obelisks.runtime.backend.RunBackendManager
 import dev.yourname.obelisks.runtime.run.RunRegistry
 import net.minecraft.server.level.ServerPlayer
 import net.minecraftforge.event.TickEvent
@@ -17,7 +16,7 @@ object PlayerReturnHandler {
         if (player.level().isClientSide) return
 
         RunRegistry.clearPlayerAssignment(player.server, player.uuid)
-        TravelManager.clearReturnAnchor(player.uuid)
+        RunBackendManager.backend.clearPlayer(player.uuid)
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
@@ -28,11 +27,10 @@ object PlayerReturnHandler {
 
         val run = RunRegistry.getRun(player.uuid) ?: return
         val record = RunRegistry.get(run.runId)
-        val instance = InstanceManager.getInstance(run.instanceId)
 
-        if (record == null || instance == null) {
+        if (record == null) {
             RunRegistry.clearPlayerAssignment(player.server, player.uuid)
-            TravelManager.clearReturnAnchor(player.uuid)
+            RunBackendManager.backend.clearPlayer(player.uuid)
             return
         }
 
@@ -40,9 +38,11 @@ object PlayerReturnHandler {
             return
         }
 
-        if (player.serverLevel().dimension() != instance.levelKey) {
+        val levelKey = record.backendLevelKey
+        val bounds = record.backendSiteBounds
+        if (levelKey == null || bounds == null || player.serverLevel().dimension() != levelKey || !bounds.contains(player.blockPosition())) {
             RunRegistry.clearPlayerAssignment(player.server, player.uuid)
-            TravelManager.clearReturnAnchor(player.uuid)
+            RunBackendManager.backend.clearPlayer(player.uuid)
         }
     }
 }

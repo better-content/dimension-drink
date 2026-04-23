@@ -1,8 +1,8 @@
 ext {
     modId = 'obelisks'
-    modName = 'Obelisks'
+    modName = 'Dimensional Scar Expeditions'
     modGroupId = 'dev.yourname.obelisks'
-    modDescription = 'Obelisk gameplay built on top of Instanced Dimensions.'
+    modDescription = 'Meteoric rift anchors open real-dimension expeditions where instability leaves permanent scars.'
 }
 
 apply from: rootProject.file('gradle/forge-module.gradle')
@@ -14,23 +14,7 @@ gradle.projectsEvaluated {
     minecraft.runs.configureEach {
         property 'forge.enabledGameTestNamespaces', obeliskGameTestNamespaces
         property 'obelisks.gametest.selection', obeliskGameTestSelection
-        mods {
-            instanceddimensions {
-                source project(':instanced-dimensions').sourceSets.main
-            }
-        }
     }
-}
-
-tasks.matching { it.name.startsWith('prepareRun') }.configureEach {
-    dependsOn(':instanced-dimensions:classes')
-    if (project(':instanced-dimensions').file('src/gameteststructures').exists()) {
-        dependsOn(':instanced-dimensions:syncGameTestStructures')
-    }
-}
-
-dependencies {
-    implementation project(':instanced-dimensions')
 }
 
 tasks.register('runGameTestServerRunLifecycle', GradleBuild) {

@@ -31,7 +31,7 @@ class ObeliskBlockEntity(
     var obeliskId: UUID = UUID.randomUUID()
         private set
 
-    var definitionId: String = ObeliskConstants.DEFAULT_TEMPLATES.random()
+    var definitionId: String = ObeliskConstants.DEFAULT_TEMPLATES.first()
         private set
 
     val targetTemplateId: String
@@ -266,7 +266,7 @@ class ObeliskBlockEntity(
         definitionId = when {
             tag.contains("definition_id") -> tag.getString("definition_id")
             tag.contains("target_template_id") -> tag.getString("target_template_id")
-            else -> ObeliskConstants.DEFAULT_TEMPLATES.random()
+            else -> ObeliskConstants.DEFAULT_TEMPLATES.first()
         }
         activeRunId = if (tag.hasUUID("active_run_id")) tag.getUUID("active_run_id") else null
         cooldownUntilGameTime = tag.getLong("cooldown_until_game_time")

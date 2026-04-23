@@ -7,11 +7,11 @@ plugins {
 }
 
 tasks.register('compileKotlin') {
-    dependsOn(':instanced-dimensions:compileKotlin', ':obelisks:compileKotlin')
+    dependsOn(':obelisks:compileKotlin')
 }
 
 tasks.register('devClient') {
-    dependsOn(':instanced-dimensions:runClient')
+    dependsOn(':obelisks:runClient')
 }
 
 tasks.register('devClientWithC2mef', GradleBuild) {
@@ -20,7 +20,7 @@ tasks.register('devClientWithC2mef', GradleBuild) {
 }
 
 tasks.register('devServer') {
-    dependsOn(':instanced-dimensions:runServer')
+    dependsOn(':obelisks:runServer')
 }
 
 tasks.register('devServerWithC2mef', GradleBuild) {
@@ -29,7 +29,7 @@ tasks.register('devServerWithC2mef', GradleBuild) {
 }
 
 tasks.register('devGameTestServer') {
-    dependsOn(':instanced-dimensions:runGameTestServer')
+    dependsOn(':obelisks:runGameTestServer')
 }
 
 tasks.register('devGameTestServerWithC2mef', GradleBuild) {
@@ -53,7 +53,7 @@ tasks.register('devGameTestServerWithC2mefRaw', GradleBuild) {
 }
 
 tasks.register('buildMods') {
-    dependsOn(':instanced-dimensions:build', ':obelisks:build')
+    dependsOn(':obelisks:build')
 }
 
 tasks.register('testProdServerHarness', Exec) {

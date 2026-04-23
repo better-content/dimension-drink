@@ -43,6 +43,8 @@ import java.util.concurrent.ExecutionException
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
+import kotlin.math.abs
+import kotlin.math.max
 
 /**
  * Rewrite scaffold for runtime-created `ServerLevel` instances.
@@ -64,6 +66,8 @@ object InstanceManager : InstanceService {
     private const val ARRIVAL_PREPARATION_TIMEOUT_TICKS = 20L * 60L
     private const val PLATFORM_BOOTSTRAP_TIMEOUT_TICKS = 20L * 20L
     private const val PRECISE_CHUNK_TICKET_DISTANCE = 1
+    private const val ARRIVAL_PREPARATION_MAX_IN_FLIGHT_CHUNKS = 4
+    private const val ARRIVAL_PREPARATION_ADMISSIONS_PER_TICK = 2
     private val templates = linkedMapOf<String, InstanceTemplate>()
     private val instances = linkedMapOf<UUID, InstanceRecord>()
     private val lifecycleRequests = ArrayDeque<InstanceLifecycleRequest>()
@@ -116,7 +120,10 @@ object InstanceManager : InstanceService {
         val centerChunk: ChunkPos,
         val coveredChunks: Set<ChunkPos>,
         val requestedGameTime: Long,
-        val chunkFutures: Map<ChunkPos, CompletableFuture<Either<ChunkAccess, ChunkHolder.ChunkLoadingFailure>>>,
+        val pendingChunks: ArrayDeque<ChunkPos>,
+        val activeChunkFutures: MutableMap<ChunkPos, CompletableFuture<Either<ChunkAccess, ChunkHolder.ChunkLoadingFailure>>>,
+        val completedChunks: MutableSet<ChunkPos>,
+        val ticketedChunks: MutableSet<ChunkPos>,
         var lastProgressLogGameTime: Long = Long.MIN_VALUE
     )
 
@@ -396,22 +403,15 @@ object InstanceManager : InstanceService {
 
         val centerChunk = ChunkPos(center)
         val targetChunks = RuntimePlayerChunkWindowProfile.coveredChunks(centerChunk)
-        val chunkFutures = targetChunks.associateWith { chunk ->
-            stabilizeChunkFuture(
-                record = record,
-                level = level,
-                chunk = chunk,
-                status = ChunkStatus.FULL,
-                purpose = "arrival-preparation",
-                future = requestChunkFutureNonBlocking(level, chunk, ChunkStatus.FULL, load = true)
-            )
-        }
         val preparation = ArrivalPreparation(
             center = center,
             centerChunk = centerChunk,
             coveredChunks = targetChunks,
             requestedGameTime = currentGameTime(level.server),
-            chunkFutures = chunkFutures
+            pendingChunks = ArrayDeque(orderArrivalChunks(centerChunk, targetChunks)),
+            activeChunkFutures = linkedMapOf(),
+            completedChunks = linkedSetOf(),
+            ticketedChunks = linkedSetOf()
         )
         arrivalPreparations[instanceId] = preparation
         arrivalStatuses[instanceId] = InstanceArrivalStatus(
@@ -421,18 +421,11 @@ object InstanceManager : InstanceService {
             completedChunks = 0,
             requestedGameTime = preparation.requestedGameTime
         )
-        targetChunks.forEach { chunk ->
-            level.chunkSource.addRegionTicket(
-                runtimeArrivalTicketType,
-                chunk,
-                PRECISE_CHUNK_TICKET_DISTANCE,
-                instanceId
-            )
-        }
+        admitArrivalPreparationChunks(record, level, preparation)
         traceInstance(
             record,
             "arrival-preparation-requested",
-            "center=$center centerChunk=${preparation.centerChunk} previousChunks=${previousPreparation?.coveredChunks?.size ?: 0} targetChunks=${targetChunks.size} ticketMode=per-chunk ticketDistance=$PRECISE_CHUNK_TICKET_DISTANCE futures=${chunkFutures.size}"
+            "center=$center centerChunk=${preparation.centerChunk} previousChunks=${previousPreparation?.coveredChunks?.size ?: 0} targetChunks=${targetChunks.size} ticketMode=per-chunk ticketDistance=$PRECISE_CHUNK_TICKET_DISTANCE initialInFlight=${preparation.activeChunkFutures.size} pending=${preparation.pendingChunks.size} budget=$ARRIVAL_PREPARATION_MAX_IN_FLIGHT_CHUNKS"
         )
         return null
     }
@@ -1324,12 +1317,60 @@ object InstanceManager : InstanceService {
         )
     }
 
+    private fun orderArrivalChunks(centerChunk: ChunkPos, chunks: Set<ChunkPos>): List<ChunkPos> {
+        return chunks.sortedWith(
+            compareBy<ChunkPos>(
+                { max(abs(it.x - centerChunk.x), abs(it.z - centerChunk.z)) },
+                { abs(it.x - centerChunk.x) + abs(it.z - centerChunk.z) },
+                { it.x },
+                { it.z }
+            )
+        )
+    }
+
+    private fun admitArrivalPreparationChunks(record: InstanceRecord, level: ServerLevel, preparation: ArrivalPreparation) {
+        var admittedThisTick = 0
+        while (
+            admittedThisTick < ARRIVAL_PREPARATION_ADMISSIONS_PER_TICK &&
+            preparation.activeChunkFutures.size < ARRIVAL_PREPARATION_MAX_IN_FLIGHT_CHUNKS &&
+            preparation.pendingChunks.isNotEmpty()
+        ) {
+            val chunk = preparation.pendingChunks.removeFirst()
+            if (preparation.ticketedChunks.add(chunk)) {
+                level.chunkSource.addRegionTicket(
+                    runtimeArrivalTicketType,
+                    chunk,
+                    PRECISE_CHUNK_TICKET_DISTANCE,
+                    record.id
+                )
+            }
+            preparation.activeChunkFutures[chunk] = stabilizeChunkFuture(
+                record = record,
+                level = level,
+                chunk = chunk,
+                status = ChunkStatus.FULL,
+                purpose = "arrival-preparation",
+                future = requestChunkFutureNonBlocking(level, chunk, ChunkStatus.FULL, load = true)
+            )
+            admittedThisTick++
+        }
+    }
+
     private fun advanceArrivalPreparation(instanceId: UUID, level: ServerLevel) {
         val preparation = arrivalPreparations[instanceId] ?: return
+        val record = instances[instanceId] ?: return
         val now = currentGameTime(level.server)
-        val completedChunks = preparation.chunkFutures.count { it.value.isDone }
-        val failureReason = preparation.chunkFutures.entries.firstNotNullOfOrNull { (chunk, future) ->
-            describeArrivalFutureFailure(chunk, future)
+        val completedNow = mutableListOf<ChunkPos>()
+        val failureReason = preparation.activeChunkFutures.entries.firstNotNullOfOrNull { (chunk, future) ->
+            val failure = describeArrivalFutureFailure(chunk, future)
+            if (failure == null && future.isDone) {
+                completedNow += chunk
+            }
+            failure
+        }
+        completedNow.forEach { chunk ->
+            preparation.activeChunkFutures.remove(chunk)
+            preparation.completedChunks += chunk
         }
 
         if (failureReason != null) {
@@ -1337,19 +1378,21 @@ object InstanceManager : InstanceService {
                 phase = InstanceArrivalPhase.FAILED,
                 center = preparation.center,
                 totalChunks = preparation.coveredChunks.size,
-                completedChunks = completedChunks,
+                completedChunks = preparation.completedChunks.size,
                 requestedGameTime = preparation.requestedGameTime,
                 failureReason = failureReason
             )
             clearArrivalState(instanceId, level)
             traceInstance(
-                instances[instanceId],
+                record,
                 "arrival-preparation-failed",
-                "center=${preparation.center} centerChunk=${preparation.centerChunk} completedChunks=$completedChunks totalChunks=${preparation.coveredChunks.size} reason=$failureReason"
+                "center=${preparation.center} centerChunk=${preparation.centerChunk} completedChunks=${preparation.completedChunks.size} totalChunks=${preparation.coveredChunks.size} inFlight=${preparation.activeChunkFutures.size} pending=${preparation.pendingChunks.size} reason=$failureReason"
             )
             return
         }
 
+        admitArrivalPreparationChunks(record, level, preparation)
+        val completedChunks = preparation.completedChunks.size
         if (completedChunks < preparation.coveredChunks.size) {
             arrivalStatuses[instanceId] = InstanceArrivalStatus(
                 phase = InstanceArrivalPhase.PREPARING,
@@ -1370,17 +1413,17 @@ object InstanceManager : InstanceService {
                 )
                 clearArrivalState(instanceId, level)
                 traceInstance(
-                    instances[instanceId],
+                    record,
                     "arrival-preparation-failed",
-                    "center=${preparation.center} centerChunk=${preparation.centerChunk} completedChunks=$completedChunks totalChunks=${preparation.coveredChunks.size} reason=$timeoutReason"
+                    "center=${preparation.center} centerChunk=${preparation.centerChunk} completedChunks=$completedChunks totalChunks=${preparation.coveredChunks.size} inFlight=${preparation.activeChunkFutures.size} pending=${preparation.pendingChunks.size} reason=$timeoutReason"
                 )
                 return
             }
             if (preparation.lastProgressLogGameTime == Long.MIN_VALUE || now - preparation.lastProgressLogGameTime >= 20L) {
                 traceInstance(
-                    instances[instanceId],
+                    record,
                     "arrival-preparation-waiting",
-                    "center=${preparation.center} centerChunk=${preparation.centerChunk} completedChunks=$completedChunks totalChunks=${preparation.coveredChunks.size} requestedAt=${preparation.requestedGameTime}"
+                    "center=${preparation.center} centerChunk=${preparation.centerChunk} completedChunks=$completedChunks totalChunks=${preparation.coveredChunks.size} inFlight=${preparation.activeChunkFutures.size} pending=${preparation.pendingChunks.size} requestedAt=${preparation.requestedGameTime}"
                 )
                 preparation.lastProgressLogGameTime = now
             }
@@ -1397,7 +1440,7 @@ object InstanceManager : InstanceService {
         )
         clearArrivalState(instanceId, level)
         traceInstance(
-            instances[instanceId],
+            record,
             "arrival-preparation-complete",
             "center=${preparation.center} centerChunk=${preparation.centerChunk} totalChunks=${preparation.coveredChunks.size} readyAt=$now loadedChunks=${level.chunkSource.gatherStats()}"
         )
@@ -1472,9 +1515,9 @@ object InstanceManager : InstanceService {
 
     private fun clearArrivalState(instanceId: UUID, level: ServerLevel? = null) {
         val preparation = arrivalPreparations.remove(instanceId) ?: return
-        preparation.chunkFutures.values.forEach { exceptionalChunkFutureFailures.remove(it) }
+        preparation.activeChunkFutures.values.forEach { exceptionalChunkFutureFailures.remove(it) }
         level ?: return
-        preparation.coveredChunks.forEach { chunk ->
+        preparation.ticketedChunks.forEach { chunk ->
             level.chunkSource.removeRegionTicket(
                 runtimeArrivalTicketType,
                 chunk,

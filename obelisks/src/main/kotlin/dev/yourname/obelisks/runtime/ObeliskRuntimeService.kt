@@ -49,6 +49,7 @@ object ObeliskRuntimeService : ObeliskService {
             ObeliskDefinitionState(
                 id = definition.id,
                 displayName = definition.displayName,
+                targetDimension = definition.targetDimension ?: definition.instanceTemplateId,
                 instanceTemplateId = definition.instanceTemplateId,
                 rewardTableId = definition.rewardTableId,
                 enabled = definition.enabled
@@ -61,6 +62,7 @@ object ObeliskRuntimeService : ObeliskService {
             ObeliskDefinitionState(
                 id = definition.id,
                 displayName = definition.displayName,
+                targetDimension = definition.targetDimension ?: definition.instanceTemplateId,
                 instanceTemplateId = definition.instanceTemplateId,
                 rewardTableId = definition.rewardTableId,
                 enabled = definition.enabled

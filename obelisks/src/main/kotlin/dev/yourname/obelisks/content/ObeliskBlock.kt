@@ -50,12 +50,6 @@ class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
         val serverPlayer = player as? ServerPlayer ?: return InteractionResult.PASS
         val obelisk = level.getBlockEntity(pos) as? ObeliskBlockEntity ?: return InteractionResult.PASS
 
-        if (player.isShiftKeyDown) {
-            obelisk.cycleTemplate()
-            serverPlayer.sendSystemMessage(Component.literal("Obelisk attuned to ${obelisk.targetTemplateId}"))
-            return InteractionResult.CONSUME
-        }
-
         val result = RunRegistry.activateObelisk(serverPlayer, obelisk, pos)
         if (result != null) {
             serverPlayer.sendSystemMessage(Component.literal(result))

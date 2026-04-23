@@ -13,7 +13,7 @@ import net.minecraftforge.registries.RegistryObject
 object ModBlocks {
     val REGISTRY: DeferredRegister<Block> = DeferredRegister.create(ForgeRegistries.BLOCKS, MOD_ID)
 
-    val OBELISK: RegistryObject<Block> = REGISTRY.register("obelisk") {
+    val OBELISK: RegistryObject<Block> = REGISTRY.register("meteoric_rift_anchor") {
         ObeliskBlock(
             BlockBehaviour.Properties.of()
                 .mapColor(MapColor.STONE)

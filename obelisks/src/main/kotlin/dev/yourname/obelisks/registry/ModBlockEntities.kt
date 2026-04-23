@@ -10,7 +10,7 @@ import net.minecraftforge.registries.RegistryObject
 object ModBlockEntities {
     val REGISTRY: DeferredRegister<BlockEntityType<*>> = DeferredRegister.create(ForgeRegistries.BLOCK_ENTITY_TYPES, MOD_ID)
 
-    val OBELISK: RegistryObject<BlockEntityType<ObeliskBlockEntity>> = REGISTRY.register("obelisk") {
+    val OBELISK: RegistryObject<BlockEntityType<ObeliskBlockEntity>> = REGISTRY.register("meteoric_rift_anchor") {
         BlockEntityType.Builder.of(::ObeliskBlockEntity, ModBlocks.OBELISK.get()).build(null)
     }
 }

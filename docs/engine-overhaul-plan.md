@@ -1,70 +1,52 @@
-# Instanced Dimensions Rewrite Plan
+# Dimensional Scar Expeditions Canonical Dimension Backend Plan
 
-This mod is being rebuilt as an engine overhaul centered on runtime-created `ServerLevel` instances.
+Meteoric rift anchor runs are canonical-dimension expeditions. A run is anchored at a real coordinate in the real target dimension configured by the anchor definition. The backend never creates per-run dimensions, never allocates distant hidden sites, and never translates gameplay through a fake local coordinate space.
 
-## Phase 1
-- Quarantine the legacy implementation under `obsolete/legacy_mod`
-- Restore a minimal active mod shell
-- Rename the mod display name to `Instanced Dimensions`
+## Invariants
 
-GameTests:
-- `bootstrap_smoke_test`
-- Goal: mod loads and the active source tree compiles cleanly
+- The target dimension is the actual mod or vanilla dimension named by the obelisk definition.
+- The origin rift anchor position is part of the run identity.
+- Destination x/z is derived from the origin rift anchor x/z and the configured coordinate scale.
+- Spawn normalization may adjust y and perform a small local x/z search only to make entry safe.
+- Players return to the exact stored origin rift anchor.
+- Stability scarring is real block damage in the target dimension and persists forever.
+- Normal scarring protects only the minimal spawn/return contract.
+- Power depletion removes the return pad and its support columns.
 
-## Phase 2
-- Define stable runtime-facing services
-- Freeze the public contract around runs, travel, and instances
-- Add migration boundaries for legacy save data
+## Definition Fields
 
-GameTests:
-- `obelisk_activation_roundtrip`
-- `obelisk_cooldown_blocks_reentry`
-- `run_return_mechanism_works`
+Definitions may use the canonical fields below:
 
-## Phase 3
-- Patch runtime `ServerLevel` creation
-- Queue world add/remove on the server thread
-- Introduce authoritative instance metadata and storage
+- `targetDimension`: dimension id such as `minecraft:the_end` or `blue_skies:everbright`.
+- `coordinateScale`: x/z mapping scale from origin dimension to target dimension.
+- `spawnSearchRadius`: local radius for deterministic safe-spawn normalization.
+- `runRadius`: active run bounds around the normalized anchor.
+- `scarRadius`: radius around active players considered for permanent column removal.
+- `scarIntervalTicks`: cadence for stability scarring.
+- `scarColumnsPerInterval`: number of columns removed per scar tick.
+- `protectedSpawnRadius`: minimal protected footprint around the return pad.
 
-GameTests:
-- `instance_create_ticks_and_unloads`
-- `instance_storage_isolated_per_level_key`
-- `instance_destroy_does_not_touch_shared_dimensions`
+`instanceTemplateId` remains as a deprecated compatibility alias. During load it is normalized to the resolved canonical target dimension id.
 
-## Phase 4
-- Patch runtime client awareness of instance worlds
-- Validate login, respawn, and repeated cross-instance transfers
+## Run Lifecycle
 
-GameTests:
-- `player_can_enter_runtime_created_instance_after_join`
-- `player_can_chain_multiple_instance_transfers`
-- `two_players_can_enter_distinct_instances_without_desync`
+1. Validate that the target dimension exists and is loaded.
+2. Map origin rift anchor x/z into the target dimension.
+3. Normalize to a spawnable y and, if necessary, nearby x/z.
+4. Create or repair the minimal spawn pillar, support floor, and return pad.
+5. Teleport players to the real target coordinate.
+6. Track active players and touched chunks.
+7. Remove full vertical columns as stability scarring.
+8. Return players to the exact origin anchor on pad use, void fall, logout cleanup, or run close.
+9. Leave canonical dimension damage in place permanently.
 
-## Phase 5
-- Replace coordinate sharding with instance-backed runs
-- Remove destructive region-file deletion
-- Move run teardown to proper save/unload/dispose
+## Scarring
 
-GameTests:
-- `obelisk_creates_real_instance`
-- `run_empty_unloads_instance_cleanly`
-- `forced_collapse_returns_players_and_unloads_instance`
+Scarring removes entire x/z columns from min build height to max build height, including bedrock. The only normal exclusions are protected spawn-contract columns. On power depletion, those protected columns are removed too, including the return pad and its supports.
 
-## Phase 6
-- Reconnect FE, rewards, boss bars, mob logic, and commands to the new core
-- Preserve the external gameplay contract while changing internals
+## Current Risks
 
-GameTests:
-- `bossbar_tracks_instance_run`
-- `fe_depletion_ejects_players`
-- `reward_spawn_occurs_at_origin_obelisk`
-- `mob_difficulty_applies_only_inside_target_instance`
-
-## Phase 7
-- Add legacy save migration and stale-run recovery
-- Remove compatibility shims after migration stabilizes
-
-GameTests:
-- `legacy_obelisk_nbt_loads_into_new_runtime`
-- `legacy_player_run_state_recovers_safely`
-- `stale_legacy_runs_do_not_crash_or_leak`
+- Nearby obelisks can intentionally overlap in the same canonical target dimension.
+- Shared dimensions mean mobs, blocks, and player-made changes are part of the world state.
+- Some mod dimensions may need custom spawn tuning.
+- Existing configs using `instanceTemplateId` should migrate to `targetDimension`.

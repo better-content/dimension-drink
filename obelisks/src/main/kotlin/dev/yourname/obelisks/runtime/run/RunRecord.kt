@@ -16,6 +16,9 @@ data class RunRecord(
     val instanceTemplateId: String,
     val originLevelKey: ResourceKey<Level>? = null,
     val originObeliskPos: BlockPos? = null,
+    var backendLevelKey: ResourceKey<Level>? = null,
+    var backendSiteCenter: BlockPos? = null,
+    var backendSiteBounds: dev.yourname.obelisks.runtime.backend.SiteBounds? = null,
     var spawnPos: BlockPos? = null,
     val createdGameTime: Long = 0L,
     var updatedGameTime: Long = createdGameTime,
@@ -60,6 +63,9 @@ data class RunRecord(
         putBoolean("rewards_granted", rewardsGranted)
         originLevelKey?.location()?.toString()?.let { putString("origin_level_key", it) }
         originObeliskPos?.let { put("origin_obelisk_pos", encodeBlockPos(it)) }
+        backendLevelKey?.location()?.toString()?.let { putString("backend_level_key", it) }
+        backendSiteCenter?.let { put("backend_site_center", encodeBlockPos(it)) }
+        backendSiteBounds?.let { put("backend_site_bounds", encodeBounds(it)) }
         spawnPos?.let { put("spawn_pos", encodeBlockPos(it)) }
         put("active_players", encodeUuids(activePlayers))
         put("pending_players", encodeUuids(pendingPlayers))
@@ -87,6 +93,9 @@ data class RunRecord(
                 instanceTemplateId = if (tag.contains("instance_template_id")) tag.getString("instance_template_id") else definitionId,
                 originLevelKey = originLevelKey,
                 originObeliskPos = if (tag.contains("origin_obelisk_pos")) decodeBlockPos(tag.getCompound("origin_obelisk_pos")) else null,
+                backendLevelKey = parseLevelKey(tag.getString("backend_level_key")),
+                backendSiteCenter = if (tag.contains("backend_site_center")) decodeBlockPos(tag.getCompound("backend_site_center")) else null,
+                backendSiteBounds = if (tag.contains("backend_site_bounds")) decodeBounds(tag.getCompound("backend_site_bounds")) else null,
                 spawnPos = if (tag.contains("spawn_pos")) decodeBlockPos(tag.getCompound("spawn_pos")) else null,
                 createdGameTime = tag.getLong("created_game_time"),
                 updatedGameTime = tag.getLong("updated_game_time"),
@@ -115,6 +124,26 @@ data class RunRecord(
         }
 
         private fun decodeBlockPos(tag: CompoundTag): BlockPos = BlockPos(tag.getInt("x"), tag.getInt("y"), tag.getInt("z"))
+
+        private fun encodeBounds(bounds: dev.yourname.obelisks.runtime.backend.SiteBounds): CompoundTag = CompoundTag().apply {
+            putInt("min_x", bounds.minX)
+            putInt("min_y", bounds.minY)
+            putInt("min_z", bounds.minZ)
+            putInt("max_x", bounds.maxX)
+            putInt("max_y", bounds.maxY)
+            putInt("max_z", bounds.maxZ)
+        }
+
+        private fun decodeBounds(tag: CompoundTag): dev.yourname.obelisks.runtime.backend.SiteBounds {
+            return dev.yourname.obelisks.runtime.backend.SiteBounds(
+                minX = tag.getInt("min_x"),
+                minY = tag.getInt("min_y"),
+                minZ = tag.getInt("min_z"),
+                maxX = tag.getInt("max_x"),
+                maxY = tag.getInt("max_y"),
+                maxZ = tag.getInt("max_z")
+            )
+        }
 
         private fun decodeUuids(tag: CompoundTag): LinkedHashSet<UUID> {
             val values = linkedSetOf<UUID>()

@@ -24,7 +24,7 @@ object RunBossBarManager {
         }
 
         val server = event.server
-        val activeRuns = RunRegistry.snapshot()
+        val activeRuns = RunRegistry.currentRuns()
         val validRunIds = activeRuns.map { it.id }.toSet()
 
         activeRuns.forEach { run ->

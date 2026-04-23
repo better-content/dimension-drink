@@ -1,6 +1,6 @@
 package dev.yourname.obelisks.content
 
-import dev.yourname.instanceddimensions.engine.travel.TravelManager
+import dev.yourname.obelisks.runtime.run.RunRegistry
 import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerPlayer
@@ -70,8 +70,8 @@ class ReturnPadBlock(properties: Properties) : Block(properties) {
     ): InteractionResult {
         if (level.isClientSide) return InteractionResult.SUCCESS
         val serverPlayer = player as? ServerPlayer ?: return InteractionResult.PASS
-        if (!TravelManager.returnPlayer(serverPlayer)) {
-            serverPlayer.sendSystemMessage(Component.literal("You are not bound to an active obelisk run."))
+        if (!RunRegistry.returnPlayer(serverPlayer)) {
+            serverPlayer.sendSystemMessage(Component.literal("You are not bound to an active rift anchor run."))
         }
         return InteractionResult.CONSUME
     }

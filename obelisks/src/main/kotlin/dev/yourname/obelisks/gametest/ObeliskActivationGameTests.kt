@@ -12,7 +12,7 @@ class ObeliskActivationGameTests {
     }
 
     @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_activation", timeoutTicks = 1600)
-    fun relocated_spawn_retargets_travel_warmup(helper: GameTestHelper) {
+    fun relocated_spawn_normalizes_canonical_target(helper: GameTestHelper) {
         ObeliskGameTestSupport.relocatedSpawnRetargetsTravelWarmup(helper)
     }
 }

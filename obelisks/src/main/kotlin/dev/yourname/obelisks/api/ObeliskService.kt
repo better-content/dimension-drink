@@ -37,6 +37,7 @@ data class ObeliskModifierState(
 data class ObeliskDefinitionState(
     val id: String,
     val displayName: String,
+    val targetDimension: String,
     val instanceTemplateId: String,
     val rewardTableId: String,
     val enabled: Boolean

@@ -2,7 +2,6 @@ package dev.yourname.obelisks.data
 
 import com.google.gson.GsonBuilder
 import com.mojang.logging.LogUtils
-import dev.yourname.instanceddimensions.engine.instance.InstanceManager
 import dev.yourname.obelisks.MOD_ID
 import net.minecraftforge.fml.ModList
 import net.minecraftforge.fml.loading.FMLPaths
@@ -111,16 +110,25 @@ object ObeliskDataManager {
             logger.info("Skipping obelisk definition {} because required namespace {} is unavailable", id, requiredNamespace)
             return null
         }
-        val instanceTemplateId = stringOrNull(definition.instanceTemplateId) ?: id
-        if (InstanceManager.getTemplate(instanceTemplateId) == null) {
-            logger.warn("Skipping obelisk definition {} because instance template {} is unavailable", id, instanceTemplateId)
-            return null
-        }
+        val legacyTargetId = stringOrNull(definition.instanceTemplateId) ?: id
+        val targetDimension = stringOrNull(definition.targetDimension)
+            ?: CanonicalTargetResolver.targetId(definition.copy(instanceTemplateId = legacyTargetId))
         return definition.copy(
             id = id,
             displayName = stringOrNull(definition.displayName) ?: id.replaceFirstChar { it.uppercase() },
-            instanceTemplateId = instanceTemplateId,
+            instanceTemplateId = targetDimension,
+            targetDimension = targetDimension,
+            coordinateScale = (definition.coordinateScale ?: CanonicalTargetResolver.defaultCoordinateScale(legacyTargetId)).coerceAtLeast(0.0),
+            spawnSearchRadius = definition.spawnSearchRadius?.coerceIn(0, 128) ?: 16,
+            runRadius = definition.runRadius?.coerceIn(16, 512) ?: 96,
+            scarRadius = definition.scarRadius?.coerceIn(1, 128) ?: 10,
+            scarIntervalTicks = definition.scarIntervalTicks?.coerceAtLeast(1L) ?: 20L,
+            scarColumnsPerInterval = definition.scarColumnsPerInterval?.coerceIn(1, 256) ?: 3,
+            protectedSpawnRadius = definition.protectedSpawnRadius?.coerceIn(1, 8) ?: 2,
             requiredNamespace = requiredNamespace,
+            worldgenFamilyId = stringOrNull(definition.worldgenFamilyId) ?: "meteor",
+            meteorCoreBlock = stringOrNull(definition.meteorCoreBlock) ?: defaultMeteorCoreBlock(id, targetDimension),
+            meteorShellBlock = stringOrNull(definition.meteorShellBlock),
             craterFillBlocks = definition.craterFillBlocks.orEmpty().ifEmpty {
                 listOf("minecraft:gravel", "minecraft:coarse_dirt")
             },
@@ -182,6 +190,20 @@ object ObeliskDataManager {
 
     private fun stringOrNull(value: String?): String? = value?.trim()?.takeIf { it.isNotEmpty() }
 
+    private fun defaultMeteorCoreBlock(id: String, targetDimension: String?): String? {
+        return when (id) {
+            "nether" -> "minecraft:blackstone"
+            "end" -> "minecraft:end_stone"
+            "overworld" -> "minecraft:stone"
+            else -> when (targetDimension) {
+                "minecraft:the_nether" -> "minecraft:blackstone"
+                "minecraft:the_end" -> "minecraft:end_stone"
+                "minecraft:overworld" -> "minecraft:stone"
+                else -> null
+            }
+        }
+    }
+
     private fun namespaceAvailable(namespace: String): Boolean {
         return namespace in ALWAYS_AVAILABLE_NAMESPACES || ModList.get().isLoaded(namespace)
     }
@@ -227,5 +249,5 @@ object ObeliskDataManager {
         }
     }
 
-    private val ALWAYS_AVAILABLE_NAMESPACES = setOf("minecraft", "forge", MOD_ID, "instanceddimensions")
+    private val ALWAYS_AVAILABLE_NAMESPACES = setOf("minecraft", "forge", MOD_ID)
 }

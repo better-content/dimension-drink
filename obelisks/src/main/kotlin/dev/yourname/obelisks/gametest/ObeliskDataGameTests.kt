@@ -21,7 +21,7 @@ class ObeliskDataGameTests {
     }
 
     @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 400)
-    fun reward_tables_follow_definition_with_shared_instance_template(helper: GameTestHelper) {
+    fun reward_tables_follow_definition_with_shared_target_dimension(helper: GameTestHelper) {
         ObeliskGameTestSupport.rewardTablesFollowDefinitionWithSharedTemplate(helper)
     }
 
@@ -41,7 +41,7 @@ class ObeliskDataGameTests {
     }
 
     @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
-    fun reload_skips_definitions_with_missing_instance_template(helper: GameTestHelper) {
+    fun reload_keeps_definitions_and_defers_target_validation(helper: GameTestHelper) {
         ObeliskGameTestSupport.reloadSkipsDefinitionsWithMissingInstanceTemplate(helper)
     }
 

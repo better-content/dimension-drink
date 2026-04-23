@@ -10,10 +10,27 @@ class RunSavedData private constructor(
     private val records: LinkedHashMap<UUID, RunRecord> = linkedMapOf()
 ) : SavedData() {
 
+    fun get(runId: UUID): RunRecord? = records[runId]
+
+    fun values(): Collection<RunRecord> = records.values
+
     fun replaceAll(updatedRecords: Collection<RunRecord>) {
         records.clear()
         updatedRecords.forEach { records[it.id] = it.deepCopy() }
         setDirty()
+    }
+
+    fun upsert(record: RunRecord) {
+        records[record.id] = record.deepCopy()
+        setDirty()
+    }
+
+    fun remove(runId: UUID): Boolean {
+        val removed = records.remove(runId) != null
+        if (removed) {
+            setDirty()
+        }
+        return removed
     }
 
     fun snapshot(): Collection<RunRecord> = records.values.map { it.deepCopy() }
