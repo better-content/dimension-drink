@@ -9,6 +9,7 @@ import net.minecraftforge.eventbus.api.EventPriority
 import net.minecraftforge.eventbus.api.SubscribeEvent
 
 object PlayerReturnHandler {
+    private const val VOID_RETURN_MARGIN = 8.0
 
     @SubscribeEvent
     fun onPlayerDeath(event: LivingDeathEvent) {
@@ -40,7 +41,25 @@ object PlayerReturnHandler {
 
         val levelKey = record.backendLevelKey
         val bounds = record.backendSiteBounds
-        if (levelKey == null || bounds == null || player.serverLevel().dimension() != levelKey || !bounds.contains(player.blockPosition())) {
+        if (levelKey == null || bounds == null) {
+            RunRegistry.clearPlayerAssignment(player.server, player.uuid)
+            RunBackendManager.backend.clearPlayer(player.uuid)
+            return
+        }
+
+        if (player.serverLevel().dimension() != levelKey) {
+            RunRegistry.clearPlayerAssignment(player.server, player.uuid)
+            RunBackendManager.backend.clearPlayer(player.uuid)
+            return
+        }
+
+        if (player.y < player.serverLevel().minBuildHeight.toDouble() - VOID_RETURN_MARGIN) {
+            if (RunRegistry.returnPlayer(player)) {
+                return
+            }
+        }
+
+        if (!bounds.contains(player.blockPosition())) {
             RunRegistry.clearPlayerAssignment(player.server, player.uuid)
             RunBackendManager.backend.clearPlayer(player.uuid)
         }

@@ -43,7 +43,6 @@ object CanonicalTargetResolver {
             "everbright" -> "blue_skies:everbright"
             "everdawn" -> "blue_skies:everdawn"
             "otherside" -> "deeperdarker:otherside"
-            "twilight_forest" -> "twilightforest:twilight_forest"
             "undergarden" -> "undergarden:undergarden"
             else -> id
         }

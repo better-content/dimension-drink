@@ -6,7 +6,9 @@ import dev.yourname.obelisks.data.ObeliskDataManager
 import dev.yourname.obelisks.data.ObeliskDefinition
 import dev.yourname.obelisks.registry.ModBlocks
 import net.minecraft.core.BlockPos
+import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.resources.ResourceKey
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
@@ -14,6 +16,8 @@ import net.minecraft.world.entity.Mob
 import net.minecraft.world.level.ChunkPos
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Blocks
+import net.minecraft.sounds.SoundEvents
+import net.minecraft.sounds.SoundSource
 import net.minecraft.world.phys.AABB
 import net.minecraft.world.phys.Vec3
 import java.util.UUID
@@ -25,6 +29,8 @@ object CanonicalDimensionBackend : RunWorldBackend {
     private const val SPAWN_CLEARANCE = 3
     private const val SCAR_EDIT_BUDGET_PER_TICK = 384
     private const val SITE_SAVE_INTERVAL_TICKS = 100L
+    private const val LOW_POWER_DESTROY_REASON = "power-depleted"
+    private const val SUPPORT_BLOCK_ID = "ae2:sky_stone_block"
 
     private val logger = LogUtils.getLogger()
     private val playerBindings = linkedMapOf<UUID, UUID>()
@@ -124,6 +130,7 @@ object CanonicalDimensionBackend : RunWorldBackend {
         }
         record.updatedGameTime = gameTime(player.server)
         player.teleportTo(level, spawn.x + 0.5, spawn.y.toDouble(), spawn.z + 0.5, player.yRot, player.xRot)
+        playEntrySounds(level, spawn)
         playerBindings[player.uuid] = record.siteId
         return EnterRunResult.Entered
     }
@@ -146,15 +153,19 @@ object CanonicalDimensionBackend : RunWorldBackend {
         player.moveTo(x, y, z, player.yRot, player.xRot)
         player.connection.resetPosition()
         player.fallDistance = 0.0f
+        playReturnSounds(originLevel, BlockPos.containing(x, y, z))
         playerBindings.remove(player.uuid)
         return ReturnRunResult.Returned
     }
 
     override fun destroyRun(server: MinecraftServer, handle: ActiveSiteHandle, reason: String) {
         val record = site(server, handle.siteId) ?: return
+        scarQueues.remove(record.siteId)
         server.getLevel(record.backendLevelKey)?.let { level ->
             despawnRunMobs(level, record)
-            enqueueScar(level, record, configFor(record.templateId), force = true)
+            if (reason == LOW_POWER_DESTROY_REASON) {
+                enqueueScar(level, record, configFor(record.templateId), force = true)
+            }
         }
         playerBindings.entries.removeIf { (_, siteId) -> siteId == record.siteId }
         record.state = SiteState.SCARRED
@@ -187,17 +198,6 @@ object CanonicalDimensionBackend : RunWorldBackend {
                         }
                         playerBindings[player.uuid] = record.siteId
                     }
-                }
-            }
-            val now = gameTime(server)
-            activeSites.forEach { record ->
-                val config = configFor(record.templateId)
-                if (record.runId != null && now - record.lastScarGameTime >= config.scarIntervalTicks) {
-                    server.getLevel(record.backendLevelKey)?.let { level ->
-                        enqueueScar(level, record, config, force = false)
-                    }
-                    record.lastScarGameTime = now
-                    markSiteDirty(server)
                 }
             }
         }
@@ -251,18 +251,39 @@ object CanonicalDimensionBackend : RunWorldBackend {
     }
 
     private fun ensureArrivalAnchor(level: ServerLevel, record: RunSiteRecord, floor: BlockPos) {
+        val supportBlock = resolveSupportBlock()
         for (x in -1..1) {
             for (z in -1..1) {
                 val column = ColumnPos(floor.x + x, floor.z + z)
                 record.protectedColumns += column
                 record.scarredColumns.remove(column)
-                level.setBlock(floor.offset(x, 0, z), Blocks.OBSIDIAN.defaultBlockState(), 3)
+                level.setBlock(floor.offset(x, 0, z), supportBlock.defaultBlockState(), 3)
                 for (dy in 1..SPAWN_CLEARANCE) {
                     level.setBlock(floor.offset(x, dy, z), Blocks.AIR.defaultBlockState(), 3)
                 }
             }
         }
         level.setBlock(floor, ModBlocks.RETURN_PAD.get().defaultBlockState(), 3)
+    }
+
+    private fun resolveSupportBlock(): net.minecraft.world.level.block.Block {
+        return blockOrNull(SUPPORT_BLOCK_ID) ?: Blocks.STONE
+    }
+
+    private fun blockOrNull(id: String): net.minecraft.world.level.block.Block? {
+        val location = ResourceLocation.tryParse(id) ?: return null
+        val block = BuiltInRegistries.BLOCK.get(location)
+        return block.takeUnless { it == Blocks.AIR }
+    }
+
+    private fun playEntrySounds(level: ServerLevel, at: BlockPos) {
+        level.playSound(null, at, SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS, 0.55f, 1.25f)
+        level.playSound(null, at, SoundEvents.RESPAWN_ANCHOR_CHARGE, SoundSource.PLAYERS, 0.45f, 1.65f)
+    }
+
+    private fun playReturnSounds(level: ServerLevel, at: BlockPos) {
+        level.playSound(null, at, SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS, 0.65f, 0.85f)
+        level.playSound(null, at, SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS, 0.45f, 1.3f)
     }
 
     private fun enqueueScar(level: ServerLevel, record: RunSiteRecord, config: BackendConfig, force: Boolean): Boolean {

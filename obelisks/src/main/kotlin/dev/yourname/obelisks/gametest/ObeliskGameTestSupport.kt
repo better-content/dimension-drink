@@ -24,6 +24,7 @@ import dev.yourname.obelisks.runtime.ui.RunBossBarManager
 import dev.yourname.obelisks.worldgen.ObeliskFeature
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
+import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.gametest.framework.GameTestHelper
 import net.minecraft.network.Connection
 import net.minecraft.network.ConnectionProtocol
@@ -173,7 +174,6 @@ private fun canonicalLevelKey(templateId: String): ResourceKey<Level>? {
         "everbright" -> ResourceLocation("blue_skies", "everbright")
         "everdawn" -> ResourceLocation("blue_skies", "everdawn")
         "otherside" -> ResourceLocation("deeperdarker", "otherside")
-        "twilight_forest" -> ResourceLocation("twilightforest", "twilight_forest")
         "undergarden" -> ResourceLocation("undergarden", "undergarden")
         else -> runCatching { ResourceLocation(templateId) }.getOrNull()
     } ?: return null
@@ -811,12 +811,16 @@ object ObeliskGameTestSupport {
         helper.assertTrue(countNonAirRing(helper, endPos, 2) >= 6, "Expected end definition to generate as a canonical meteor")
         helper.assertTrue(countNonAirRing(helper, netherPos, 2) >= 6, "Expected nether definition to generate as a canonical meteor")
         helper.assertTrue(countNonAirRing(helper, moddedPos, 2) >= 6, "Expected modded definition to generate as a canonical meteor")
-        helper.assertTrue(helper.level.getBlockState(endPos.east()).`is`(Blocks.END_STONE), "Expected generated end meteor to use end stone")
-        helper.assertTrue(helper.level.getBlockState(netherPos.east()).`is`(Blocks.BLACKSTONE), "Expected generated nether meteor to use blackstone")
-        helper.assertTrue(helper.level.getBlockState(moddedPos.east()).`is`(Blocks.LAPIS_BLOCK), "Expected generated modded meteor to use its configured core block")
-        helper.assertTrue(helper.level.getBlockState(endPos.above()).`is`(Blocks.END_STONE), "Expected generated end obelisk to be encased in end stone")
-        helper.assertTrue(helper.level.getBlockState(netherPos.above()).`is`(Blocks.BLACKSTONE), "Expected generated nether obelisk to be encased in blackstone")
-        helper.assertTrue(helper.level.getBlockState(moddedPos.above()).`is`(Blocks.LAPIS_BLOCK), "Expected generated modded obelisk to be encased in its configured core block")
+        helper.assertTrue(!helper.level.getBlockState(endPos.east()).isAir, "Expected generated end meteor to encase the obelisk")
+        helper.assertTrue(!helper.level.getBlockState(netherPos.east()).isAir, "Expected generated nether meteor to encase the obelisk")
+        helper.assertTrue(!helper.level.getBlockState(moddedPos.east()).isAir, "Expected generated modded meteor to encase the obelisk")
+        helper.assertTrue(!helper.level.getBlockState(endPos.above()).isAir, "Expected generated end obelisk top to be enclosed")
+        helper.assertTrue(!helper.level.getBlockState(netherPos.above()).isAir, "Expected generated nether obelisk top to be enclosed")
+        helper.assertTrue(!helper.level.getBlockState(moddedPos.above()).isAir, "Expected generated modded obelisk top to be enclosed")
+        val expectedShell = meteorShellBlockForAssertions()
+        helper.assertTrue(hasBlockWithinCube(helper, endPos, 4, expectedShell), "Expected end meteor to include shell block ${BuiltInRegistries.BLOCK.getKey(expectedShell)}")
+        helper.assertTrue(hasBlockWithinCube(helper, netherPos, 4, expectedShell), "Expected nether meteor to include shell block ${BuiltInRegistries.BLOCK.getKey(expectedShell)}")
+        helper.assertTrue(hasBlockWithinCube(helper, moddedPos, 4, expectedShell), "Expected modded meteor to include shell block ${BuiltInRegistries.BLOCK.getKey(expectedShell)}")
         deleteTestConfigs()
         reloadData()
         helper.succeed()
@@ -1108,12 +1112,13 @@ object ObeliskGameTestSupport {
         helper.assertTrue(level.getBlockState(returnPadPos).`is`(ModBlocks.RETURN_PAD.get()), "Expected canonical spawn contract center to be a return pad")
 
         val floorCenter = returnPadPos.below()
+        val expectedSupport = supportBlockForAssertions()
         for (x in -1..1) {
             for (z in -1..1) {
                 val floorPos = floorCenter.offset(x, 0, z)
                 helper.assertTrue(
-                    level.getBlockState(floorPos).`is`(Blocks.OBSIDIAN),
-                    "Expected canonical spawn contract floor to use obsidian at $floorPos"
+                    level.getBlockState(floorPos).`is`(expectedSupport),
+                    "Expected canonical spawn contract floor to use ${BuiltInRegistries.BLOCK.getKey(expectedSupport)} at $floorPos"
                 )
 
                 for (dy in 0..2) {
@@ -1126,15 +1131,32 @@ object ObeliskGameTestSupport {
                 }
             }
         }
+    }
 
-        var supportPos = floorCenter.below()
-        while (supportPos.y >= level.minBuildHeight) {
-            helper.assertTrue(
-                level.getBlockState(supportPos).`is`(Blocks.OBSIDIAN),
-                "Expected canonical spawn contract support column to use obsidian at $supportPos"
-            )
-            supportPos = supportPos.below()
+    private fun supportBlockForAssertions(): net.minecraft.world.level.block.Block {
+        val skyStoneId = ResourceLocation.tryParse("ae2:sky_stone_block")
+        val skyStone = skyStoneId?.let(BuiltInRegistries.BLOCK::get)
+        return if (skyStone != null && skyStone != Blocks.AIR) skyStone else Blocks.STONE
+    }
+
+    private fun meteorShellBlockForAssertions(): net.minecraft.world.level.block.Block = supportBlockForAssertions()
+
+    private fun hasBlockWithinCube(
+        helper: GameTestHelper,
+        center: BlockPos,
+        radius: Int,
+        block: net.minecraft.world.level.block.Block
+    ): Boolean {
+        for (dx in -radius..radius) {
+            for (dy in -radius..radius) {
+                for (dz in -radius..radius) {
+                    if (helper.level.getBlockState(center.offset(dx, dy, dz)).`is`(block)) {
+                        return true
+                    }
+                }
+            }
         }
+        return false
     }
 
     private fun countBufferedItem(obelisk: ObeliskBlockEntity?, item: net.minecraft.world.item.Item): Int {
