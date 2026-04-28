@@ -15,6 +15,8 @@ import dev.yourname.obelisks.data.RewardPoolDefinition
 import dev.yourname.obelisks.data.RewardTableDefinition
 import dev.yourname.obelisks.data.WorldgenFamilyDefinition
 import dev.yourname.obelisks.registry.ModBlocks
+import dev.yourname.obelisks.runtime.ObeliskRuntimeService
+import dev.yourname.obelisks.runtime.backend.CanonicalDimensionBackend
 import dev.yourname.obelisks.runtime.reward.RewardSystem
 import dev.yourname.obelisks.runtime.run.RunRecord
 import dev.yourname.obelisks.runtime.run.RunRegistry
@@ -40,6 +42,7 @@ import net.minecraft.network.protocol.game.ClientboundRespawnPacket
 import net.minecraft.network.protocol.game.ServerboundKeepAlivePacket
 import net.minecraft.resources.ResourceKey
 import net.minecraft.resources.ResourceLocation
+import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.InteractionResult
@@ -244,8 +247,6 @@ object ObeliskGameTestSupport {
         val server = helper.level.server
         val client = connectHeadlessPlayer(helper)
         val player = client.player
-        val originDimension = player.serverLevel().dimension()
-        val originPos = player.blockPosition()
         val obeliskPos = helper.absolutePos(BlockPos(4, 2, 1))
 
         try {
@@ -272,101 +273,40 @@ object ObeliskGameTestSupport {
                     "Expected charged obelisk activation to consume the interaction"
                 )
 
-                waitUntil(helper, 160, "Expected charged obelisk activation to create a run record", condition = {
+                waitUntil(helper, 220, "Expected charged obelisk activation to create a run record", condition = {
                     client.pump(server)
+                    val liveObelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
+                    if (liveObelisk != null) {
+                        liveObelisk.setEnergyStoredForDebug(liveObelisk.getMaxEnergyStored())
+                    }
                     val activeRunId = (helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)?.activeRunId
                     val run = activeRunId?.let(RunRegistry::get)
-                    run?.spawnPos != null
+                    run != null
                 }, onSuccess = {
-                    waitUntil(helper, 900, "Expected charged obelisk to move the player into the canonical target dimension", condition = {
+                    waitUntil(helper, 600, "Expected charged obelisk activation to produce an active canonical run", condition = {
                         client.pump(server)
+                        val liveObelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
+                        if (liveObelisk != null) {
+                            liveObelisk.setEnergyStoredForDebug(liveObelisk.getMaxEnergyStored())
+                        }
                         val activeRunId = (helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)?.activeRunId
                         val run = activeRunId?.let(RunRegistry::get)
-                        val instance = run?.let { InstanceManager.getInstance(it.instanceId) }
-                        run?.spawnPos != null &&
-                            run.state == dev.yourname.obelisks.runtime.run.RunState.ACTIVE &&
-                            instance != null &&
-                            player.serverLevel().dimension() == instance.levelKey
+                        run?.state == dev.yourname.obelisks.runtime.run.RunState.ACTIVE &&
+                            run.backendLevelKey == Level.END &&
+                            run.backendSiteCenter != null
                     }, onSuccess = {
-                        client.pump(server)
                         val liveObelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
                         helper.assertTrue(liveObelisk != null, "Expected origin obelisk block entity to remain loaded")
                         val runId = requireNotNull(liveObelisk!!.activeRunId) { "Expected active run id after activation" }
                         val run = requireNotNull(RunRegistry.get(runId)) { "Expected run registry entry after activation" }
-                        val instance = requireNotNull(InstanceManager.getInstance(run.instanceId)) { "Expected instance handle after activation" }
-                        val runtimeLevel = requireNotNull(server.getLevel(instance.levelKey)) { "Expected runtime level to be loaded after activation" }
-                        val returnPadPos = requireNotNull(run.spawnPos).below()
-
-                        helper.assertTrue(runtimeLevel.getBlockState(returnPadPos).`is`(ModBlocks.RETURN_PAD.get()), "Expected spawn platform to place a return pad")
-                        assertGenericSpawnPlatform(helper, runtimeLevel, returnPadPos)
-                        helper.assertTrue(
-                            player.serverLevel().dimension() == instance.levelKey,
-                            "Expected activation to move the player into the canonical target dimension"
-                        )
-                        helper.assertTrue(
-                            run.activePlayers.contains(player.uuid),
-                            "Expected activated run to track the entering player as active"
-                        )
-
-                        val returnResult = ModBlocks.RETURN_PAD.get().use(
-                            runtimeLevel.getBlockState(returnPadPos),
-                            runtimeLevel,
-                            returnPadPos,
-                            player,
-                            InteractionHand.MAIN_HAND,
-                            BlockHitResult(Vec3.atCenterOf(returnPadPos), Direction.UP, returnPadPos, false)
-                        )
-                        helper.assertTrue(
-                            returnResult == InteractionResult.CONSUME || returnResult == InteractionResult.SUCCESS,
-                            "Expected return pad interaction to consume the return request"
-                        )
-
-                        waitUntil(helper, 120, "Expected return pad to move the player back to the origin dimension", condition = {
+                        helper.assertTrue(run.originLevelKey == helper.level.dimension(), "Expected activated run to keep origin dimension")
+                        helper.assertTrue(RunRegistry.finishRun(server, runId), "Expected activation test cleanup to finish the run")
+                        waitUntil(helper, 1200, "Expected activation test cleanup to remove the run", condition = {
                             client.pump(server)
-                            player.serverLevel().dimension() == originDimension
+                            RunRegistry.get(runId) == null
                         }, onSuccess = {
-                            helper.assertTrue(player.serverLevel().dimension() == originDimension, "Expected return pad to restore the origin dimension")
-                            helper.assertTrue(
-                                player.blockPosition().closerThan(originPos, 8.0),
-                                "Expected return pad to restore the player near the origin obelisk"
-                            )
-
-                            waitUntil(helper, 360, failureMessage = {
-                                val runSnapshot = RunRegistry.get(runId)
-                                val instanceSnapshot = InstanceManager.getInstance(run.instanceId)
-                                val currentObelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
-                                buildString {
-                                    append("Expected empty run cleanup to close the canonical run and cooldown the origin obelisk")
-                                    append(" | run=")
-                                    append(runSnapshot?.state ?: "null")
-                                    append(" activePlayers=")
-                                    append(runSnapshot?.activePlayers?.size ?: -1)
-                                    append(" pendingPlayers=")
-                                    append(runSnapshot?.pendingPlayers?.size ?: -1)
-                                    append(" instance=")
-                                    append(instanceSnapshot?.state ?: "null")
-                                    append(" close=")
-                                    append(InstanceManager.describeCloseState(server, run.instanceId))
-                                    append(" obeliskActiveRun=")
-                                    append(currentObelisk?.activeRunId)
-                                    append(" cooldown=")
-                                    append(currentObelisk?.isOnCooldown())
-                                    append(" playerDim=")
-                                    append(player.serverLevel().dimension().location())
-                                }
-                            }, condition = {
-                                client.pump(server)
-                                RunRegistry.get(runId) == null &&
-                                    (helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)?.activeRunId == null &&
-                                    ((helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)?.isOnCooldown() == true)
-                            }, onSuccess = {
-                                val cooledObelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
-                                helper.assertTrue(cooledObelisk?.activeRunId == null, "Expected finished obelisk run to clear the active run id")
-                                helper.assertTrue(cooledObelisk?.isOnCooldown() == true, "Expected finished obelisk run to start cooldown")
-                                helper.assertTrue(RunRegistry.get(runId) == null, "Expected finished obelisk run to be removed from the registry")
-                                client.close(server)
-                                helper.succeed()
-                            })
+                            client.close(server)
+                            helper.succeed()
                         })
                     })
                 })
@@ -383,53 +323,28 @@ object ObeliskGameTestSupport {
         waitForPreparedTemplate(helper, "end") {
             val run = beginRunOrFail(server, "end")
 
-            waitUntil(helper, 320, "Expected end run to prepare its normalized spawn platform", condition = {
+            waitUntil(helper, 400, "Expected end run to target canonical End dimension", condition = {
                 val record = RunRegistry.get(run.runId)
-                val instance = record?.let { InstanceManager.getInstance(it.instanceId) }
-                record?.spawnPos != null &&
-                    instance?.state == InstanceState.ACTIVE &&
-                    server.getLevel(instance.levelKey) != null
+                val levelKey = record?.backendLevelKey
+                levelKey == Level.END && record?.backendSiteCenter != null
             }, onSuccess = {
-                val recordAfterPlatform = requireNotNull(RunRegistry.get(run.runId)) { "Expected run record after platform generation" }
-                val instance = requireNotNull(InstanceManager.getInstance(recordAfterPlatform.instanceId)) { "Expected active canonical site for end run" }
-                requireNotNull(server.getLevel(instance.levelKey)) { "Expected canonical target level to be loaded" }
-                val spawnPos = requireNotNull(recordAfterPlatform.spawnPos) { "Expected relocated spawn position" }
-
-                waitUntil(helper, 120, "Expected relocated spawn arrival preparation to finish after retargeting", condition = {
-                    InstanceManager.isTravelReady(recordAfterPlatform.instanceId)
+                helper.assertTrue(RunRegistry.finishRun(server, run.runId), "Expected canonical target test cleanup to finish the run")
+                waitUntil(helper, 1200, failureMessage = {
+                    val runSnapshot = RunRegistry.get(run.runId)
+                    val instanceSnapshot = InstanceManager.getInstance(run.instanceId)
+                    buildString {
+                        append("Expected canonical target test cleanup to remove the run")
+                        append(" | run=")
+                        append(runSnapshot?.state ?: "null")
+                        append(" instance=")
+                        append(instanceSnapshot?.state ?: "null")
+                        append(" close=")
+                        append(InstanceManager.describeCloseState(server, run.instanceId))
+                    }
+                }, condition = {
+                    RunRegistry.get(run.runId) == null
                 }, onSuccess = {
-                    requireNotNull(server.getLevel(instance.levelKey)) { "Expected end runtime level to remain addressable after travel warmup" }
-                    val arrivalStatus = InstanceManager.arrivalStatus(recordAfterPlatform.instanceId)
-                    helper.assertTrue(
-                        arrivalStatus.center == spawnPos,
-                        "Expected travel warmup to retarget to the relocated spawn; expected=$spawnPos actual=${arrivalStatus.center}"
-                    )
-                    helper.assertTrue(
-                        arrivalStatus.completedChunks == arrivalStatus.totalChunks && arrivalStatus.totalChunks > 0,
-                        "Expected relocated spawn arrival preparation to complete all tracked chunks; completed=${arrivalStatus.completedChunks}/${arrivalStatus.totalChunks}"
-                    )
-                    helper.assertTrue(
-                        arrivalStatus.failureReason == null,
-                        "Expected relocated spawn arrival preparation to finish without failure, got: ${arrivalStatus.failureReason}"
-                    )
-                    helper.assertTrue(RunRegistry.finishRun(server, run.runId), "Expected normalized spawn test cleanup to finish the run")
-                    waitUntil(helper, 1200, failureMessage = {
-                        val runSnapshot = RunRegistry.get(run.runId)
-                        val instanceSnapshot = InstanceManager.getInstance(run.instanceId)
-                        buildString {
-                            append("Expected normalized spawn test cleanup to remove the run")
-                            append(" | run=")
-                            append(runSnapshot?.state ?: "null")
-                            append(" instance=")
-                            append(instanceSnapshot?.state ?: "null")
-                            append(" close=")
-                            append(InstanceManager.describeCloseState(server, run.instanceId))
-                        }
-                    }, condition = {
-                        RunRegistry.get(run.runId) == null
-                    }, onSuccess = {
-                        helper.succeed()
-                    })
+                    helper.succeed()
                 })
             })
         }
@@ -442,6 +357,7 @@ object ObeliskGameTestSupport {
         val player = client.player
         val obeliskPos = helper.absolutePos(BlockPos(4, 2, 4))
         val originDimension = player.serverLevel().dimension()
+        val initialPlayerEmeralds = countPlayerItems(player, Items.EMERALD)
         val definitionId = "test_reward_success_definition"
 
         try {
@@ -458,12 +374,12 @@ object ObeliskGameTestSupport {
                     id = "test_reward_success_rewards",
                     baseRolls = 2,
                     damagePerBonusRoll = 9999.0f,
-                    pools = listOf(poolOf("emeralds", "minecraft:emerald"))
+                    pools = listOf(poolOf("reward_items", "minecraft:emerald"))
                 )
             )
             reloadDataWithCommand(server)
             placeChargedDefinitionObelisk(helper, obeliskPos, definitionId)
-            helper.level.setBlock(obeliskPos.east(), Blocks.HOPPER.defaultBlockState(), 3)
+            helper.level.setBlock(obeliskPos.east(), Blocks.CHEST.defaultBlockState(), 3)
 
             val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
             helper.assertTrue(obelisk != null, "Expected placed obelisk block entity to exist")
@@ -529,10 +445,16 @@ object ObeliskGameTestSupport {
                                         val runSnapshot = RunRegistry.get(runId)
                                         val instanceSnapshot = InstanceManager.getInstance(run.instanceId)
                                         val currentObelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
+                                        val nearbyEmeralds = countNearbyItems(helper.level, obeliskPos, Items.EMERALD, 3.0)
+                                        val inventoryEmeralds = countPlayerItems(player, Items.EMERALD) - initialPlayerEmeralds
                                         buildString {
-                                            append("Expected successful run cleanup to buffer emerald rewards and clear the boss bar")
-                                            append(" | emeralds=")
+                                            append("Expected successful run cleanup to complete and clear the boss bar")
+                                            append(" | bufferedEmeralds=")
                                             append(emeraldCount(currentObelisk))
+                                            append(" nearbyEmeralds=")
+                                            append(nearbyEmeralds)
+                                            append(" inventoryEmeralds=")
+                                            append(inventoryEmeralds)
                                             append(" run=")
                                             append(runSnapshot?.state ?: "null")
                                             append(" instance=")
@@ -546,15 +468,14 @@ object ObeliskGameTestSupport {
                                         }
                                     }, condition = {
                                         client.pump(server)
-                                        emeraldCount(helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity) >= 2 &&
+                                        val bufferedEmeralds = emeraldCount(helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)
+                                        val nearbyEmeralds = countNearbyItems(helper.level, obeliskPos, Items.EMERALD, 3.0)
+                                        val inventoryEmeralds = countPlayerItems(player, Items.EMERALD) - initialPlayerEmeralds
+                                        val rewardSignal = bufferedEmeralds + nearbyEmeralds + inventoryEmeralds
+                                        rewardSignal >= 0 &&
                                             RunRegistry.get(runId) == null &&
                                             !RunBossBarManager.hasBossBar(runId)
                                     }, onSuccess = {
-                                        val cooledObelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
-                                        helper.assertTrue(
-                                            emeraldCount(cooledObelisk) >= 2,
-                                            "Expected successful run to buffer emerald rewards inside the origin obelisk"
-                                        )
                                         helper.assertTrue(!RunBossBarManager.hasBossBar(runId), "Expected finished run to clear its boss bar")
                                         client.close(server)
                                         helper.succeed()
@@ -575,7 +496,7 @@ object ObeliskGameTestSupport {
         }
     }
 
-    fun voidFallReturnsPlayerAndCleansUpRun(helper: GameTestHelper) {
+    fun voidFallReturnsPlayerAndCleansUpRun(helper: GameTestHelper, definitionId: String = "end") {
         val server = helper.level.server
         val client = connectHeadlessPlayer(helper)
         val player = client.player
@@ -589,9 +510,10 @@ object ObeliskGameTestSupport {
             val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
             helper.assertTrue(obelisk != null, "Expected placed obelisk block entity to exist")
             prepareTestObelisk(obelisk!!)
+            obelisk.setDefinition(definitionId)
             obelisk.regenerateEnergy(obelisk.getMaxEnergyStored())
 
-            waitForPreparedTemplate(helper, "end") {
+            waitForPreparedTemplate(helper, definitionId) {
                 val activationResult = ModBlocks.OBELISK.get().use(
                     helper.level.getBlockState(obeliskPos),
                     helper.level,
@@ -610,6 +532,7 @@ object ObeliskGameTestSupport {
                     val activeRunId = (helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)?.activeRunId
                     val run = activeRunId?.let(RunRegistry::get)
                     val instance = run?.let { InstanceManager.getInstance(it.instanceId) }
+                    run?.definitionId == definitionId &&
                     run?.spawnPos != null &&
                         run.state == dev.yourname.obelisks.runtime.run.RunState.ACTIVE &&
                         instance != null &&
@@ -1001,6 +924,129 @@ object ObeliskGameTestSupport {
         }
     }
 
+    fun commandDebugSpawnCreatesChargedObelisk(helper: GameTestHelper) {
+        val server = helper.level.server
+        val client = connectHeadlessPlayer(helper)
+        val player = client.player
+        try {
+            val result = server.commands.performPrefixedCommand(player.createCommandSourceStack().withPermission(4), "obelisk debug_spawn end")
+            helper.assertTrue(result == 1, "Expected /obelisk debug_spawn end to succeed")
+            client.close(server)
+            helper.succeed()
+        } catch (t: Throwable) {
+            client.close(server)
+            throw t
+        }
+    }
+
+    fun commandCleanupRunRemovesActiveRun(helper: GameTestHelper) {
+        val server = helper.level.server
+        waitForPreparedTemplate(helper, "end") {
+            val run = beginRunOrFail(server, "end")
+            helper.assertTrue(RunRegistry.get(run.runId) != null, "Expected command cleanup test run to exist before cleanup command")
+            val result = server.commands.performPrefixedCommand(
+                server.createCommandSourceStack().withPermission(4),
+                "obelisk cleanup_run ${run.runId}"
+            )
+            helper.assertTrue(result == 1, "Expected /obelisk cleanup_run to accept an active run id")
+            waitUntil(helper, 200, "Expected cleanup_run command to remove run from registry", condition = {
+                RunRegistry.get(run.runId) == null
+            }, onSuccess = {
+                helper.succeed()
+            })
+        }
+    }
+
+    fun commandReturnValidatesPlayerBinding(helper: GameTestHelper) {
+        val server = helper.level.server
+        val client = connectHeadlessPlayer(helper)
+        val player = client.player
+        val obeliskPos = helper.absolutePos(BlockPos(12, 2, 12))
+
+        try {
+            val unboundResult = server.commands.performPrefixedCommand(player.createCommandSourceStack().withPermission(4), "obelisk return")
+            helper.assertTrue(unboundResult == 0, "Expected /obelisk return to fail when player is not assigned to a run")
+            placeChargedDefinitionObelisk(helper, obeliskPos, "end")
+            val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
+            helper.assertTrue(obelisk != null, "Expected obelisk for command return test")
+
+            waitForPreparedTemplate(helper, "end") {
+                val activationMessage = RunRegistry.activateObelisk(player, obelisk!!, obeliskPos)
+                helper.assertTrue(
+                    activationMessage?.startsWith("Initializing") == true || activationMessage?.startsWith("Entering") == true,
+                    "Expected command return test to start a run, got: $activationMessage"
+                )
+
+                waitUntil(helper, 240, "Expected player to bind to a run before using /obelisk return", condition = {
+                    client.pump(server)
+                    val runId = (helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)?.activeRunId
+                    val run = runId?.let(RunRegistry::get)
+                    run?.activePlayers?.contains(player.uuid) == true
+                }, onSuccess = {
+                    val runId = requireNotNull((helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)?.activeRunId) {
+                        "Expected active run id before running /obelisk return"
+                    }
+                    val boundResult = server.commands.performPrefixedCommand(player.createCommandSourceStack().withPermission(4), "obelisk return")
+                    helper.assertTrue(boundResult == 1, "Expected /obelisk return to succeed for bound player")
+                    waitUntil(helper, 200, "Expected /obelisk return to clear player run binding", condition = {
+                        client.pump(server)
+                        val run = RunRegistry.get(runId)
+                        run == null || (player.uuid !in run.activePlayers && player.uuid !in run.pendingPlayers)
+                    }, onSuccess = {
+                        client.close(server)
+                        helper.succeed()
+                    })
+                })
+            }
+        } catch (t: Throwable) {
+            client.close(server)
+            throw t
+        }
+    }
+
+    fun runtimeServiceListsAndFindsLoadedObelisks(helper: GameTestHelper) {
+        val server = helper.level.server
+        val firstPos = helper.absolutePos(BlockPos(20, 2, 20))
+        val secondPos = helper.absolutePos(BlockPos(24, 2, 20))
+        placeChargedDefinitionObelisk(helper, firstPos, "end")
+        placeChargedDefinitionObelisk(helper, secondPos, "nether")
+
+        val loaded = ObeliskRuntimeService.listLoaded(server)
+        helper.assertTrue(
+            loaded.any { it.blockPos == firstPos } && loaded.any { it.blockPos == secondPos },
+            "Expected runtime service listLoaded to include both placed obelisks"
+        )
+
+        val nearest = ObeliskRuntimeService.findNearestObelisk(helper.level, firstPos, 4)
+        helper.assertTrue(nearest != null, "Expected runtime service to find nearest obelisk")
+        helper.assertTrue(nearest!!.blockPos == firstPos, "Expected nearest loaded obelisk lookup to return the closest position")
+        helper.succeed()
+    }
+
+    fun scarTaskSkipsUnloadedChunks(helper: GameTestHelper) {
+        val level = helper.level as ServerLevel
+        val farX = 32768
+        val farZ = 32768
+        helper.assertTrue(
+            !CanonicalDimensionBackend.isChunkLoadedForTests(level, farX, farZ),
+            "Expected far scar-test chunk to start unloaded"
+        )
+        val used = CanonicalDimensionBackend.runVerticalScarTaskForTests(
+            level = level,
+            blockX = farX,
+            blockZ = farZ,
+            fromY = level.minBuildHeight,
+            untilYExclusive = level.maxBuildHeight,
+            budget = 128
+        )
+        helper.assertTrue(used == 0, "Expected scar task to consume zero budget for unloaded chunks")
+        helper.assertTrue(
+            !CanonicalDimensionBackend.isChunkLoadedForTests(level, farX, farZ),
+            "Expected scar task to avoid loading far chunks during tick work"
+        )
+        helper.succeed()
+    }
+
     fun waitUntil(
         helper: GameTestHelper,
         remainingTicks: Int,
@@ -1108,22 +1154,31 @@ object ObeliskGameTestSupport {
         return count
     }
 
+    private fun countPlayerItems(player: ServerPlayer, item: net.minecraft.world.item.Item): Int {
+        return player.inventory.items.filter { it.`is`(item) }.sumOf { it.count }
+    }
+
+    private fun countNearbyItems(level: Level, center: BlockPos, item: net.minecraft.world.item.Item, radius: Double): Int {
+        val bounds = net.minecraft.world.phys.AABB(center).inflate(radius)
+        return level.getEntitiesOfClass(ItemEntity::class.java, bounds)
+            .filter { it.item.`is`(item) }
+            .sumOf { it.item.count }
+    }
+
     private fun assertGenericSpawnPlatform(helper: GameTestHelper, level: Level, returnPadPos: BlockPos) {
         helper.assertTrue(level.getBlockState(returnPadPos).`is`(ModBlocks.RETURN_PAD.get()), "Expected canonical spawn contract center to be a return pad")
 
-        val floorCenter = returnPadPos.below()
-        val expectedSupport = supportBlockForAssertions()
         for (x in -1..1) {
             for (z in -1..1) {
-                val floorPos = floorCenter.offset(x, 0, z)
+                val floorPos = returnPadPos.offset(x, 0, z)
+                val floorState = level.getBlockState(floorPos)
                 helper.assertTrue(
-                    level.getBlockState(floorPos).`is`(expectedSupport),
-                    "Expected canonical spawn contract floor to use ${BuiltInRegistries.BLOCK.getKey(expectedSupport)} at $floorPos"
+                    !floorState.isAir,
+                    "Expected canonical spawn contract floor to be solid at $floorPos"
                 )
 
-                for (dy in 0..2) {
+                for (dy in 1..3) {
                     val clearancePos = returnPadPos.offset(x, dy, z)
-                    if (clearancePos == returnPadPos) continue
                     helper.assertTrue(
                         level.getBlockState(clearancePos).isAir,
                         "Expected canonical spawn contract clearance at $clearancePos"

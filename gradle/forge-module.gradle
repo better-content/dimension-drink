@@ -29,6 +29,8 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-jdk8:1.7.3'
     implementation fg.deobf('curse.maven:kotlin-for-forge-351264:4578885')
+    testImplementation 'org.jetbrains.kotlin:kotlin-test'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
 }
 
 minecraft {
@@ -62,6 +64,7 @@ minecraft {
         }
 
         gameTestServer {
+            workingDirectory rootProject.file('run-gametest')
             property 'forge.enabledGameTestNamespaces', modId
         }
 
@@ -128,13 +131,23 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
 
+tasks.named('test', Test).configure {
+    useJUnitPlatform()
+}
+
 if (file('src/gameteststructures').exists()) {
     tasks.register('syncGameTestStructures', Copy) {
         from('src/gameteststructures')
         into(rootProject.file('run/gameteststructures'))
     }
 
+    tasks.register('syncGameTestStructuresGameTest', Copy) {
+        from('src/gameteststructures')
+        into(rootProject.file('run-gametest/gameteststructures'))
+    }
+
     tasks.matching { it.name.startsWith('prepareRun') }.configureEach {
         dependsOn(tasks.named('syncGameTestStructures'))
+        dependsOn(tasks.named('syncGameTestStructuresGameTest'))
     }
 }

@@ -58,7 +58,6 @@ object RewardSystem {
 
     fun spawnRewards(server: MinecraftServer, run: RunRecord): Boolean {
         if (run.rewardsGranted) return false
-        if (run.totalDamageDealt <= 0f && run.monstersKilled <= 0) return false
 
         val originLevelKey = run.originLevelKey ?: return false
         val originPos = run.originObeliskPos ?: return false

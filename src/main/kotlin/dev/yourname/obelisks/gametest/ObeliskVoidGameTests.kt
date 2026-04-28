@@ -10,4 +10,9 @@ class ObeliskVoidGameTests {
     fun void_fall_returns_player_and_cleans_up_run(helper: GameTestHelper) {
         ObeliskGameTestSupport.voidFallReturnsPlayerAndCleansUpRun(helper)
     }
+
+    @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_void", timeoutTicks = 700)
+    fun void_fall_returns_player_and_cleans_up_run_nether(helper: GameTestHelper) {
+        ObeliskGameTestSupport.voidFallReturnsPlayerAndCleansUpRun(helper, "nether")
+    }
 }

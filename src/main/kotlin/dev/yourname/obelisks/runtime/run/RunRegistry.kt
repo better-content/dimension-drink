@@ -521,6 +521,7 @@ object RunRegistry : RunService {
             record.pendingPlayers.remove(player.uuid)
             record.activePlayers.add(player.uuid)
             record.state = RunState.ACTIVE
+            refreshSpawnPos(server, record)
             record.updatedGameTime = currentGameTime(server)
             persistRunNow(server, record)
             return RunEntryAttempt.Entered
@@ -531,6 +532,7 @@ object RunRegistry : RunService {
                 record.pendingPlayers.remove(player.uuid)
                 record.activePlayers.add(player.uuid)
                 record.state = RunState.ACTIVE
+                refreshSpawnPos(server, record)
                 record.updatedGameTime = currentGameTime(server)
                 persistRunNow(server, record)
                 RunEntryAttempt.Entered
@@ -548,6 +550,16 @@ object RunRegistry : RunService {
                 player.sendSystemMessage(Component.literal("Failed to enter rift anchor run: ${result.reason}"))
                 RunEntryAttempt.Rejected("Run is unavailable right now - ${result.reason}")
             }
+        }
+    }
+
+    private fun refreshSpawnPos(server: MinecraftServer, record: RunRecord) {
+        val prepared = preparedHandleFromRecord(record) ?: return
+        val status = backend.pollPreparedSite(server, prepared) as? PreparedSiteStatus.Ready ?: return
+        val spawn = status.spawnPos.takeIf { it != BlockPos.ZERO } ?: return
+        if (record.spawnPos != spawn) {
+            record.spawnPos = spawn.immutable()
+            markRunDirty(record.id)
         }
     }
 

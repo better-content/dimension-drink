@@ -233,6 +233,22 @@ object CanonicalDimensionBackend : RunWorldBackend {
 
     override fun findActiveHandle(server: MinecraftServer, siteId: UUID): ActiveSiteHandle? = site(server, siteId)?.activeHandle()
 
+    internal fun isChunkLoadedForTests(level: ServerLevel, blockX: Int, blockZ: Int): Boolean {
+        return level.chunkSource.getChunkNow(blockX shr 4, blockZ shr 4) != null
+    }
+
+    internal fun runVerticalScarTaskForTests(
+        level: ServerLevel,
+        blockX: Int,
+        blockZ: Int,
+        fromY: Int,
+        untilYExclusive: Int,
+        budget: Int
+    ): Int {
+        val task = VerticalClearTask(UUID.randomUUID(), ColumnPos(blockX, blockZ), fromY, untilYExclusive)
+        return task.apply(level, budget)
+    }
+
     private fun reusableSite(
         data: RunSiteSavedData,
         templateId: String,
@@ -498,6 +514,11 @@ object CanonicalDimensionBackend : RunWorldBackend {
         private val cursor = BlockPos.MutableBlockPos()
 
         fun apply(level: ServerLevel, budget: Int): Int {
+            val chunkX = column.x shr 4
+            val chunkZ = column.z shr 4
+            if (level.chunkSource.getChunkNow(chunkX, chunkZ) == null) {
+                return 0
+            }
             var spent = 0
             while (spent < budget && nextY < untilYExclusive) {
                 cursor.set(column.x, nextY, column.z)

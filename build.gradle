@@ -22,37 +22,44 @@ gradle.projectsEvaluated {
     }
 }
 
-tasks.register('runGameTestServerRunLifecycle', GradleBuild) {
-    tasks = [':runGameTestServer']
-    startParameter.projectProperties = ['obelisksGameTestSelection': 'run']
+def registerGameTestServerSelectionTask = { String taskName, String selection ->
+    tasks.register(taskName, Exec) {
+        workingDir rootProject.projectDir
+        def gradleTask = ':runGameTestServer'
+        def selectionProp = "-PobelisksGameTestSelection=${selection}"
+        if (org.gradle.internal.os.OperatingSystem.current().isWindows()) {
+            commandLine 'cmd', '/c', 'gradlew.bat', '--no-daemon', gradleTask, selectionProp
+        } else {
+            commandLine './gradlew', '--no-daemon', gradleTask, selectionProp
+        }
+    }
 }
 
-tasks.register('runGameTestServerActivation', GradleBuild) {
-    tasks = [':runGameTestServer']
-    startParameter.projectProperties = ['obelisksGameTestSelection': 'activation']
+registerGameTestServerSelectionTask('runGameTestServerRunLifecycle', 'run')
+registerGameTestServerSelectionTask('runGameTestServerActivation', 'activation')
+registerGameTestServerSelectionTask('runGameTestServerRewards', 'rewards')
+registerGameTestServerSelectionTask('runGameTestServerVoid', 'void')
+registerGameTestServerSelectionTask('runGameTestServerData', 'data')
+registerGameTestServerSelectionTask('runGameTestServerTemplate', 'template')
+registerGameTestServerSelectionTask('runGameTestServerMultiplayer', 'multiplayer')
+registerGameTestServerSelectionTask('runGameTestServerCommands', 'commands')
+registerGameTestServerSelectionTask('runGameTestServerRuntime', 'runtime')
+
+tasks.register('verifyGameTests') {
+    dependsOn(
+        tasks.named('runGameTestServerRunLifecycle'),
+        tasks.named('runGameTestServerActivation'),
+        tasks.named('runGameTestServerRewards'),
+        tasks.named('runGameTestServerVoid'),
+        tasks.named('runGameTestServerData'),
+        tasks.named('runGameTestServerTemplate'),
+        tasks.named('runGameTestServerMultiplayer'),
+        tasks.named('runGameTestServerCommands'),
+        tasks.named('runGameTestServerRuntime')
+    )
 }
 
-tasks.register('runGameTestServerRewards', GradleBuild) {
-    tasks = [':runGameTestServer']
-    startParameter.projectProperties = ['obelisksGameTestSelection': 'rewards']
-}
-
-tasks.register('runGameTestServerVoid', GradleBuild) {
-    tasks = [':runGameTestServer']
-    startParameter.projectProperties = ['obelisksGameTestSelection': 'void']
-}
-
-tasks.register('runGameTestServerData', GradleBuild) {
-    tasks = [':runGameTestServer']
-    startParameter.projectProperties = ['obelisksGameTestSelection': 'data']
-}
-
-tasks.register('runGameTestServerTemplate', GradleBuild) {
-    tasks = [':runGameTestServer']
-    startParameter.projectProperties = ['obelisksGameTestSelection': 'template']
-}
-
-tasks.register('runGameTestServerMultiplayer', GradleBuild) {
-    tasks = [':runGameTestServer']
-    startParameter.projectProperties = ['obelisksGameTestSelection': 'multiplayer']
+tasks.register('checkWithGameTests') {
+    dependsOn(tasks.named('check'))
+    dependsOn(tasks.named('verifyGameTests'))
 }

@@ -47,7 +47,7 @@ data class RunRecord(
     )
 
     fun toTag(): CompoundTag = CompoundTag().apply {
-        putString("id", id.toString())
+        putString("id", this@RunRecord.id.toString())
         putString("instance_id", instanceId.toString())
         putString("obelisk_id", obeliskId.toString())
         putString("definition_id", definitionId)
