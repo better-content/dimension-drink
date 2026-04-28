@@ -1,7 +1,0 @@
-{
-  "id": "end",
-  "stem": "minecraft:the_end",
-  "requiredNamespace": "minecraft",
-  "ephemeral": true,
-  "description": "Rewrite bootstrap template for end-like instances"
-}

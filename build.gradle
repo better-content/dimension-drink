@@ -1,84 +1,58 @@
 plugins {
-    id 'base'
-    id 'eclipse'
-    id 'idea'
     id 'net.minecraftforge.gradle' version '[6.0,6.2)' apply false
-    id 'org.jetbrains.kotlin.jvm' version '1.9.23' apply false
+    id 'org.jetbrains.kotlin.jvm' version '1.9.24' apply false
 }
 
-tasks.register('compileKotlin') {
-    dependsOn(':obelisks:compileKotlin')
+ext {
+    modId = 'obelisks'
+    modName = 'Dimensional Scar Expeditions'
+    modGroupId = 'dev.yourname.obelisks'
+    modDescription = 'Meteoric rift anchors open real-dimension expeditions where instability leaves permanent scars.'
 }
 
-tasks.register('devClient') {
-    dependsOn(':obelisks:runClient')
+apply from: rootProject.file('gradle/forge-module.gradle')
+
+def obeliskGameTestNamespaces = (findProperty('obelisksGameTestNamespaces') ?: modId).toString()
+def obeliskGameTestSelection = (findProperty('obelisksGameTestSelection') ?: 'all').toString()
+
+gradle.projectsEvaluated {
+    minecraft.runs.configureEach {
+        property 'forge.enabledGameTestNamespaces', obeliskGameTestNamespaces
+        property 'obelisks.gametest.selection', obeliskGameTestSelection
+    }
 }
 
-tasks.register('devClientWithC2mef', GradleBuild) {
-    tasks = [':instanced-dimensions:runClient']
-    startParameter.projectProperties = gradle.startParameter.projectProperties + [withC2mefDeobf: 'true']
+tasks.register('runGameTestServerRunLifecycle', GradleBuild) {
+    tasks = [':runGameTestServer']
+    startParameter.projectProperties = ['obelisksGameTestSelection': 'run']
 }
 
-tasks.register('devServer') {
-    dependsOn(':obelisks:runServer')
+tasks.register('runGameTestServerActivation', GradleBuild) {
+    tasks = [':runGameTestServer']
+    startParameter.projectProperties = ['obelisksGameTestSelection': 'activation']
 }
 
-tasks.register('devServerWithC2mef', GradleBuild) {
-    tasks = [':instanced-dimensions:runServer']
-    startParameter.projectProperties = gradle.startParameter.projectProperties + [withC2mefDeobf: 'true']
+tasks.register('runGameTestServerRewards', GradleBuild) {
+    tasks = [':runGameTestServer']
+    startParameter.projectProperties = ['obelisksGameTestSelection': 'rewards']
 }
 
-tasks.register('devGameTestServer') {
-    dependsOn(':obelisks:runGameTestServer')
+tasks.register('runGameTestServerVoid', GradleBuild) {
+    tasks = [':runGameTestServer']
+    startParameter.projectProperties = ['obelisksGameTestSelection': 'void']
 }
 
-tasks.register('devGameTestServerWithC2mef', GradleBuild) {
-    tasks = [':instanced-dimensions:runGameTestServer']
-    startParameter.projectProperties = gradle.startParameter.projectProperties + [withC2mefDeobf: 'true']
+tasks.register('runGameTestServerData', GradleBuild) {
+    tasks = [':runGameTestServer']
+    startParameter.projectProperties = ['obelisksGameTestSelection': 'data']
 }
 
-tasks.register('devClientWithC2mefRaw', GradleBuild) {
-    tasks = [':instanced-dimensions:runClient']
-    startParameter.projectProperties = gradle.startParameter.projectProperties + [withC2mefRaw: 'true']
+tasks.register('runGameTestServerTemplate', GradleBuild) {
+    tasks = [':runGameTestServer']
+    startParameter.projectProperties = ['obelisksGameTestSelection': 'template']
 }
 
-tasks.register('devServerWithC2mefRaw', GradleBuild) {
-    tasks = [':instanced-dimensions:runServer']
-    startParameter.projectProperties = gradle.startParameter.projectProperties + [withC2mefRaw: 'true']
-}
-
-tasks.register('devGameTestServerWithC2mefRaw', GradleBuild) {
-    tasks = [':instanced-dimensions:runGameTestServer']
-    startParameter.projectProperties = gradle.startParameter.projectProperties + [withC2mefRaw: 'true']
-}
-
-tasks.register('buildMods') {
-    dependsOn(':obelisks:build')
-}
-
-tasks.register('testProdServerHarness', Exec) {
-    dependsOn(':instanced-dimensions:build', ':obelisks:build')
-    workingDir = rootDir
-    commandLine 'bash', "${rootDir}/scripts/prod_server_harness.sh", '180'
-    environment 'MINECRAFT_VERSION', providers.gradleProperty('minecraft_version').get()
-    environment 'FORGE_VERSION', providers.gradleProperty('forge_version').get()
-    environment 'C2MEF_JAR_NAME', providers.gradleProperty('c2mef_version_name').get()
-}
-
-tasks.register('benchmarkProdInstances', Exec) {
-    dependsOn(':instanced-dimensions:build', ':obelisks:build')
-    workingDir = rootDir
-    commandLine 'bash', "${rootDir}/scripts/prod_instance_benchmark.sh", 'without-c2mef', '900'
-    environment 'MINECRAFT_VERSION', providers.gradleProperty('minecraft_version').get()
-    environment 'FORGE_VERSION', providers.gradleProperty('forge_version').get()
-    environment 'C2MEF_JAR_NAME', providers.gradleProperty('c2mef_version_name').get()
-}
-
-tasks.register('benchmarkProdInstancesWithC2mef', Exec) {
-    dependsOn(':instanced-dimensions:build', ':obelisks:build')
-    workingDir = rootDir
-    commandLine 'bash', "${rootDir}/scripts/prod_instance_benchmark.sh", 'with-c2mef', '900'
-    environment 'MINECRAFT_VERSION', providers.gradleProperty('minecraft_version').get()
-    environment 'FORGE_VERSION', providers.gradleProperty('forge_version').get()
-    environment 'C2MEF_JAR_NAME', providers.gradleProperty('c2mef_version_name').get()
+tasks.register('runGameTestServerMultiplayer', GradleBuild) {
+    tasks = [':runGameTestServer']
+    startParameter.projectProperties = ['obelisksGameTestSelection': 'multiplayer']
 }

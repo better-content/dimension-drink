@@ -1,7 +1,0 @@
-{
-  "id": "overworld",
-  "stem": "minecraft:overworld",
-  "requiredNamespace": "minecraft",
-  "ephemeral": true,
-  "description": "Overworld runtime template"
-}

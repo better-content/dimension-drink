@@ -1,7 +1,0 @@
-{
-  "id": "everbright",
-  "stem": "blue_skies:everbright",
-  "requiredNamespace": "blue_skies",
-  "ephemeral": true,
-  "description": "Runtime template for Blue Skies Everbright instances"
-}
