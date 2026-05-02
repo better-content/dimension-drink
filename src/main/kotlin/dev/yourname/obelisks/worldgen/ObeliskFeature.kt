@@ -15,6 +15,7 @@ import net.minecraft.world.level.WorldGenLevel
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.block.Blocks
+import net.minecraft.world.level.levelgen.structure.BoundingBox
 import net.minecraft.world.level.levelgen.feature.Feature
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext
 import net.minecraft.world.level.levelgen.feature.configurations.NoneFeatureConfiguration
@@ -56,8 +57,59 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             family.coreRadiusMin,
             family.coreRadiusMax.coerceAtLeast(family.coreRadiusMin)
         ) + METEOR_RADIUS_PAIR_BONUS
+        val maxOuterRadius = family.craterRadiusMax.coerceAtLeast(family.craterRadiusMin) + max(2, family.debrisRadius)
+        if (intersectsExistingStructure(level, surfacePos, maxOuterRadius)) {
+            return false
+        }
+        if (intersectsExistingMeteor(level, surfacePos, maxOuterRadius + ANCHOR_PAIR_HALF_SPACING + 2)) {
+            return false
+        }
         val crater = carveCrater(level, surfacePos, random, family, materials, meteorRadius)
         return buildSite(level, crater, random, definitions, materials, meteorRadius)
+    }
+
+    private fun intersectsExistingStructure(level: WorldGenLevel, center: BlockPos, radius: Int): Boolean {
+        val footprint = BoundingBox(
+            center.x - radius,
+            level.minBuildHeight,
+            center.z - radius,
+            center.x + radius,
+            level.maxBuildHeight - 1,
+            center.z + radius
+        )
+        val minChunkX = (center.x - radius) shr 4
+        val maxChunkX = (center.x + radius) shr 4
+        val minChunkZ = (center.z - radius) shr 4
+        val maxChunkZ = (center.z + radius) shr 4
+        for (chunkX in minChunkX..maxChunkX) {
+            for (chunkZ in minChunkZ..maxChunkZ) {
+                val starts = level.getChunk(chunkX, chunkZ).allStarts.values
+                if (starts.any { start -> start != null && start.isValid && start.boundingBox.intersects(footprint) }) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private fun intersectsExistingMeteor(level: WorldGenLevel, center: BlockPos, radius: Int): Boolean {
+        val radiusSqr = radius * radius
+        for (x in (center.x - radius)..(center.x + radius)) {
+            for (z in (center.z - radius)..(center.z + radius)) {
+                val dx = x - center.x
+                val dz = z - center.z
+                if ((dx * dx) + (dz * dz) > radiusSqr) continue
+                val surfaceY = topSolidY(level, BlockPos(x, center.y, z))
+                val minY = max(level.minBuildHeight, surfaceY - 24)
+                val maxY = min(level.maxBuildHeight - 1, surfaceY + 4)
+                for (y in minY..maxY) {
+                    if (level.getBlockState(BlockPos(x, y, z)).`is`(ModBlocks.OBELISK.get())) {
+                        return true
+                    }
+                }
+            }
+        }
+        return false
     }
 
     private fun surfaceAt(level: WorldGenLevel, origin: BlockPos): BlockPos? {
@@ -81,6 +133,11 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         val rimHeight = max(1, depth / 2)
         val outerRadius = radius + rimWidth
         val craterFill = sampleCraterPalette(level, center, impactY, outerRadius, materials.craterFallback)
+        val craterFillCounts = craterFill.groupingBy { it }.eachCount()
+        val eligibleWallBlocks = craterFillCounts
+            .filterValues { it >= MIN_NEARBY_BLOCK_COUNT_FOR_WALLS }
+            .keys
+            .toList()
         val placedCraterBlocks = mutableMapOf<CraterColumn, MutableList<PlacedCraterBlock>>()
         val centerSurfaceY = topSolidY(level, center)
         val meteorSink = max(1, (depth * 0.5).roundToInt())
@@ -95,7 +152,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
                 val columnPos = center.offset(dx, 0, dz)
                 val localSurfaceY = topSolidY(level, columnPos)
-                val fillBlock = craterFill.random(random.asKotlinRandom())
+                val fillBlock = craterFill.randomElement(random)
 
                 if (distance <= radius) {
                     val normalized = distance / radius.toDouble()
@@ -110,7 +167,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     setCraterBlock(
                         level,
                         BlockPos(columnPos.x, floorY, columnPos.z),
-                        fillBlock.defaultBlockState(),
+                        sprinkledState(fillBlock, random),
                         placedCraterBlocks
                     )
                     continue
@@ -126,10 +183,25 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 }
                 val rimStartY = max(localSurfaceY + 1, targetRimY - MAX_RIM_WALL_HEIGHT + 1)
                 for (y in rimStartY..targetRimY) {
+                    val rimBlock = if (eligibleWallBlocks.isNotEmpty()) {
+                        eligibleWallBlocks.randomElement(random)
+                    } else {
+                        fillBlock
+                    }
+                    val rimBaseState = if (rimBlock == Blocks.GRASS_BLOCK && y < targetRimY) {
+                        Blocks.DIRT.defaultBlockState()
+                    } else {
+                        rimBlock.defaultBlockState()
+                    }
+                    val rimState = if (random.nextFloat() < GRAVEL_SPRINKLE_CHANCE) {
+                        Blocks.GRAVEL.defaultBlockState()
+                    } else {
+                        rimBaseState
+                    }
                     setCraterBlock(
                         level,
                         BlockPos(columnPos.x, y, columnPos.z),
-                        fillBlock.defaultBlockState(),
+                        rimState,
                         placedCraterBlocks
                     )
                 }
@@ -192,7 +264,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     val block = if (isShellBlock(dx, dy, dz, meteorRadius)) {
                         materials.meteorShell
                     } else {
-                        materials.meteorInterior.random(random.asKotlinRandom())
+                        materials.meteorInterior.randomElement(random)
                     }
                     level.setBlock(targetPos, block.defaultBlockState(), 3)
                 }
@@ -428,21 +500,20 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
     }
 
     private fun pickMeteorDefinitions(random: RandomSource): MeteorDefinitions? {
-        val kotlinRandom = random.asKotlinRandom()
-        val primary = ObeliskDataManager.pickRandomObelisk(kotlinRandom) ?: return null
+        val primary = pickWeighted(ObeliskDataManager.enabledObelisks().filter { it.worldgenWeight > 0.0 }, random) ?: return null
         val candidates = ObeliskDataManager.enabledObelisks().filter {
             it.worldgenWeight > 0.0 &&
                 it.id != primary.id &&
                 it.targetDimension != primary.targetDimension
         }
-        val secondary = pickWeighted(candidates, kotlinRandom) ?: return null
+        val secondary = pickWeighted(candidates, random) ?: return null
         return MeteorDefinitions(primary, secondary)
     }
 
-    private fun pickWeighted(definitions: List<ObeliskDefinition>, random: kotlin.random.Random): ObeliskDefinition? {
+    private fun pickWeighted(definitions: List<ObeliskDefinition>, random: RandomSource): ObeliskDefinition? {
         val totalWeight = definitions.sumOf { it.worldgenWeight }
         if (totalWeight <= 0.0) return null
-        var cursor = random.nextDouble(totalWeight)
+        var cursor = random.nextDouble() * totalWeight
         for (definition in definitions) {
             cursor -= definition.worldgenWeight
             if (cursor <= 0.0) {
@@ -470,6 +541,14 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         val location = ResourceLocation.tryParse(id) ?: return null
         val block = BuiltInRegistries.BLOCK.get(location)
         return block.takeUnless { it == Blocks.AIR }
+    }
+
+    private fun sprinkledState(base: Block, random: RandomSource): BlockState {
+        return if (random.nextFloat() < GRAVEL_SPRINKLE_CHANCE) {
+            Blocks.GRAVEL.defaultBlockState()
+        } else {
+            base.defaultBlockState()
+        }
     }
 
     private data class WorldgenMaterials(
@@ -554,8 +633,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         val all: List<ObeliskDefinition> = listOf(primary, secondary)
     }
 
-    private fun RandomSource.asKotlinRandom(): kotlin.random.Random = object : kotlin.random.Random() {
-        override fun nextBits(bitCount: Int): Int = this@asKotlinRandom.nextInt() ushr (32 - bitCount)
+    private fun <T> List<T>.randomElement(random: RandomSource): T {
+        return this[random.nextInt(size)]
     }
 
     companion object {
@@ -563,6 +642,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private const val MAX_RIM_WALL_HEIGHT = 6
         private const val METEOR_RADIUS_PAIR_BONUS = 1
         private const val ANCHOR_PAIR_HALF_SPACING = 1
+        private const val GRAVEL_SPRINKLE_CHANCE = 0.14f
+        private const val MIN_NEARBY_BLOCK_COUNT_FOR_WALLS = 6
 
         fun generateDefinitionSiteForTests(
             level: WorldGenLevel,

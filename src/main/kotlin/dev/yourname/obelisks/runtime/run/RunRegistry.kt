@@ -28,6 +28,7 @@ import net.minecraft.world.damagesource.DamageTypes
 import net.minecraft.world.level.Level
 import net.minecraftforge.event.TickEvent
 import net.minecraftforge.event.entity.living.LivingFallEvent
+import net.minecraftforge.event.entity.living.LivingDeathEvent
 import net.minecraftforge.event.entity.living.LivingHurtEvent
 import net.minecraftforge.event.entity.player.PlayerEvent
 import net.minecraftforge.event.server.ServerStartedEvent
@@ -255,10 +256,12 @@ object RunRegistry : RunService {
     fun onPlayerLoggedOut(event: PlayerEvent.PlayerLoggedOutEvent) {
         val player = event.entity as? ServerPlayer ?: return
         val run = runs.values.firstOrNull { player.uuid in it.activePlayers || player.uuid in it.pendingPlayers } ?: return
-        removePlayer(run, player.uuid)
-        backend.clearPlayer(player.uuid)
+        if (!returnPlayer(player)) {
+            removePlayer(run, player.uuid)
+            backend.clearPlayer(player.uuid)
+            persistRunNow(player.server, run)
+        }
         fallDamageSuppressedPlayers.remove(player.uuid)
-        persistRunNow(player.server, run)
     }
 
     @SubscribeEvent
@@ -272,6 +275,17 @@ object RunRegistry : RunService {
 
     @SubscribeEvent
     fun onLivingHurt(event: LivingHurtEvent) {
+        val player = event.entity as? ServerPlayer ?: return
+        if (!event.source.`is`(DamageTypes.FELL_OUT_OF_WORLD)) {
+            return
+        }
+        if (returnVoidFallenPlayer(player)) {
+            event.isCanceled = true
+        }
+    }
+
+    @SubscribeEvent
+    fun onLivingDeath(event: LivingDeathEvent) {
         val player = event.entity as? ServerPlayer ?: return
         if (!event.source.`is`(DamageTypes.FELL_OUT_OF_WORLD)) {
             return
@@ -495,8 +509,8 @@ object RunRegistry : RunService {
 
     private fun returnVoidFallenPlayer(player: ServerPlayer): Boolean {
         val record = mutableRunForPlayer(player.uuid) ?: return false
-        val handle = activeHandle(player.server, record) ?: return false
-        if (player.serverLevel().dimension() != handle.backendLevelKey) {
+        val levelKey = record.backendLevelKey ?: return false
+        if (player.serverLevel().dimension() != levelKey) {
             return false
         }
         player.fallDistance = 0.0f
