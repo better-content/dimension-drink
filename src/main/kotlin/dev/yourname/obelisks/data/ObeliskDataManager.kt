@@ -144,6 +144,18 @@ object ObeliskDataManager {
         }
         return table.copy(
             id = id,
+            killCurrency = table.killCurrency?.let { currency ->
+                val item = stringOrNull(currency.item)
+                if (item == null) {
+                    null
+                } else {
+                    currency.copy(
+                        item = item,
+                        perKill = currency.perKill.coerceAtLeast(1),
+                        burstSize = currency.burstSize.coerceAtLeast(1)
+                    )
+                }
+            },
             pools = table.pools.orEmpty().mapNotNull poolLoop@ { pool ->
                 val poolId = stringOrNull(pool.id) ?: return@poolLoop null
                 pool.copy(

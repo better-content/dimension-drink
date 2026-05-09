@@ -3,6 +3,7 @@ package dev.yourname.obelisks.runtime.reward
 import com.mojang.logging.LogUtils
 import dev.yourname.obelisks.content.ObeliskBlockEntity
 import dev.yourname.obelisks.data.ObeliskDataManager
+import dev.yourname.obelisks.data.KillCurrencyDefinition
 import dev.yourname.obelisks.data.RewardEntryDefinition
 import dev.yourname.obelisks.data.RewardPoolDefinition
 import dev.yourname.obelisks.data.RewardTableDefinition
@@ -30,28 +31,7 @@ import kotlin.math.floor
 object RewardSystem {
     private val logger = LogUtils.getLogger()
 
-    private const val DOT_COIN_NAMESPACE = "dotcoinmod"
-    private val DOT_COIN_ITEM_IDS = listOf(
-        "dotcoinmod:copper_coin",
-        "dotcoinmod:iron_coin",
-        "dotcoinmod:gold_coin",
-        "dotcoinmod:platinum_coin",
-        "dotcoinmod:tin_coin",
-        "dotcoinmod:nickel_coin",
-        "dotcoinmod:silver_coin",
-        "dotcoinmod:steel_coin",
-        "dotcoinmod:bronze_coin",
-        "dotcoinmod:brass_coin",
-        "dotcoinmod:osmium_coin",
-        "dotcoinmod:diamond_coin",
-        "dotcoinmod:emerald_coin",
-        "dotcoinmod:ruby_coin",
-        "dotcoinmod:sapphire_coin",
-        "dotcoinmod:topaz_coin",
-        "dotcoinmod:token"
-    )
     private const val LEGACY_CURRENCY_POOL_ID = "emeralds"
-    private const val KILL_CURRENCY_ITEMS_PER_EJECTION = 4
     private const val KILL_CURRENCY_EJECTION_DURATION_TICKS = 20
 
     private val pendingCurrencyEjections = mutableListOf<ScheduledCurrencyEjection>()
@@ -64,8 +44,9 @@ object RewardSystem {
         val level = server.getLevel(originLevelKey) ?: return false
         val obelisk = level.getBlockEntity(originPos) as? ObeliskBlockEntity ?: return false
         val rewardTableId = ObeliskDataManager.getObelisk(run.definitionId)?.rewardTableId ?: "default"
-        val rewards = buildRewards(run, rewardTableId)
-        val currencyRewards = buildKillCurrencyRewards(run)
+        val rewardTable = ObeliskDataManager.getRewardTable(rewardTableId)
+        val rewards = buildRewards(run, rewardTable)
+        val currencyRewards = buildKillCurrencyRewards(run, rewardTable)
         if (rewards.isEmpty() && currencyRewards.isEmpty()) return false
 
         val hasAutomation = Direction.values().any { side ->
@@ -119,8 +100,8 @@ object RewardSystem {
         }
     }
 
-    private fun buildRewards(run: RunRecord, rewardTableId: String): List<ItemStack> {
-        val table = ObeliskDataManager.getRewardTable(rewardTableId) ?: return emptyList()
+    private fun buildRewards(run: RunRecord, table: RewardTableDefinition?): List<ItemStack> {
+        table ?: return emptyList()
         if (!table.enabled) return emptyList()
         val totalRolls = table.baseRolls +
             (run.monstersKilled * table.rollsPerKill) +
@@ -138,9 +119,11 @@ object RewardSystem {
         return rewards
     }
 
-    private fun buildKillCurrencyRewards(run: RunRecord): List<ItemStack> {
+    private fun buildKillCurrencyRewards(run: RunRecord, table: RewardTableDefinition?): List<ItemStack> {
         if (run.monstersKilled <= 0) return emptyList()
-        return fixedCurrencyStacks(resolveKillCurrencyItem(), run.monstersKilled)
+        val killCurrency = table?.killCurrency ?: return emptyList()
+        val item = resolveCurrencyItem(killCurrency) ?: return emptyList()
+        return fixedCurrencyStacks(item, run.monstersKilled * killCurrency.perKill, killCurrency.burstSize)
     }
 
     private fun rollPool(pool: RewardPoolDefinition): ItemStack? {
@@ -164,30 +147,22 @@ object RewardSystem {
         return ItemStack(item, count.coerceAtLeast(1))
     }
 
-    private fun resolveKillCurrencyItem(): Item {
-        for (itemId in DOT_COIN_ITEM_IDS) {
-            val coinId = ResourceLocation.tryParse(itemId) ?: continue
-            val coin = ForgeRegistries.ITEMS.getValue(coinId)
-            if (coin != null && coin != Items.AIR) return coin
+    private fun resolveCurrencyItem(currency: KillCurrencyDefinition): Item? {
+        val itemId = ResourceLocation.tryParse(currency.item)
+        if (itemId == null) {
+            logger.warn("Invalid killCurrency item id '{}'; skipping kill-currency rewards", currency.item)
+            return null
         }
-
-        val fallbackDotCoinItemId = ForgeRegistries.ITEMS.keys
-            .asSequence()
-            .filter { it.namespace == DOT_COIN_NAMESPACE }
-            .filter { it.path.endsWith("_coin") || it.path == "token" }
-            .sortedBy { it.path }
-            .firstOrNull()
-        if (fallbackDotCoinItemId != null) {
-            val fallbackItem = ForgeRegistries.ITEMS.getValue(fallbackDotCoinItemId)
-            if (fallbackItem != null && fallbackItem != Items.AIR) return fallbackItem
+        val item = ForgeRegistries.ITEMS.getValue(itemId)
+        if (item == null || item == Items.AIR) {
+            logger.warn("Missing killCurrency item '{}'; skipping kill-currency rewards", currency.item)
+            return null
         }
-
-        logger.warn("No DotCoin currency item found in item registry; falling back to emerald rewards")
-        return Items.EMERALD
+        return item
     }
 
-    private fun fixedCurrencyStacks(item: Item, count: Int): List<ItemStack> {
-        val stackSize = KILL_CURRENCY_ITEMS_PER_EJECTION.coerceAtMost(item.defaultInstance.maxStackSize).coerceAtLeast(1)
+    private fun fixedCurrencyStacks(item: Item, count: Int, burstSize: Int): List<ItemStack> {
+        val stackSize = burstSize.coerceAtMost(item.defaultInstance.maxStackSize).coerceAtLeast(1)
         val stacks = mutableListOf<ItemStack>()
         var remaining = count
         while (remaining > 0) {
