@@ -50,7 +50,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         surfacePos: BlockPos,
         random: RandomSource,
         definitions: MeteorDefinitions,
-        family: WorldgenFamilyDefinition
+        family: WorldgenFamilyDefinition,
+        checkPlacementConflicts: Boolean = true
     ): Boolean {
         val materials = resolveMaterials(definitions.all)
         val meteorRadius = random.nextIntBetweenInclusive(
@@ -58,11 +59,13 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             family.coreRadiusMax.coerceAtLeast(family.coreRadiusMin)
         ) + METEOR_RADIUS_PAIR_BONUS
         val maxOuterRadius = family.craterRadiusMax.coerceAtLeast(family.craterRadiusMin) + max(2, family.debrisRadius)
-        if (intersectsExistingStructure(level, surfacePos, maxOuterRadius)) {
-            return false
-        }
-        if (intersectsExistingMeteor(level, surfacePos, maxOuterRadius + ANCHOR_PAIR_HALF_SPACING + 2)) {
-            return false
+        if (checkPlacementConflicts) {
+            if (intersectsExistingStructure(level, surfacePos, maxOuterRadius)) {
+                return false
+            }
+            if (intersectsExistingMeteor(level, surfacePos, maxOuterRadius + ANCHOR_PAIR_HALF_SPACING + 2)) {
+                return false
+            }
         }
         val crater = carveCrater(level, surfacePos, random, family, materials, meteorRadius)
         return buildSite(level, crater, random, definitions, materials, meteorRadius)
@@ -658,7 +661,14 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             } ?: return false
             val family = feature.meteorFamily(definition)
                 ?: WorldgenFamilyDefinition(id = "meteor")
-            return feature.generateSite(level, surfacePos, random, MeteorDefinitions(definition, secondary), family)
+            return feature.generateSite(
+                level,
+                surfacePos,
+                random,
+                MeteorDefinitions(definition, secondary),
+                family,
+                checkPlacementConflicts = false
+            )
         }
     }
 

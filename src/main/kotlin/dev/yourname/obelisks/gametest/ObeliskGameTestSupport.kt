@@ -1296,13 +1296,17 @@ object ObeliskGameTestSupport {
     }
 
     private fun prepareGenerationSurface(helper: GameTestHelper, center: BlockPos) {
-        for (dx in -8..8) {
-            for (dz in -8..8) {
-                helper.level.setBlock(center.offset(dx, -2, dz), Blocks.STONE.defaultBlockState(), 3)
-                helper.level.setBlock(center.offset(dx, -1, dz), Blocks.DIRT.defaultBlockState(), 3)
-                helper.level.setBlock(center.offset(dx, 0, dz), Blocks.GRASS_BLOCK.defaultBlockState(), 3)
-                for (dy in 1..8) {
-                    helper.level.setBlock(center.offset(dx, dy, dz), Blocks.AIR.defaultBlockState(), 3)
+        for (dx in -20..20) {
+            for (dz in -20..20) {
+                for (y in helper.level.minBuildHeight..(center.y + 12)) {
+                    val dy = y - center.y
+                    val state = when {
+                        dy <= -2 -> Blocks.STONE.defaultBlockState()
+                        dy == -1 -> Blocks.DIRT.defaultBlockState()
+                        dy == 0 -> Blocks.GRASS_BLOCK.defaultBlockState()
+                        else -> Blocks.AIR.defaultBlockState()
+                    }
+                    helper.level.setBlock(BlockPos(center.x + dx, y, center.z + dz), state, 3)
                 }
             }
         }
