@@ -544,6 +544,9 @@ object ObeliskGameTestSupport {
                 val runId = requireNotNull(liveObelisk!!.activeRunId) { "Expected active run id for void-fall test" }
                 val returnAnchor = requireNotNull(TravelManager.peekReturnAnchor(player.uuid)) { "Expected return anchor before void fall" }
 
+                player.setHealth(player.maxHealth)
+                val healthBeforeVoid = player.health
+                player.fallDistance = 96.0f
                 player.teleportTo(player.x, -80.0, player.z)
 
                 waitUntil(helper, 120, "Expected void fall to return the player to the saved origin dimension", condition = {
@@ -551,6 +554,14 @@ object ObeliskGameTestSupport {
                     player.serverLevel().dimension() == originDimension
                 }, onSuccess = {
                     helper.assertTrue(player.serverLevel().dimension() == originDimension, "Expected void fall to restore the origin dimension")
+                    helper.assertTrue(
+                        player.health == healthBeforeVoid,
+                        "Expected void fall to return before player damage; before=$healthBeforeVoid after=${player.health}"
+                    )
+                    helper.assertTrue(
+                        player.fallDistance == 0.0f,
+                        "Expected void fall to reset fall distance; actual=${player.fallDistance}"
+                    )
                     val actualX = player.x
                     val actualY = player.y
                     val actualZ = player.z

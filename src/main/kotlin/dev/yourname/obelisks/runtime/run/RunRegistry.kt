@@ -27,6 +27,7 @@ import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.damagesource.DamageTypes
 import net.minecraft.world.level.Level
 import net.minecraftforge.event.TickEvent
+import net.minecraftforge.event.entity.living.LivingAttackEvent
 import net.minecraftforge.event.entity.living.LivingFallEvent
 import net.minecraftforge.event.entity.living.LivingDeathEvent
 import net.minecraftforge.event.entity.living.LivingHurtEvent
@@ -34,6 +35,7 @@ import net.minecraftforge.event.entity.player.PlayerEvent
 import net.minecraftforge.event.server.ServerStartedEvent
 import net.minecraftforge.event.server.ServerStoppedEvent
 import net.minecraftforge.event.server.ServerStoppingEvent
+import net.minecraftforge.eventbus.api.EventPriority
 import net.minecraftforge.eventbus.api.SubscribeEvent
 import java.util.UUID
 import kotlin.math.exp
@@ -264,7 +266,18 @@ object RunRegistry : RunService {
         fallDamageSuppressedPlayers.remove(player.uuid)
     }
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    fun onPlayerTick(event: TickEvent.PlayerTickEvent) {
+        if (event.phase != TickEvent.Phase.START || shuttingDown) {
+            return
+        }
+        val player = event.player as? ServerPlayer ?: return
+        if (player.y < voidReturnY(player)) {
+            returnVoidFallenPlayer(player)
+        }
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
     fun onLivingFall(event: LivingFallEvent) {
         val player = event.entity as? ServerPlayer ?: return
         if (fallDamageSuppressedPlayers.remove(player.uuid)) {
@@ -273,7 +286,18 @@ object RunRegistry : RunService {
         }
     }
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    fun onLivingAttack(event: LivingAttackEvent) {
+        val player = event.entity as? ServerPlayer ?: return
+        if (!event.source.`is`(DamageTypes.FELL_OUT_OF_WORLD)) {
+            return
+        }
+        if (returnVoidFallenPlayer(player)) {
+            event.isCanceled = true
+        }
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
     fun onLivingHurt(event: LivingHurtEvent) {
         val player = event.entity as? ServerPlayer ?: return
         if (!event.source.`is`(DamageTypes.FELL_OUT_OF_WORLD)) {
@@ -284,7 +308,7 @@ object RunRegistry : RunService {
         }
     }
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
     fun onLivingDeath(event: LivingDeathEvent) {
         val player = event.entity as? ServerPlayer ?: return
         if (!event.source.`is`(DamageTypes.FELL_OUT_OF_WORLD)) {
