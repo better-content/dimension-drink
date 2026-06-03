@@ -760,6 +760,55 @@ object ObeliskGameTestSupport {
         helper.succeed()
     }
 
+    fun underwaterWorldgenDoesNotCreateAirPockets(helper: GameTestHelper) {
+        deleteTestConfigs()
+        val family = WorldgenFamilyDefinition(
+            id = "test_underwater_meteor",
+            craterRadiusMin = 5,
+            craterRadiusMax = 5,
+            craterDepthMin = 4,
+            craterDepthMax = 4,
+            coreRadiusMin = 3,
+            coreRadiusMax = 3,
+            debrisRadius = 2
+        )
+        val definition = ObeliskDefinition(
+            id = "test_underwater_worldgen_definition",
+            displayName = "Underwater Worldgen",
+            instanceTemplateId = "end",
+            worldgenFamilyId = family.id,
+            rewardTableId = "end"
+        )
+        val secondary = ObeliskDefinition(
+            id = "test_underwater_worldgen_secondary",
+            displayName = "Underwater Worldgen Secondary",
+            instanceTemplateId = "nether",
+            targetDimension = "minecraft:the_nether",
+            worldgenFamilyId = family.id,
+            rewardTableId = "nether"
+        )
+        writeWorldgenFamily(family)
+        writeDefinition(definition)
+        writeDefinition(secondary)
+        reloadData()
+
+        val center = helper.absolutePos(BlockPos(20, 8, 20))
+        val waterTopY = prepareUnderwaterGenerationSurface(helper, center, waterDepth = 6)
+        helper.assertTrue(
+            ObeliskFeature.generateDefinitionSiteForTests(helper.level, center, definition.id, RandomSource.create(2468L)),
+            "Expected underwater meteor generation to succeed"
+        )
+        helper.assertTrue(
+            locateGeneratedObeliskPos(helper, center) != null,
+            "Expected underwater meteor generation to place an obelisk"
+        )
+        assertNoAirBelowWaterline(helper, center, radius = 10, minY = center.y - 12, waterTopY = waterTopY)
+
+        deleteTestConfigs()
+        reloadData()
+        helper.succeed()
+    }
+
     fun reloadSkipsDefinitionsWithMissingRequiredNamespace(helper: GameTestHelper) {
         deleteTestConfigs()
         val server = helper.level.server
@@ -1318,6 +1367,46 @@ object ObeliskGameTestSupport {
                         else -> Blocks.AIR.defaultBlockState()
                     }
                     helper.level.setBlock(BlockPos(center.x + dx, y, center.z + dz), state, 3)
+                }
+            }
+        }
+    }
+
+    private fun prepareUnderwaterGenerationSurface(helper: GameTestHelper, center: BlockPos, waterDepth: Int): Int {
+        val waterTopY = center.y + waterDepth
+        for (dx in -20..20) {
+            for (dz in -20..20) {
+                for (y in helper.level.minBuildHeight..waterTopY) {
+                    val dy = y - center.y
+                    val state = when {
+                        dy <= -2 -> Blocks.STONE.defaultBlockState()
+                        dy == -1 -> Blocks.DIRT.defaultBlockState()
+                        dy == 0 -> Blocks.SAND.defaultBlockState()
+                        else -> Blocks.WATER.defaultBlockState()
+                    }
+                    helper.level.setBlock(BlockPos(center.x + dx, y, center.z + dz), state, 3)
+                }
+            }
+        }
+        return waterTopY
+    }
+
+    private fun assertNoAirBelowWaterline(
+        helper: GameTestHelper,
+        center: BlockPos,
+        radius: Int,
+        minY: Int,
+        waterTopY: Int
+    ) {
+        for (dx in -radius..radius) {
+            for (dz in -radius..radius) {
+                if ((dx * dx) + (dz * dz) > radius * radius) continue
+                for (y in minY.coerceAtLeast(helper.level.minBuildHeight)..waterTopY) {
+                    val pos = BlockPos(center.x + dx, y, center.z + dz)
+                    if (helper.level.getBlockState(pos).isAir) {
+                        helper.assertTrue(false, "Expected underwater meteor generation not to leave air at $pos")
+                        return
+                    }
                 }
             }
         }

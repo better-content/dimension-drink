@@ -19,6 +19,7 @@ import net.minecraft.world.level.levelgen.structure.BoundingBox
 import net.minecraft.world.level.levelgen.feature.Feature
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext
 import net.minecraft.world.level.levelgen.feature.configurations.NoneFeatureConfiguration
+import net.minecraft.world.level.material.Fluids
 import net.minecraftforge.fml.ModList
 import kotlin.math.max
 import kotlin.math.min
@@ -67,7 +68,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 return false
             }
         }
-        val crater = carveCrater(level, surfacePos, random, family, materials, meteorRadius)
+        val floodedSite = hasWaterInColumnAbove(level, surfacePos)
+        val crater = carveCrater(level, surfacePos, random, family, materials, meteorRadius, floodedSite)
         return buildSite(level, crater, random, definitions, materials, meteorRadius)
     }
 
@@ -127,7 +129,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         random: RandomSource,
         family: WorldgenFamilyDefinition,
         materials: WorldgenMaterials,
-        meteorRadius: Int
+        meteorRadius: Int,
+        floodedSite: Boolean
     ): CraterProfile {
         val radius = random.nextIntBetweenInclusive(family.craterRadiusMin, family.craterRadiusMax.coerceAtLeast(family.craterRadiusMin))
         val depth = random.nextIntBetweenInclusive(family.craterDepthMin, family.craterDepthMax.coerceAtLeast(family.craterDepthMin))
@@ -164,7 +167,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     val floorY = min(impactY - actualDepth, meteorTopY - 1)
                     if (localSurfaceY > floorY) {
                         for (y in localSurfaceY downTo (floorY + 1)) {
-                            level.setBlock(BlockPos(columnPos.x, y, columnPos.z), Blocks.AIR.defaultBlockState(), 3)
+                            val clearPos = BlockPos(columnPos.x, y, columnPos.z)
+                            level.setBlock(clearPos, clearanceState(level, clearPos, floodedSite), 3)
                         }
                     }
                     setCraterBlock(
@@ -211,8 +215,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
         }
 
-        settleCraterBlocks(level, placedCraterBlocks)
-        carveMeteorRevealShaft(level, center, centerSurfaceY, meteorTopY + 1)
+        settleCraterBlocks(level, placedCraterBlocks, floodedSite)
+        carveMeteorRevealShaft(level, center, centerSurfaceY, meteorTopY + 1, floodedSite)
         val baseObeliskY = impactY - depth + 1
         val obeliskOffsetFromMeteor = baseObeliskY - baseMeteorCenterY
         val obeliskY = (meteorCenterY + obeliskOffsetFromMeteor)
@@ -289,7 +293,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
     private fun settleCraterBlocks(
         level: WorldGenLevel,
-        placedCraterBlocks: Map<CraterColumn, List<PlacedCraterBlock>>
+        placedCraterBlocks: Map<CraterColumn, List<PlacedCraterBlock>>,
+        floodedSite: Boolean
     ) {
         for ((column, blocks) in placedCraterBlocks) {
             if (blocks.isEmpty()) continue
@@ -298,7 +303,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             for (block in sorted) {
                 level.setBlock(
                     BlockPos(column.x, block.y, column.z),
-                    Blocks.AIR.defaultBlockState(),
+                    clearanceState(level, BlockPos(column.x, block.y, column.z), floodedSite),
                     3
                 )
             }
@@ -460,7 +465,13 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         return level.minBuildHeight - 1
     }
 
-    private fun carveMeteorRevealShaft(level: WorldGenLevel, center: BlockPos, fromY: Int, toY: Int) {
+    private fun carveMeteorRevealShaft(
+        level: WorldGenLevel,
+        center: BlockPos,
+        fromY: Int,
+        toY: Int,
+        floodedSite: Boolean
+    ) {
         val startY = min(level.maxBuildHeight - 1, fromY)
         val endY = max(level.minBuildHeight, toY)
         if (startY < endY) {
@@ -469,10 +480,37 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         for (y in startY downTo endY) {
             for (dx in -ANCHOR_PAIR_HALF_SPACING..ANCHOR_PAIR_HALF_SPACING) {
                 for (dz in -ANCHOR_PAIR_HALF_SPACING..ANCHOR_PAIR_HALF_SPACING) {
-                    level.setBlock(BlockPos(center.x + dx, y, center.z + dz), Blocks.AIR.defaultBlockState(), 3)
+                    val clearPos = BlockPos(center.x + dx, y, center.z + dz)
+                    level.setBlock(clearPos, clearanceState(level, clearPos, floodedSite), 3)
                 }
             }
         }
+    }
+
+    private fun clearanceState(level: WorldGenLevel, pos: BlockPos, floodedSite: Boolean): BlockState {
+        return if (floodedSite && hasWaterInColumnAbove(level, pos)) {
+            Blocks.WATER.defaultBlockState()
+        } else {
+            Blocks.AIR.defaultBlockState()
+        }
+    }
+
+    private fun hasWaterInColumnAbove(level: WorldGenLevel, pos: BlockPos): Boolean {
+        for (y in pos.y..(level.maxBuildHeight - 1)) {
+            val state = level.getBlockState(BlockPos(pos.x, y, pos.z))
+            if (isWater(state)) {
+                return true
+            }
+            if (y > pos.y && state.isAir) {
+                return false
+            }
+        }
+        return false
+    }
+
+    private fun isWater(state: BlockState): Boolean {
+        val fluidType = state.fluidState.type
+        return fluidType == Fluids.WATER || fluidType == Fluids.FLOWING_WATER
     }
 
     private fun resolveMaterials(definitions: List<ObeliskDefinition>): WorldgenMaterials {

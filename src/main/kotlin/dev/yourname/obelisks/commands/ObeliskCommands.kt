@@ -12,7 +12,9 @@ import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.material.Fluids
 import net.minecraftforge.event.RegisterCommandsEvent
 import net.minecraftforge.eventbus.api.SubscribeEvent
 import kotlin.math.sqrt
@@ -221,11 +223,39 @@ object ObeliskCommands {
     }
 
     private fun placeObelisk(level: ServerLevel, pos: BlockPos): Boolean {
+        val floodedSite = hasWaterInColumnAbove(level, pos)
         for (offsetY in 0..3) {
-            level.setBlock(pos.above(offsetY), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3)
+            val clearPos = pos.above(offsetY)
+            level.setBlock(clearPos, clearanceState(level, clearPos, floodedSite), 3)
         }
         val state: BlockState = dev.yourname.obelisks.registry.ModBlocks.OBELISK.get().defaultBlockState()
         return level.setBlock(pos, state, 3)
+    }
+
+    private fun clearanceState(level: ServerLevel, pos: BlockPos, floodedSite: Boolean): BlockState {
+        return if (floodedSite && hasWaterInColumnAbove(level, pos)) {
+            Blocks.WATER.defaultBlockState()
+        } else {
+            Blocks.AIR.defaultBlockState()
+        }
+    }
+
+    private fun hasWaterInColumnAbove(level: ServerLevel, pos: BlockPos): Boolean {
+        for (y in pos.y..(level.maxBuildHeight - 1)) {
+            val state = level.getBlockState(BlockPos(pos.x, y, pos.z))
+            if (isWater(state)) {
+                return true
+            }
+            if (y > pos.y && state.isAir) {
+                return false
+            }
+        }
+        return false
+    }
+
+    private fun isWater(state: BlockState): Boolean {
+        val fluidType = state.fluidState.type
+        return fluidType == Fluids.WATER || fluidType == Fluids.FLOWING_WATER
     }
 
     private fun lookedAtObelisk(player: ServerPlayer): ObeliskBlockEntity? {

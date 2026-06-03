@@ -36,6 +36,11 @@ class ObeliskDataGameTests {
     }
 
     @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
+    fun underwater_worldgen_does_not_create_air_pockets(helper: GameTestHelper) {
+        ObeliskGameTestSupport.underwaterWorldgenDoesNotCreateAirPockets(helper)
+    }
+
+    @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
     fun reload_skips_definitions_with_missing_required_namespace(helper: GameTestHelper) {
         ObeliskGameTestSupport.reloadSkipsDefinitionsWithMissingRequiredNamespace(helper)
     }
