@@ -6,13 +6,13 @@ import net.minecraftforge.gametest.PrefixGameTestTemplate
 
 @PrefixGameTestTemplate(false)
 class ObeliskVoidGameTests {
-    @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_void", timeoutTicks = 700)
-    fun void_fall_returns_player_and_cleans_up_run(helper: GameTestHelper) {
-        ObeliskGameTestSupport.voidFallReturnsPlayerAndCleansUpRun(helper)
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_void", timeoutTicks = 700)
+    fun death_disqualifies_player_and_respawn_returns_to_font(helper: GameTestHelper) {
+        ObeliskGameTestSupport.deathDisqualifiesPlayerAndRespawnReturnsToFont(helper)
     }
 
-    @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_void", timeoutTicks = 700)
-    fun void_fall_returns_player_and_cleans_up_run_nether(helper: GameTestHelper) {
-        ObeliskGameTestSupport.voidFallReturnsPlayerAndCleansUpRun(helper, "nether")
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_void", timeoutTicks = 700)
+    fun death_disqualifies_player_and_respawn_returns_to_nether_font(helper: GameTestHelper) {
+        ObeliskGameTestSupport.deathDisqualifiesPlayerAndRespawnReturnsToFont(helper, "nether")
     }
 }

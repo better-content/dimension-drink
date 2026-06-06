@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "dimensionalfonts:block/dimensional_font"
+    }
+  }
+}

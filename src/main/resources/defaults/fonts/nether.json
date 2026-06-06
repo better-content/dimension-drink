@@ -1,0 +1,20 @@
+{
+  "id": "nether",
+  "displayName": "Nether Dimensional Font",
+  "instanceTemplateId": "nether",
+  "targetDimension": "minecraft:the_nether",
+  "coordinateScale": 0.125,
+  "spawnSearchRadius": 24,
+  "runRadius": 96,
+  "requiredNamespace": "minecraft",
+  "enabled": true,
+  "worldgenWeight": 2.0,
+  "worldgenFamilyId": "altar",
+  "rewardTableId": "nether",
+  "maxBlood": 15000,
+  "bloodStartCost": 5000,
+  "bloodJoinCost": 1000,
+  "baseBloodPerTick": 0.25,
+  "heartBloodMultiplier": 0.08,
+  "runBloodDrainPerTick": 20.0
+}

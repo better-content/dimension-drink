@@ -8,6 +8,8 @@ import dev.yourname.obelisks.runtime.ObeliskRuntimeService
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.nbt.CompoundTag
+import net.minecraft.nbt.Tag
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
@@ -17,6 +19,7 @@ import net.minecraftforge.common.util.LazyOptional
 import net.minecraftforge.energy.IEnergyStorage
 import net.minecraftforge.items.IItemHandler
 import net.minecraftforge.items.ItemStackHandler
+import net.minecraftforge.registries.ForgeRegistries
 import java.util.UUID
 import kotlin.random.Random
 
@@ -63,15 +66,18 @@ class ObeliskBlockEntity(
         override fun isItemValid(slot: Int, stack: ItemStack): Boolean = itemHandler.isItemValid(slot, stack)
     }
 
-    var feStored: Int = getModifiedMaxStorage()
+    var bloodStored: Double = getMaxBlood()
+        private set
+
+    var heartStack: ItemStack = ItemStack.EMPTY
         private set
 
     private val energyStorage = object : IEnergyStorage {
         override fun receiveEnergy(maxReceive: Int, simulate: Boolean): Int {
             if (maxReceive <= 0) return 0
-            val accepted = minOf(getModifiedMaxStorage() - feStored, maxReceive)
+            val accepted = minOf(getModifiedMaxStorage() - getEnergyStored(), maxReceive)
             if (!simulate && accepted > 0) {
-                feStored += accepted
+                bloodStored = (bloodStored + accepted.toDouble()).coerceAtMost(getMaxBlood())
                 setChanged()
                 syncToClients()
             }
@@ -80,16 +86,16 @@ class ObeliskBlockEntity(
 
         override fun extractEnergy(maxExtract: Int, simulate: Boolean): Int {
             if (maxExtract <= 0) return 0
-            val extracted = minOf(feStored, maxExtract)
+            val extracted = minOf(getEnergyStored(), maxExtract)
             if (!simulate && extracted > 0) {
-                feStored -= extracted
+                bloodStored = (bloodStored - extracted.toDouble()).coerceAtLeast(0.0)
                 setChanged()
                 syncToClients()
             }
             return extracted
         }
 
-        override fun getEnergyStored(): Int = feStored
+        override fun getEnergyStored(): Int = this@ObeliskBlockEntity.getEnergyStored()
         override fun getMaxEnergyStored(): Int = getModifiedMaxStorage()
         override fun canExtract(): Boolean = true
         override fun canReceive(): Boolean = true
@@ -134,7 +140,7 @@ class ObeliskBlockEntity(
     }
 
     fun setEnergyStoredForDebug(amount: Int) {
-        feStored = amount.coerceIn(0, getModifiedMaxStorage())
+        bloodStored = amount.toDouble().coerceIn(0.0, getMaxBlood())
         setChanged()
         syncToClients()
     }
@@ -158,27 +164,48 @@ class ObeliskBlockEntity(
     }
 
     fun getModifiedMaxStorage(): Int {
-        var max = ObeliskConstants.MAX_FE_STORAGE
+        var max = getMaxBlood().toInt()
         modifiers.filter { it.stat == FEStat.MAX_STORAGE }.forEach { max = it.applyTo(max) }
         return max
     }
 
-    fun getModifiedRegenRate(): Int {
-        var rate = ObeliskConstants.FE_REGEN_PER_TICK.toDouble()
+    fun getMaxBlood(): Double = ObeliskDataManager.getObelisk(definitionId)?.maxBlood ?: ObeliskConstants.MAX_BLOOD_STORAGE
+
+    fun getBloodStartCost(): Double =
+        ObeliskDataManager.getObelisk(definitionId)?.bloodStartCost ?: ObeliskConstants.BLOOD_START_COST
+
+    fun getBloodJoinCost(): Double =
+        ObeliskDataManager.getObelisk(definitionId)?.bloodJoinCost ?: ObeliskConstants.BLOOD_JOIN_COST
+
+    fun getBaseBloodRegenPerTick(): Double =
+        ObeliskDataManager.getObelisk(definitionId)?.baseBloodPerTick ?: ObeliskConstants.BLOOD_REGEN_PER_TICK
+
+    fun getRunBloodDrainPerTick(): Double =
+        ObeliskDataManager.getObelisk(definitionId)?.runBloodDrainPerTick ?: ObeliskConstants.BASE_BLOOD_DRAIN_PER_TICK
+
+    fun getHeartBloodMultiplier(): Double =
+        ObeliskDataManager.getObelisk(definitionId)?.heartBloodMultiplier ?: ObeliskConstants.HEART_BLOOD_MULTIPLIER
+
+    fun getModifiedRegenRate(): Double {
+        var rate = getBaseBloodRegenPerTick()
         modifiers.filter { it.stat == FEStat.REGEN_RATE }.forEach { rate = it.applyTo(rate) }
-        return kotlin.math.ceil(rate).toInt().coerceAtLeast(1)
+        val heartLevel = getHeartLevel()
+        if (heartLevel > 0) {
+            rate *= 1.0 + (heartLevel * getHeartBloodMultiplier())
+        }
+        return rate.coerceAtLeast(0.0)
     }
 
-    fun getModifiedBaseDrain(): Int {
-        var drain = ObeliskConstants.BASE_FE_DRAIN_PER_TICK.toDouble()
+    fun getModifiedBaseDrain(): Double {
+        var drain = getRunBloodDrainPerTick()
         modifiers.filter { it.stat == FEStat.BASE_DRAIN }.forEach { drain = it.applyTo(drain) }
-        return kotlin.math.ceil(drain).toInt().coerceAtLeast(1)
+        return drain.coerceAtLeast(0.0)
     }
 
-    fun getModifiedPlayerDrain(): Int {
-        var drain = ObeliskConstants.PER_PLAYER_FE_DRAIN.toDouble()
+    fun getModifiedPlayerDrain(): Double {
+        var drain = ObeliskConstants.PER_PLAYER_BLOOD_DRAIN
         modifiers.filter { it.stat == FEStat.PLAYER_DRAIN }.forEach { drain = it.applyTo(drain) }
-        return kotlin.math.ceil(drain).toInt().coerceAtLeast(1)
+        return drain.coerceAtLeast(0.0)
     }
 
     fun getModifiedDrainFactor(): Double {
@@ -187,8 +214,9 @@ class ObeliskBlockEntity(
         return factor
     }
 
-    fun getEnergyPercent(): Double = feStored.toDouble() / getModifiedMaxStorage().toDouble()
-    fun getEnergyStored(): Int = feStored
+    fun getEnergyPercent(): Double = getBloodPercent()
+    fun getBloodPercent(): Double = bloodStored / getMaxBlood().coerceAtLeast(1.0)
+    fun getEnergyStored(): Int = bloodStored.toInt()
     fun getMaxEnergyStored(): Int = getModifiedMaxStorage()
     fun getBeamColorFloats(): FloatArray = floatArrayOf(
         beamColorRed / 255.0f,
@@ -196,32 +224,38 @@ class ObeliskBlockEntity(
         beamColorBlue / 255.0f
     )
 
-    fun drainEnergy(amount: Int): Boolean {
-        if (amount <= 0) return true
-        if (feStored < amount) return false
-        feStored -= amount
+    fun drainEnergy(amount: Int): Boolean = drainBlood(amount.toDouble())
+
+    fun drainBlood(amount: Double): Boolean {
+        if (amount <= 0.0) return true
+        if (bloodStored < amount) return false
+        bloodStored -= amount
         setChanged()
         syncToClients()
         return true
     }
 
-    fun regenerateEnergy(amount: Int): Int {
-        if (amount <= 0 || isRunActive()) return 0
-        val maxStorage = getModifiedMaxStorage()
-        if (feStored >= maxStorage) return 0
-        val actual = minOf(amount, maxStorage - feStored)
-        feStored += actual
+    fun regenerateEnergy(amount: Int): Int = regenerateBlood(amount.toDouble()).toInt()
+
+    fun regenerateBlood(amount: Double): Double {
+        if (amount <= 0.0 || isRunActive()) return 0.0
+        val maxStorage = getModifiedMaxStorage().toDouble()
+        if (bloodStored >= maxStorage) return 0.0
+        val actual = minOf(amount, maxStorage - bloodStored)
+        bloodStored += actual
         setChanged()
         syncToClients()
         return actual
     }
 
-    fun restoreRunEnergy(amount: Int): Int {
-        if (amount <= 0) return 0
-        val maxStorage = getModifiedMaxStorage()
-        if (feStored >= maxStorage) return 0
-        val actual = minOf(amount, maxStorage - feStored)
-        feStored += actual
+    fun restoreRunEnergy(amount: Int): Int = restoreRunBlood(amount.toDouble()).toInt()
+
+    fun restoreRunBlood(amount: Double): Double {
+        if (amount <= 0.0) return 0.0
+        val maxStorage = getModifiedMaxStorage().toDouble()
+        if (bloodStored >= maxStorage) return 0.0
+        val actual = minOf(amount, maxStorage - bloodStored)
+        bloodStored += actual
         setChanged()
         syncToClients()
         return actual
@@ -229,7 +263,45 @@ class ObeliskBlockEntity(
 
     fun getInternalItemHandler(): ItemStackHandler = itemHandler
 
-    fun shouldShowBeam(): Boolean = beamVisible && (isRunActive() || feStored >= getModifiedMaxStorage())
+    fun shouldShowBeam(): Boolean = beamVisible && (isRunActive() || bloodStored >= getMaxBlood())
+
+    fun hasHeart(): Boolean = !heartStack.isEmpty
+
+    fun canAcceptHeart(stack: ItemStack): Boolean = heartStack.isEmpty && isStillBeatingHeart(stack)
+
+    fun placeHeart(stack: ItemStack): Boolean {
+        if (!canAcceptHeart(stack)) return false
+        heartStack = stack.copyWithCount(1)
+        stack.shrink(1)
+        setChanged()
+        syncToClients()
+        return true
+    }
+
+    fun removeHeart(): ItemStack {
+        if (heartStack.isEmpty) return ItemStack.EMPTY
+        val removed = heartStack.copy()
+        heartStack = ItemStack.EMPTY
+        setChanged()
+        syncToClients()
+        return removed
+    }
+
+    fun getHeartLevel(): Int {
+        val tag = heartStack.tag ?: return 0
+        if (!tag.contains("StillBeatingHeartData", Tag.TAG_COMPOUND.toInt())) return 0
+        val data = tag.getCompound("StillBeatingHeartData")
+        return when {
+            data.contains("level", Tag.TAG_INT.toInt()) -> data.getInt("level")
+            data.contains("player", Tag.TAG_COMPOUND.toInt()) -> data.getCompound("player").getInt("experience_level")
+            else -> 0
+        }.coerceAtLeast(0)
+    }
+
+    fun isStillBeatingHeart(stack: ItemStack): Boolean {
+        if (stack.isEmpty) return false
+        return ForgeRegistries.ITEMS.getKey(stack.item) == ResourceLocation("rpgstats", "still_beating_heart")
+    }
 
     fun syncToClients() {
         val currentLevel = level ?: return
@@ -240,7 +312,7 @@ class ObeliskBlockEntity(
 
     override fun saveAdditional(tag: CompoundTag) {
         super.saveAdditional(tag)
-        tag.putInt("fe_stored", feStored)
+        tag.putDouble("blood_stored", bloodStored)
         tag.putUUID("obelisk_id", obeliskId)
         tag.putString("definition_id", definitionId)
         tag.putString("target_template_id", targetTemplateId)
@@ -251,6 +323,9 @@ class ObeliskBlockEntity(
         tag.putInt("beam_color_green", beamColorGreen)
         tag.putInt("beam_color_blue", beamColorBlue)
         tag.put("inventory", itemHandler.serializeNBT())
+        if (!heartStack.isEmpty) {
+            tag.put("heart", heartStack.save(CompoundTag()))
+        }
         tag.putInt("modifier_count", modifiers.size)
         modifiers.forEachIndexed { index, modifier ->
             val modifierTag = CompoundTag()
@@ -261,13 +336,17 @@ class ObeliskBlockEntity(
 
     override fun load(tag: CompoundTag) {
         super.load(tag)
-        feStored = tag.getInt("fe_stored")
         if (tag.hasUUID("obelisk_id")) obeliskId = tag.getUUID("obelisk_id")
         definitionId = when {
             tag.contains("definition_id") -> tag.getString("definition_id")
             tag.contains("target_template_id") -> tag.getString("target_template_id")
             else -> ObeliskConstants.DEFAULT_TEMPLATES.first()
         }
+        bloodStored = when {
+            tag.contains("blood_stored", Tag.TAG_DOUBLE.toInt()) -> tag.getDouble("blood_stored")
+            tag.contains("fe_stored", Tag.TAG_INT.toInt()) -> tag.getInt("fe_stored").toDouble()
+            else -> getMaxBlood()
+        }.coerceIn(0.0, getMaxBlood())
         activeRunId = if (tag.hasUUID("active_run_id")) tag.getUUID("active_run_id") else null
         cooldownUntilGameTime = tag.getLong("cooldown_until_game_time")
         beamVisible = !tag.contains("beam_visible") || tag.getBoolean("beam_visible")
@@ -275,6 +354,11 @@ class ObeliskBlockEntity(
         beamColorGreen = if (tag.contains("beam_color_green")) tag.getInt("beam_color_green") else Random.nextInt(256)
         beamColorBlue = if (tag.contains("beam_color_blue")) tag.getInt("beam_color_blue") else Random.nextInt(256)
         if (tag.contains("inventory")) itemHandler.deserializeNBT(tag.getCompound("inventory"))
+        heartStack = if (tag.contains("heart", Tag.TAG_COMPOUND.toInt())) {
+            ItemStack.of(tag.getCompound("heart"))
+        } else {
+            ItemStack.EMPTY
+        }
         modifiers = if (tag.contains("modifier_count")) {
             buildList {
                 repeat(tag.getInt("modifier_count")) { index ->

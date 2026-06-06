@@ -53,7 +53,7 @@ class RunSiteSavedData private constructor(
     }
 
     companion object {
-        private const val DATA_NAME = "obelisks_run_sites"
+        private const val DATA_NAME = "dimensionalfonts_run_sites"
 
         fun get(server: MinecraftServer): RunSiteSavedData {
             return server.overworld().dataStorage.computeIfAbsent(::load, ::RunSiteSavedData, DATA_NAME)
@@ -87,10 +87,7 @@ data class RunSiteRecord(
     var createdGameTime: Long = 0L,
     var updatedGameTime: Long = createdGameTime,
     var cooldownUntilGameTime: Long = 0L,
-    var lastScarGameTime: Long = 0L,
-    val touchedChunks: MutableSet<ChunkPos> = linkedSetOf(),
-    val protectedColumns: MutableSet<ColumnPos> = linkedSetOf(),
-    val scarredColumns: MutableSet<ColumnPos> = linkedSetOf()
+    val touchedChunks: MutableSet<ChunkPos> = linkedSetOf()
 ) {
     fun preparedHandle(): PreparedSiteHandle = PreparedSiteHandle(
         siteId = siteId,
@@ -113,9 +110,7 @@ data class RunSiteRecord(
     }
 
     fun deepCopy(): RunSiteRecord = copy(
-        touchedChunks = LinkedHashSet(touchedChunks),
-        protectedColumns = LinkedHashSet(protectedColumns),
-        scarredColumns = LinkedHashSet(scarredColumns)
+        touchedChunks = LinkedHashSet(touchedChunks)
     )
 
     fun toTag(): CompoundTag = CompoundTag().apply {
@@ -134,10 +129,7 @@ data class RunSiteRecord(
         putLong("created_game_time", createdGameTime)
         putLong("updated_game_time", updatedGameTime)
         putLong("cooldown_until_game_time", cooldownUntilGameTime)
-        putLong("last_scar_game_time", lastScarGameTime)
         put("touched_chunks", encodeChunks(touchedChunks))
-        put("protected_columns", encodeColumns(protectedColumns))
-        put("scarred_columns", encodeColumns(scarredColumns))
     }
 
     companion object {
@@ -163,10 +155,7 @@ data class RunSiteRecord(
                 createdGameTime = tag.getLong("created_game_time"),
                 updatedGameTime = tag.getLong("updated_game_time"),
                 cooldownUntilGameTime = tag.getLong("cooldown_until_game_time"),
-                lastScarGameTime = tag.getLong("last_scar_game_time"),
-                touchedChunks = decodeChunks(tag.getList("touched_chunks", CompoundTag.TAG_COMPOUND.toInt())),
-                protectedColumns = decodeColumns(tag.getList("protected_columns", CompoundTag.TAG_COMPOUND.toInt())),
-                scarredColumns = decodeColumns(tag.getList("scarred_columns", CompoundTag.TAG_COMPOUND.toInt()))
+                touchedChunks = decodeChunks(tag.getList("touched_chunks", CompoundTag.TAG_COMPOUND.toInt()))
             )
         }
 
@@ -214,24 +203,6 @@ data class RunSiteRecord(
             return chunks
         }
 
-        private fun encodeColumns(columns: Set<ColumnPos>): ListTag = ListTag().also { list ->
-            columns.forEach { column ->
-                list.add(CompoundTag().apply {
-                    putInt("x", column.x)
-                    putInt("z", column.z)
-                })
-            }
-        }
-
-        private fun decodeColumns(list: ListTag): LinkedHashSet<ColumnPos> {
-            val columns = linkedSetOf<ColumnPos>()
-            for (index in 0 until list.size) {
-                val tag = list.getCompound(index)
-                columns += ColumnPos(tag.getInt("x"), tag.getInt("z"))
-            }
-            return columns
-        }
-
         private fun parseLevelKey(raw: String): ResourceKey<Level>? {
             if (raw.isBlank()) return null
             val location = runCatching { ResourceLocation(raw) }.getOrNull() ?: return null
@@ -244,11 +215,6 @@ data class RunSiteRecord(
         }
     }
 }
-
-data class ColumnPos(
-    val x: Int,
-    val z: Int
-)
 
 enum class SiteState {
     PREPARING,

@@ -1,0 +1,16 @@
+{
+  "block.dimensionalfonts.dimensional_font": "Dimensional Font",
+  "item.dimensionalfonts.dimensional_font": "Dimensional Font",
+  "block.dimensionalfonts.return_seal": "Return Seal",
+  "item.dimensionalfonts.return_seal": "Return Seal",
+  "item.dimensionalfonts.affix.durability": "+%s%% Durability",
+  "item.dimensionalfonts.affix.attack_damage": "+%s%% Attack Damage",
+  "item.dimensionalfonts.affix.attack_speed": "+%s%% Attack Speed",
+  "item.dimensionalfonts.affix.mining_speed": "+%s%% Mining Speed",
+  "item.dimensionalfonts.affix.projectile_damage": "+%s%% Projectile Damage",
+  "item.dimensionalfonts.affix.draw_speed": "+%s%% Draw Speed",
+  "item.dimensionalfonts.affix.armor": "+%s%% Armor",
+  "item.dimensionalfonts.affix.armor_toughness": "+%s%% Armor Toughness",
+  "item.dimensionalfonts.affix.knockback_resistance": "+%s%% Knockback Resistance",
+  "tooltip.dimensionalfonts.affixes": "Font Affixes"
+}

@@ -1,0 +1,19 @@
+{
+  "id": "overworld",
+  "displayName": "Overworld Dimensional Font",
+  "instanceTemplateId": "overworld",
+  "targetDimension": "minecraft:overworld",
+  "coordinateScale": 1.0,
+  "spawnSearchRadius": 16,
+  "runRadius": 96,
+  "enabled": false,
+  "worldgenWeight": 0.0,
+  "worldgenFamilyId": "altar",
+  "rewardTableId": "overworld",
+  "maxBlood": 15000,
+  "bloodStartCost": 5000,
+  "bloodJoinCost": 1000,
+  "baseBloodPerTick": 0.25,
+  "heartBloodMultiplier": 0.08,
+  "runBloodDrainPerTick": 20.0
+}

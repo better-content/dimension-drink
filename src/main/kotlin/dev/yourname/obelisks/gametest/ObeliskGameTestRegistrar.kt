@@ -5,7 +5,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent
 
 object ObeliskGameTestRegistrar {
     private val selection: String
-        get() = System.getProperty("obelisks.gametest.selection", "all").lowercase()
+        get() = System.getProperty("dimensionalfonts.gametest.selection", "all").lowercase()
 
     @SubscribeEvent
     fun onRegisterGameTests(event: RegisterGameTestsEvent) {

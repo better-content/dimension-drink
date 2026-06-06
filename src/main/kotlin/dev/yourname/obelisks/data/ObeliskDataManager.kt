@@ -19,9 +19,9 @@ object ObeliskDataManager {
     private val gson = GsonBuilder().setPrettyPrinting().create()
 
     private val configRoot: Path = FMLPaths.CONFIGDIR.get().resolve(MOD_ID)
-    private val definitionsDir: Path = configRoot.resolve("obelisks")
+    private val definitionsDir: Path = configRoot.resolve("fonts")
     private val rewardsDir: Path = configRoot.resolve("rewards")
-    private val worldgenFamiliesDir: Path = configRoot.resolve("worldgen_families")
+    private val worldgenFamiliesDir: Path = configRoot.resolve("site_families")
 
     @Volatile private var loaded = false
     private var obeliskDefinitions: Map<String, ObeliskDefinition> = emptyMap()
@@ -47,7 +47,7 @@ object ObeliskDataManager {
             .associateBy { it.id }
         loaded = true
         logger.info(
-            "Loaded {} obelisk definitions, {} reward tables, and {} worldgen families",
+            "Loaded {} font definitions, {} reward tables, and {} site families",
             obeliskDefinitions.size,
             rewardTables.size,
             worldgenFamilies.size
@@ -102,12 +102,12 @@ object ObeliskDataManager {
     private fun normalizeObeliskDefinition(definition: ObeliskDefinition): ObeliskDefinition? {
         val id = stringOrNull(definition.id)
         if (id == null) {
-            logger.warn("Ignoring obelisk definition with missing id")
+            logger.warn("Ignoring font definition with missing id")
             return null
         }
         val requiredNamespace = stringOrNull(definition.requiredNamespace)
         if (requiredNamespace != null && !namespaceAvailable(requiredNamespace)) {
-            logger.info("Skipping obelisk definition {} because required namespace {} is unavailable", id, requiredNamespace)
+            logger.info("Skipping font definition {} because required namespace {} is unavailable", id, requiredNamespace)
             return null
         }
         val legacyTargetId = stringOrNull(definition.instanceTemplateId) ?: id
@@ -121,17 +121,14 @@ object ObeliskDataManager {
             coordinateScale = (definition.coordinateScale ?: CanonicalTargetResolver.defaultCoordinateScale(legacyTargetId)).coerceAtLeast(0.0),
             spawnSearchRadius = definition.spawnSearchRadius?.coerceIn(0, 128) ?: 16,
             runRadius = definition.runRadius?.coerceIn(16, 512) ?: 96,
-            scarRadius = definition.scarRadius?.coerceIn(1, 128) ?: 10,
-            scarIntervalTicks = definition.scarIntervalTicks?.coerceAtLeast(1L) ?: 20L,
-            scarColumnsPerInterval = definition.scarColumnsPerInterval?.coerceIn(1, 256) ?: 3,
-            protectedSpawnRadius = definition.protectedSpawnRadius?.coerceIn(1, 8) ?: 2,
+            maxBlood = definition.maxBlood?.coerceIn(1.0, 1_000_000.0) ?: 15_000.0,
+            bloodStartCost = definition.bloodStartCost?.coerceAtLeast(0.0) ?: 5_000.0,
+            bloodJoinCost = definition.bloodJoinCost?.coerceAtLeast(0.0) ?: 1_000.0,
+            baseBloodPerTick = definition.baseBloodPerTick?.coerceAtLeast(0.0) ?: 0.25,
+            heartBloodMultiplier = definition.heartBloodMultiplier?.coerceAtLeast(0.0) ?: 0.08,
+            runBloodDrainPerTick = definition.runBloodDrainPerTick?.coerceAtLeast(0.0) ?: 20.0,
             requiredNamespace = requiredNamespace,
-            worldgenFamilyId = stringOrNull(definition.worldgenFamilyId) ?: "meteor",
-            meteorCoreBlock = stringOrNull(definition.meteorCoreBlock) ?: defaultMeteorCoreBlock(id, targetDimension),
-            meteorShellBlock = stringOrNull(definition.meteorShellBlock),
-            craterFillBlocks = definition.craterFillBlocks.orEmpty().ifEmpty {
-                listOf("minecraft:gravel", "minecraft:coarse_dirt")
-            },
+            worldgenFamilyId = stringOrNull(definition.worldgenFamilyId) ?: "altar",
             rewardTableId = stringOrNull(definition.rewardTableId) ?: "default"
         )
     }
@@ -183,38 +180,11 @@ object ObeliskDataManager {
         }
         return family.copy(
             id = id,
-            siteShape = stringOrNull(family.siteShape) ?: "meteor",
-            craterRadiusMin = family.craterRadiusMin.coerceAtLeast(0),
-            craterRadiusMax = family.craterRadiusMax.coerceAtLeast(family.craterRadiusMin.coerceAtLeast(0)),
-            craterDepthMin = family.craterDepthMin.coerceAtLeast(0),
-            craterDepthMax = family.craterDepthMax.coerceAtLeast(family.craterDepthMin.coerceAtLeast(0)),
-            coreRadiusMin = family.coreRadiusMin.coerceAtLeast(1),
-            coreRadiusMax = family.coreRadiusMax.coerceAtLeast(family.coreRadiusMin.coerceAtLeast(1)),
-            shellIntegrity = family.shellIntegrity.coerceIn(0.0, 1.0),
-            debrisRadius = family.debrisRadius.coerceAtLeast(0),
-            debrisChance = family.debrisChance.coerceIn(0.0, 1.0),
-            pillarCountMin = family.pillarCountMin.coerceAtLeast(0),
-            pillarCountMax = family.pillarCountMax.coerceAtLeast(family.pillarCountMin.coerceAtLeast(0)),
-            pillarHeightMin = family.pillarHeightMin.coerceAtLeast(0),
-            pillarHeightMax = family.pillarHeightMax.coerceAtLeast(family.pillarHeightMin.coerceAtLeast(0))
+            siteShape = stringOrNull(family.siteShape) ?: "altar"
         )
     }
 
     private fun stringOrNull(value: String?): String? = value?.trim()?.takeIf { it.isNotEmpty() }
-
-    private fun defaultMeteorCoreBlock(id: String, targetDimension: String?): String? {
-        return when (id) {
-            "nether" -> "minecraft:blackstone"
-            "end" -> "minecraft:end_stone"
-            "overworld" -> "minecraft:stone"
-            else -> when (targetDimension) {
-                "minecraft:the_nether" -> "minecraft:blackstone"
-                "minecraft:the_end" -> "minecraft:end_stone"
-                "minecraft:overworld" -> "minecraft:stone"
-                else -> null
-            }
-        }
-    }
 
     private fun namespaceAvailable(namespace: String): Boolean {
         return namespace in ALWAYS_AVAILABLE_NAMESPACES || ModList.get().isLoaded(namespace)
@@ -224,9 +194,9 @@ object ObeliskDataManager {
         definitionsDir.createDirectories()
         rewardsDir.createDirectories()
         worldgenFamiliesDir.createDirectories()
-        copyDefaultFolder("defaults/obelisks", definitionsDir)
+        copyDefaultFolder("defaults/fonts", definitionsDir)
         copyDefaultFolder("defaults/rewards", rewardsDir)
-        copyDefaultFolder("defaults/worldgen_families", worldgenFamiliesDir)
+        copyDefaultFolder("defaults/site_families", worldgenFamiliesDir)
     }
 
     private fun copyDefaultFolder(resourceFolder: String, targetDir: Path) {

@@ -45,7 +45,7 @@ class RunSavedData private constructor(
     }
 
     companion object {
-        private const val DATA_NAME = "instanced_dimensions_runs"
+        private const val DATA_NAME = "dimensionalfonts_runs"
 
         fun get(server: MinecraftServer): RunSavedData {
             return server.overworld().dataStorage.computeIfAbsent(::load, ::RunSavedData, DATA_NAME)

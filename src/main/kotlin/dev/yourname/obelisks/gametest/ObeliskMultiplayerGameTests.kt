@@ -6,7 +6,7 @@ import net.minecraftforge.gametest.PrefixGameTestTemplate
 
 @PrefixGameTestTemplate(false)
 class ObeliskMultiplayerGameTests {
-    @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_multiplayer", timeoutTicks = 800)
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_multiplayer", timeoutTicks = 800)
     fun second_player_joins_existing_run_and_both_return(helper: GameTestHelper) {
         ObeliskGameTestSupport.secondPlayerJoinsExistingRunAndBothReturn(helper)
     }

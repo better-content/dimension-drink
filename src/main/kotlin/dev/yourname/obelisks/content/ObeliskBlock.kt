@@ -49,12 +49,32 @@ class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
         if (level.isClientSide) return InteractionResult.SUCCESS
         val serverPlayer = player as? ServerPlayer ?: return InteractionResult.PASS
         val obelisk = level.getBlockEntity(pos) as? ObeliskBlockEntity ?: return InteractionResult.PASS
+        val held = player.getItemInHand(hand)
+
+        if (player.isShiftKeyDown && held.isEmpty) {
+            val removed = obelisk.removeHeart()
+            if (removed.isEmpty) {
+                serverPlayer.sendSystemMessage(Component.literal("The font has no heart set into it."))
+            } else if (!serverPlayer.inventory.add(removed)) {
+                serverPlayer.drop(removed, false)
+            }
+            return InteractionResult.CONSUME
+        }
+
+        if (!held.isEmpty) {
+            if (obelisk.placeHeart(held)) {
+                serverPlayer.sendSystemMessage(Component.literal("The heart settles into the font."))
+                level.playSound(null, pos, SoundEvents.RESPAWN_ANCHOR_CHARGE, SoundSource.BLOCKS, 0.45f, 0.85f)
+                return InteractionResult.CONSUME
+            }
+            return InteractionResult.PASS
+        }
 
         val result = RunRegistry.activateObelisk(serverPlayer, obelisk, pos)
         if (result != null) {
             serverPlayer.sendSystemMessage(Component.literal(result))
-            if (result.startsWith("Initializing")) {
-                level.playSound(null, pos, SoundEvents.BEACON_ACTIVATE, SoundSource.BLOCKS, 0.8f, 1.1f)
+            if (result.startsWith("Drinking")) {
+                level.playSound(null, pos, SoundEvents.HONEY_DRINK, SoundSource.BLOCKS, 0.7f, 0.75f)
             }
         }
         return InteractionResult.CONSUME
@@ -66,8 +86,7 @@ class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
             return
         }
 
-        val colors = obelisk.getBeamColorFloats()
-        val dust = DustParticleOptions(Vector3f(colors[0], colors[1], colors[2]), 1.0f)
+        val dust = DustParticleOptions(Vector3f(0.42f, 0.02f, 0.03f), 0.8f)
         repeat(if (obelisk.isRunActive()) 4 else 2) {
             val x = pos.x + 0.5 + (random.nextDouble() - 0.5) * 0.8
             val y = pos.y + 0.9 + random.nextDouble() * 1.4

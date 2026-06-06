@@ -13,17 +13,18 @@ import net.minecraftforge.registries.RegistryObject
 object ModBlocks {
     val REGISTRY: DeferredRegister<Block> = DeferredRegister.create(ForgeRegistries.BLOCKS, MOD_ID)
 
-    val OBELISK: RegistryObject<Block> = REGISTRY.register("meteoric_rift_anchor") {
+    val OBELISK: RegistryObject<Block> = REGISTRY.register("dimensional_font") {
         ObeliskBlock(
             BlockBehaviour.Properties.of()
-                .mapColor(MapColor.STONE)
-                .strength(50.0F, 1200.0F)
+                .mapColor(MapColor.COLOR_RED)
+                .strength(12.0F, 1200.0F)
                 .requiresCorrectToolForDrops()
-                .lightLevel { 7 }
+                .noOcclusion()
+                .lightLevel { 6 }
         )
     }
 
-    val RETURN_PAD: RegistryObject<Block> = REGISTRY.register("return_pad") {
+    val RETURN_PAD: RegistryObject<Block> = REGISTRY.register("return_seal") {
         ReturnPadBlock(
             BlockBehaviour.Properties.of()
                 .mapColor(MapColor.METAL)

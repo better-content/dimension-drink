@@ -6,7 +6,7 @@ import net.minecraftforge.gametest.PrefixGameTestTemplate
 
 @PrefixGameTestTemplate(false)
 class ObeliskRunLifecycleGameTests {
-    @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_run", timeoutTicks = 1600)
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_run", timeoutTicks = 1600)
     fun run_creation_persists_canonical_site_metadata(helper: GameTestHelper) {
         ObeliskGameTestSupport.runCreationPersistsOwnedInstanceMetadata(helper)
     }

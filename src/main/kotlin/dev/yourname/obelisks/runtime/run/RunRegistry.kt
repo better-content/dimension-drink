@@ -24,13 +24,10 @@ import net.minecraft.network.chat.Component
 import net.minecraft.resources.ResourceKey
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerPlayer
-import net.minecraft.world.damagesource.DamageTypes
 import net.minecraft.world.level.Level
 import net.minecraftforge.event.TickEvent
-import net.minecraftforge.event.entity.living.LivingAttackEvent
 import net.minecraftforge.event.entity.living.LivingFallEvent
 import net.minecraftforge.event.entity.living.LivingDeathEvent
-import net.minecraftforge.event.entity.living.LivingHurtEvent
 import net.minecraftforge.event.entity.player.PlayerEvent
 import net.minecraftforge.event.server.ServerStartedEvent
 import net.minecraftforge.event.server.ServerStoppedEvent
@@ -42,7 +39,6 @@ import kotlin.math.exp
 
 object RunRegistry : RunService {
 
-    private const val VOID_RETURN_MARGIN = 8.0
     private const val RUN_SAVE_INTERVAL_TICKS = 100L
 
     private val logger = LogUtils.getLogger()
@@ -50,6 +46,7 @@ object RunRegistry : RunService {
     private val runs = linkedMapOf<UUID, RunRecord>()
     private val dirtyRunIds = linkedSetOf<UUID>()
     private val fallDamageSuppressedPlayers = linkedSetOf<UUID>()
+    private val pendingDeathReturns = linkedMapOf<UUID, DeathReturnTarget>()
     private var shuttingDown = false
 
     private sealed interface RunEntryAttempt {
@@ -57,6 +54,11 @@ object RunRegistry : RunService {
         data class Waiting(val message: String) : RunEntryAttempt
         data class Rejected(val message: String) : RunEntryAttempt
     }
+
+    private data class DeathReturnTarget(
+        val levelKey: ResourceKey<Level>,
+        val pos: BlockPos
+    )
 
     override fun getRun(playerId: UUID): RunHandle? {
         return runs.values.firstOrNull { playerId in it.activePlayers || playerId in it.pendingPlayers }?.toHandle()
@@ -68,7 +70,7 @@ object RunRegistry : RunService {
 
     fun snapshot(): List<RunRecord> = runs.values.map { it.deepCopy() }
 
-    fun currentRuns(): Collection<RunRecord> = runs.values
+    fun currentRuns(): Collection<RunRecord> = runs.values.toList()
 
     fun isPreparedInstanceReady(templateId: String): Boolean {
         val targetId = CanonicalTargetResolver.targetId(templateId)
@@ -80,13 +82,13 @@ object RunRegistry : RunService {
 
     fun describePreparedInstances(): String = "backend=${backend.javaClass.simpleName}"
 
-    fun returnPlayer(player: ServerPlayer): Boolean {
+    fun returnPlayer(player: ServerPlayer, disqualify: Boolean = true): Boolean {
         return when (backend.returnPlayer(player)) {
             ReturnRunResult.Returned -> {
                 player.fallDistance = 0.0f
                 val record = mutableRunForPlayer(player.uuid)
                 if (record != null) {
-                    removePlayer(record, player.uuid)
+                    removePlayer(record, player.uuid, disqualify = disqualify)
                     persistRunNow(player.server, record)
                 }
                 true
@@ -98,7 +100,7 @@ object RunRegistry : RunService {
 
     fun clearPlayerAssignment(server: MinecraftServer, playerId: UUID): Boolean {
         val record = mutableRunForPlayer(playerId) ?: return false
-        removePlayer(record, playerId)
+        removePlayer(record, playerId, disqualify = true)
         backend.clearPlayer(playerId)
         persistRunNow(server, record)
         return true
@@ -126,7 +128,7 @@ object RunRegistry : RunService {
 
         record.state = RunState.FINISHING
         record.updatedGameTime = currentGameTime(server)
-        returnPlayers(server, record, null)
+        returnPlayers(server, record, null, disqualify = false)
         if (RewardSystem.spawnRewards(server, record)) {
             record.rewardsGranted = true
         }
@@ -174,20 +176,25 @@ object RunRegistry : RunService {
         val existingPlayerRun = getRun(player.uuid)
         if (existingPlayerRun != null) {
             return if (existingPlayerRun.obeliskId == obelisk.obeliskId) {
-                "You are already assigned to this rift anchor run."
+                "You are already bound to this font run."
             } else {
-                "You are already assigned to another rift anchor run."
+                "You are already bound to another font run."
             }
         }
 
         val existingRun = obelisk.activeRunId?.let { runs[it] }
         if (existingRun != null && existingRun.state != RunState.FINISHED && existingRun.state != RunState.FAILED) {
+            val joinCost = obelisk.getBloodJoinCost()
+            if (!obelisk.drainBlood(joinCost)) {
+                return "The font is too low to share its blood (${obelisk.bloodStored.toInt()}/${joinCost.toInt()})"
+            }
             if (existingRun.pendingPlayers.add(player.uuid)) {
+                markEligible(existingRun, player.uuid)
                 existingRun.updatedGameTime = currentGameTime(server)
                 persistRunNow(server, existingRun)
             }
             return when (val entry = tryQueueEntry(server, existingRun, player)) {
-                RunEntryAttempt.Entered -> "Joining active ${displayName(existingRun.definitionId)} run..."
+                RunEntryAttempt.Entered -> "Drinking from active ${displayName(existingRun.definitionId)}..."
                 is RunEntryAttempt.Waiting -> entry.message
                 is RunEntryAttempt.Rejected -> entry.message
             }
@@ -195,22 +202,19 @@ object RunRegistry : RunService {
 
         if (obelisk.isOnCooldown()) {
             val seconds = (obelisk.getCooldownRemainingTicks() / ObeliskConstants.TICKS_PER_SECOND).coerceAtLeast(1L)
-            return "Rift anchor on cooldown (${seconds}s remaining)"
+            return "Dimensional font on cooldown (${seconds}s remaining)"
         }
 
-        val currentFe = obelisk.getEnergyStored()
-        val maxFe = obelisk.getMaxEnergyStored()
-        if (currentFe < maxFe) {
-            val percent = ((currentFe.toDouble() / maxFe.toDouble()) * 100.0).toInt()
-            return "Rift anchor not fully charged ($percent% - wait for 100%)"
+        val startCost = obelisk.getBloodStartCost()
+        if (obelisk.bloodStored < startCost) {
+            return "Dimensional font lacks blood (${obelisk.bloodStored.toInt()}/${startCost.toInt()})"
         }
 
         val instanceTemplateId = templateIdForDefinition(obelisk.definitionId)
         val validationError = backend.validateTemplate(server, instanceTemplateId)
         if (validationError != null) {
-            return "Cannot initialize ${displayName(obelisk.definitionId)} run: $validationError"
+            return "Cannot open ${displayName(obelisk.definitionId)} run: $validationError"
         }
-
         val created = createRun(
             server = server,
             obeliskId = obelisk.obeliskId,
@@ -219,9 +223,11 @@ object RunRegistry : RunService {
             originObeliskPos = pos,
             queuedPlayerId = player.uuid
         ) ?: return "Run is unavailable for ${displayName(obelisk.definitionId)} right now"
+        obelisk.drainBlood(startCost)
         obelisk.setActiveRun(created.id)
+        markEligible(created, player.uuid)
         return when (val entry = tryQueueEntry(server, created, player)) {
-            RunEntryAttempt.Entered -> "Entering ${displayName(created.definitionId)} run..."
+            RunEntryAttempt.Entered -> "Drinking from ${displayName(created.definitionId)}..."
             is RunEntryAttempt.Waiting -> entry.message
             is RunEntryAttempt.Rejected -> {
                 discardEmptyRun(server, created, "initial-entry-rejected")
@@ -259,7 +265,7 @@ object RunRegistry : RunService {
         val player = event.entity as? ServerPlayer ?: return
         val run = runs.values.firstOrNull { player.uuid in it.activePlayers || player.uuid in it.pendingPlayers } ?: return
         if (!returnPlayer(player)) {
-            removePlayer(run, player.uuid)
+            removePlayer(run, player.uuid, disqualify = true)
             backend.clearPlayer(player.uuid)
             persistRunNow(player.server, run)
         }
@@ -270,10 +276,6 @@ object RunRegistry : RunService {
     fun onPlayerTick(event: TickEvent.PlayerTickEvent) {
         if (event.phase != TickEvent.Phase.START || shuttingDown) {
             return
-        }
-        val player = event.player as? ServerPlayer ?: return
-        if (player.y < voidReturnY(player)) {
-            returnVoidFallenPlayer(player)
         }
     }
 
@@ -287,36 +289,23 @@ object RunRegistry : RunService {
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
-    fun onLivingAttack(event: LivingAttackEvent) {
-        val player = event.entity as? ServerPlayer ?: return
-        if (!event.source.`is`(DamageTypes.FELL_OUT_OF_WORLD)) {
-            return
-        }
-        if (returnVoidFallenPlayer(player)) {
-            event.isCanceled = true
-        }
-    }
-
-    @SubscribeEvent(priority = EventPriority.HIGHEST)
-    fun onLivingHurt(event: LivingHurtEvent) {
-        val player = event.entity as? ServerPlayer ?: return
-        if (!event.source.`is`(DamageTypes.FELL_OUT_OF_WORLD)) {
-            return
-        }
-        if (returnVoidFallenPlayer(player)) {
-            event.isCanceled = true
-        }
-    }
-
-    @SubscribeEvent(priority = EventPriority.HIGHEST)
     fun onLivingDeath(event: LivingDeathEvent) {
         val player = event.entity as? ServerPlayer ?: return
-        if (!event.source.`is`(DamageTypes.FELL_OUT_OF_WORLD)) {
-            return
-        }
-        if (returnVoidFallenPlayer(player)) {
-            event.isCanceled = true
-        }
+        val record = mutableRunForPlayer(player.uuid) ?: return
+        markRunDeath(player, record)
+    }
+
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    fun onPlayerRespawn(event: PlayerEvent.PlayerRespawnEvent) {
+        val player = event.entity as? ServerPlayer ?: return
+        val target = pendingDeathReturns.remove(player.uuid) ?: return
+        val level = player.server.getLevel(target.levelKey) ?: return
+        val x = target.pos.x + 0.5
+        val y = target.pos.y + 1.0
+        val z = target.pos.z + 0.5
+        player.fallDistance = 0.0f
+        player.teleportTo(level, x, y, z, player.yRot, player.xRot)
+        player.connection.resetPosition()
     }
 
     @SubscribeEvent
@@ -362,7 +351,7 @@ object RunRegistry : RunService {
         val prepared = when (val requested = backend.requestPreparedSite(server, templateId, originLevelKey, originObeliskPos)) {
             is PreparedSiteResult.Accepted -> requested.handle
             is PreparedSiteResult.Rejected -> {
-                logger.warn("Obelisk backend rejected site request definition={} template={} reason={}", definitionId, templateId, requested.reason)
+                logger.warn("Font backend rejected site request definition={} template={} reason={}", definitionId, templateId, requested.reason)
                 return null
             }
         }
@@ -378,7 +367,7 @@ object RunRegistry : RunService {
                 val active = when (val activated = backend.activateRun(server, prepared, runId, queuedPlayerId)) {
                     is ActiveSiteResult.Accepted -> activated
                     is ActiveSiteResult.Rejected -> {
-                        logger.warn("Obelisk backend activation rejected run={} template={} reason={}", runId, templateId, activated.reason)
+                        logger.warn("Font backend activation rejected run={} template={} reason={}", runId, templateId, activated.reason)
                         return null
                     }
                 }
@@ -389,11 +378,11 @@ object RunRegistry : RunService {
                 initialState = RunState.ALLOCATED
             }
             is PreparedSiteStatus.Preparing -> {
-                logger.warn("Obelisk backend unexpectedly returned preparing template={} detail={}", templateId, status.detail)
+                logger.warn("Font backend unexpectedly returned preparing template={} detail={}", templateId, status.detail)
                 return null
             }
             is PreparedSiteStatus.Failed -> {
-                logger.warn("Obelisk backend site failed template={} reason={}", templateId, status.reason)
+                logger.warn("Font backend site failed template={} reason={}", templateId, status.reason)
                 return null
             }
         }
@@ -420,7 +409,7 @@ object RunRegistry : RunService {
         runs[record.id] = record
         persistRunNow(server, record)
         logger.info(
-            "Created obelisk run {} definition={} template={} site={} level={} center={} spawnReady={}",
+            "Created font run {} definition={} template={} site={} level={} center={} spawnReady={}",
             runId,
             definitionId,
             templateId,
@@ -457,7 +446,7 @@ object RunRegistry : RunService {
     private fun tickActiveRun(server: MinecraftServer, record: RunRecord) {
         val obelisk = getOriginObelisk(server, record)
         if (obelisk == null) {
-            collapseRun(server, record, "Origin rift anchor was destroyed!")
+            collapseRun(server, record, "Origin font was destroyed!")
             return
         }
 
@@ -466,13 +455,6 @@ object RunRegistry : RunService {
         record.activePlayers.toList().forEach { playerId ->
             val player = server.playerList.getPlayer(playerId) ?: return@forEach
             if (handle == null || !backend.isPlayerInRun(player, handle)) {
-                return@forEach
-            }
-            if (player.y < voidReturnY(player)) {
-                if (!returnVoidFallenPlayer(player)) {
-                    removePlayer(record, player.uuid)
-                    persistRunNow(server, record)
-                }
                 return@forEach
             }
             playerCount++
@@ -496,11 +478,11 @@ object RunRegistry : RunService {
             record.drainMultiplier = exp(obelisk.getModifiedDrainFactor() * record.ticksElapsed.toDouble())
         }
         val baseDrain = obelisk.getModifiedBaseDrain() + (playerCount * obelisk.getModifiedPlayerDrain())
-        val drainAmount = (baseDrain * record.drainMultiplier).toInt().coerceAtLeast(1)
-        val drained = obelisk.drainEnergy(drainAmount)
+        val drainAmount = (baseDrain * record.drainMultiplier).coerceAtLeast(0.01)
+        val drained = obelisk.drainBlood(drainAmount)
         record.updatedGameTime = currentGameTime(server)
         if (!drained) {
-            collapseRun(server, record, "Dimension collapsed - FE depleted to 0%!", "power-depleted")
+            collapseRun(server, record, "The font runs dry.", "blood-depleted")
             return
         }
         markRunDirty(record.id)
@@ -511,45 +493,37 @@ object RunRegistry : RunService {
             return
         }
         record.state = RunState.COLLAPSING
-        returnPlayers(server, record, message)
+        returnPlayers(server, record, message, disqualify = true)
         finishRun(server, record.id, destroyReason)
     }
 
-    private fun returnPlayers(server: MinecraftServer, record: RunRecord, message: String?) {
+    private fun returnPlayers(server: MinecraftServer, record: RunRecord, message: String?, disqualify: Boolean) {
         val onlinePlayers = (record.activePlayers + record.pendingPlayers)
             .mapNotNull { server.playerList.getPlayer(it) }
         onlinePlayers.forEach { player ->
-            val returned = returnPlayer(player)
+            val returned = returnPlayer(player, disqualify = disqualify)
             if (message != null) {
                 player.sendSystemMessage(Component.literal(message))
             }
             if (!returned && message != null) {
-                logger.warn("Could not return player {} for obelisk run {}", player.gameProfile.name, record.id)
+                logger.warn("Could not return player {} for font run {}", player.gameProfile.name, record.id)
             }
         }
         record.pendingPlayers.clear()
         record.activePlayers.clear()
     }
 
-    private fun returnVoidFallenPlayer(player: ServerPlayer): Boolean {
-        val record = mutableRunForPlayer(player.uuid) ?: return false
-        val levelKey = record.backendLevelKey ?: return false
-        if (player.serverLevel().dimension() != levelKey) {
-            return false
+    private fun markRunDeath(player: ServerPlayer, record: RunRecord) {
+        val originLevelKey = record.originLevelKey
+        val originPos = record.originObeliskPos
+        if (originLevelKey != null && originPos != null) {
+            pendingDeathReturns[player.uuid] = DeathReturnTarget(originLevelKey, originPos)
         }
-        player.fallDistance = 0.0f
-        return if (returnPlayer(player)) {
-            player.fallDistance = 0.0f
-            fallDamageSuppressedPlayers += player.uuid
-            player.sendSystemMessage(Component.literal("Fell into the void"))
-            true
-        } else {
-            false
-        }
-    }
-
-    private fun voidReturnY(player: ServerPlayer): Double {
-        return player.serverLevel().minBuildHeight.toDouble() - VOID_RETURN_MARGIN
+        removePlayer(record, player.uuid, disqualify = true)
+        backend.clearPlayer(player.uuid)
+        record.updatedGameTime = currentGameTime(player.server)
+        persistRunNow(player.server, record)
+        logger.info("Player {} died in dimensional font run {}; disqualified from rewards", player.gameProfile.name, record.id)
     }
 
     private fun tryQueueEntry(server: MinecraftServer, record: RunRecord, player: ServerPlayer): RunEntryAttempt {
@@ -566,9 +540,10 @@ object RunRegistry : RunService {
         }
         return when (val result = backend.enterPlayer(player, handle)) {
             EnterRunResult.Entered -> {
-                logger.info("Entered player {} into obelisk run {} site {}", player.gameProfile.name, record.id, record.instanceId)
+                logger.info("Entered player {} into font run {} site {}", player.gameProfile.name, record.id, record.instanceId)
                 record.pendingPlayers.remove(player.uuid)
                 record.activePlayers.add(player.uuid)
+                markEligible(record, player.uuid)
                 record.state = RunState.ACTIVE
                 refreshSpawnPos(server, record)
                 record.updatedGameTime = currentGameTime(server)
@@ -577,7 +552,7 @@ object RunRegistry : RunService {
             }
             is EnterRunResult.Rejected -> {
                 logger.warn(
-                    "Rejected player {} entry into obelisk run {} site {} reason={}",
+                    "Rejected player {} entry into font run {} site {} reason={}",
                     player.gameProfile.name,
                     record.id,
                     record.instanceId,
@@ -585,7 +560,7 @@ object RunRegistry : RunService {
                 )
                 removePlayer(record, player.uuid)
                 persistRunNow(server, record)
-                player.sendSystemMessage(Component.literal("Failed to enter rift anchor run: ${result.reason}"))
+                player.sendSystemMessage(Component.literal("Failed to enter font run: ${result.reason}"))
                 RunEntryAttempt.Rejected("Run is unavailable right now - ${result.reason}")
             }
         }
@@ -605,7 +580,7 @@ object RunRegistry : RunService {
         if (record.activePlayers.isNotEmpty() || record.pendingPlayers.isNotEmpty()) {
             return
         }
-        logger.warn("Discarding empty obelisk run {} definition={} site={} reason={}", record.id, record.definitionId, record.instanceId, reason)
+        logger.warn("Discarding empty font run {} definition={} site={} reason={}", record.id, record.definitionId, record.instanceId, reason)
         clearOriginObelisk(server, record, startCooldown = false)
         activeHandle(server, record)?.let { backend.destroyRun(server, it, reason) }
         runs.remove(record.id)
@@ -649,8 +624,8 @@ object RunRegistry : RunService {
 
     private fun restoreKillEnergy(server: MinecraftServer, record: RunRecord) {
         val obelisk = getOriginObelisk(server, record) ?: return
-        val restoreAmount = (obelisk.getMaxEnergyStored() * 0.02).toInt().coerceAtLeast(1)
-        obelisk.restoreRunEnergy(restoreAmount)
+        val restoreAmount = (obelisk.getMaxBlood() * 0.02).coerceAtLeast(1.0)
+        obelisk.restoreRunBlood(restoreAmount)
     }
 
     private fun recordMonsterKill(server: MinecraftServer, record: RunRecord): Boolean {
@@ -661,9 +636,19 @@ object RunRegistry : RunService {
         return true
     }
 
-    private fun removePlayer(record: RunRecord, playerId: UUID) {
+    private fun markEligible(record: RunRecord, playerId: UUID) {
+        record.participants += playerId
+        record.survivors += playerId
+        record.disqualifiedPlayers.remove(playerId)
+    }
+
+    private fun removePlayer(record: RunRecord, playerId: UUID, disqualify: Boolean = false) {
         record.activePlayers.remove(playerId)
         record.pendingPlayers.remove(playerId)
+        if (disqualify) {
+            record.survivors.remove(playerId)
+            record.disqualifiedPlayers += playerId
+        }
         record.updatedGameTime = record.updatedGameTime.coerceAtLeast(record.createdGameTime)
     }
 

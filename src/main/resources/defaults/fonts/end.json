@@ -1,0 +1,20 @@
+{
+  "id": "end",
+  "displayName": "End Dimensional Font",
+  "instanceTemplateId": "end",
+  "targetDimension": "minecraft:the_end",
+  "coordinateScale": 1.0,
+  "spawnSearchRadius": 24,
+  "runRadius": 96,
+  "requiredNamespace": "minecraft",
+  "enabled": true,
+  "worldgenWeight": 0.5,
+  "worldgenFamilyId": "altar",
+  "rewardTableId": "end",
+  "maxBlood": 15000,
+  "bloodStartCost": 5000,
+  "bloodJoinCost": 1000,
+  "baseBloodPerTick": 0.25,
+  "heartBloodMultiplier": 0.08,
+  "runBloodDrainPerTick": 20.0
+}

@@ -71,7 +71,7 @@ class ReturnPadBlock(properties: Properties) : Block(properties) {
         if (level.isClientSide) return InteractionResult.SUCCESS
         val serverPlayer = player as? ServerPlayer ?: return InteractionResult.PASS
         if (!RunRegistry.returnPlayer(serverPlayer)) {
-            serverPlayer.sendSystemMessage(Component.literal("You are not bound to an active rift anchor run."))
+            serverPlayer.sendSystemMessage(Component.literal("You are not bound to an active font run."))
         }
         return InteractionResult.CONSUME
     }

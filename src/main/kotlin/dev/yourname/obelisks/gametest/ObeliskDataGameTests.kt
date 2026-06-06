@@ -9,43 +9,43 @@ import java.nio.file.Path
 
 @PrefixGameTestTemplate(false)
 class ObeliskDataGameTests {
-    @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
-    fun default_obelisk_index_matches_bundled_definitions(helper: GameTestHelper) {
-        val indexed = indexedJsonNames("defaults/obelisks")
-        val bundled = bundledJsonNames("defaults/obelisks")
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
+    fun default_font_index_matches_bundled_definitions(helper: GameTestHelper) {
+        val indexed = indexedJsonNames("defaults/fonts")
+        val bundled = bundledJsonNames("defaults/fonts")
         helper.assertTrue(
             indexed == bundled,
-            "Expected defaults/obelisks/.index to match bundled definitions; index=$indexed bundled=$bundled"
+            "Expected defaults/fonts/.index to match bundled definitions; index=$indexed bundled=$bundled"
         )
         helper.succeed()
     }
 
-    @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 400)
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 400)
     fun reward_tables_follow_definition_with_shared_target_dimension(helper: GameTestHelper) {
         ObeliskGameTestSupport.rewardTablesFollowDefinitionWithSharedTemplate(helper)
     }
 
-    @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
     fun reload_command_refreshes_definition_data(helper: GameTestHelper) {
         ObeliskGameTestSupport.reloadCommandRefreshesDefinitionData(helper)
     }
 
-    @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
-    fun worldgen_definitions_produce_canonical_meteor_sites(helper: GameTestHelper) {
-        ObeliskGameTestSupport.worldgenDefinitionsProduceCanonicalMeteorSites(helper)
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
+    fun worldgen_definitions_produce_font_altar_sites(helper: GameTestHelper) {
+        ObeliskGameTestSupport.worldgenDefinitionsProduceFontAltarSites(helper)
     }
 
-    @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
-    fun underwater_worldgen_does_not_create_air_pockets(helper: GameTestHelper) {
-        ObeliskGameTestSupport.underwaterWorldgenDoesNotCreateAirPockets(helper)
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
+    fun underwater_worldgen_does_not_place_fonts(helper: GameTestHelper) {
+        ObeliskGameTestSupport.underwaterWorldgenDoesNotPlaceFonts(helper)
     }
 
-    @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
     fun reload_skips_definitions_with_missing_required_namespace(helper: GameTestHelper) {
         ObeliskGameTestSupport.reloadSkipsDefinitionsWithMissingRequiredNamespace(helper)
     }
 
-    @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
     fun reload_keeps_definitions_and_defers_target_validation(helper: GameTestHelper) {
         ObeliskGameTestSupport.reloadSkipsDefinitionsWithMissingInstanceTemplate(helper)
     }

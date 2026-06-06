@@ -24,6 +24,9 @@ data class RunRecord(
     var updatedGameTime: Long = createdGameTime,
     val activePlayers: MutableSet<UUID> = linkedSetOf(),
     val pendingPlayers: MutableSet<UUID> = linkedSetOf(),
+    val participants: MutableSet<UUID> = linkedSetOf(),
+    val survivors: MutableSet<UUID> = linkedSetOf(),
+    val disqualifiedPlayers: MutableSet<UUID> = linkedSetOf(),
     var monstersKilled: Int = 0,
     var totalDamageDealt: Float = 0f,
     var ticksElapsed: Long = 0L,
@@ -43,7 +46,10 @@ data class RunRecord(
 
     fun deepCopy(): RunRecord = copy(
         activePlayers = LinkedHashSet(activePlayers),
-        pendingPlayers = LinkedHashSet(pendingPlayers)
+        pendingPlayers = LinkedHashSet(pendingPlayers),
+        participants = LinkedHashSet(participants),
+        survivors = LinkedHashSet(survivors),
+        disqualifiedPlayers = LinkedHashSet(disqualifiedPlayers)
     )
 
     fun toTag(): CompoundTag = CompoundTag().apply {
@@ -69,6 +75,9 @@ data class RunRecord(
         spawnPos?.let { put("spawn_pos", encodeBlockPos(it)) }
         put("active_players", encodeUuids(activePlayers))
         put("pending_players", encodeUuids(pendingPlayers))
+        put("participants", encodeUuids(participants))
+        put("survivors", encodeUuids(survivors))
+        put("disqualified_players", encodeUuids(disqualifiedPlayers))
     }
 
     companion object {
@@ -84,6 +93,13 @@ data class RunRecord(
             val originLevelKey = parseLevelKey(tag.getString("origin_level_key"))
             val players = decodeUuids(tag.getCompound("active_players"))
             val pendingPlayers = decodeUuids(tag.getCompound("pending_players"))
+            val participants = decodeUuids(tag.getCompound("participants")).ifEmpty {
+                LinkedHashSet<UUID>().also { it.addAll(players); it.addAll(pendingPlayers) }
+            }
+            val survivors = decodeUuids(tag.getCompound("survivors")).ifEmpty {
+                LinkedHashSet<UUID>().also { it.addAll(participants) }
+            }
+            val disqualifiedPlayers = decodeUuids(tag.getCompound("disqualified_players"))
 
             return RunRecord(
                 id = id,
@@ -101,6 +117,9 @@ data class RunRecord(
                 updatedGameTime = tag.getLong("updated_game_time"),
                 activePlayers = players,
                 pendingPlayers = pendingPlayers,
+                participants = participants,
+                survivors = survivors,
+                disqualifiedPlayers = disqualifiedPlayers,
                 monstersKilled = if (tag.contains("monsters_killed")) tag.getInt("monsters_killed") else 0,
                 totalDamageDealt = if (tag.contains("total_damage_dealt")) tag.getFloat("total_damage_dealt") else 0f,
                 ticksElapsed = tag.getLong("ticks_elapsed"),

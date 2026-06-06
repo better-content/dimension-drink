@@ -4,6 +4,7 @@ import com.mojang.logging.LogUtils
 import dev.yourname.obelisks.data.ObeliskDataManager
 import dev.yourname.obelisks.commands.ObeliskCommands
 import dev.yourname.obelisks.gametest.ObeliskGameTestRegistrar
+import dev.yourname.obelisks.integration.tcon.TConAffixRewards
 import dev.yourname.obelisks.registry.ModRegistries
 import dev.yourname.obelisks.runtime.combat.RunCombatTracker
 import dev.yourname.obelisks.runtime.energy.FERegenerationHandler
@@ -30,6 +31,7 @@ class ObelisksMod {
         MinecraftForge.EVENT_BUS.register(PlayerReturnHandler)
         MinecraftForge.EVENT_BUS.register(VanillaPortalBlocker)
         MinecraftForge.EVENT_BUS.register(RewardSystem)
+        MinecraftForge.EVENT_BUS.register(TConAffixRewards)
         MinecraftForge.EVENT_BUS.register(RunRegistry)
         MinecraftForge.EVENT_BUS.register(RunBossBarManager)
         MinecraftForge.EVENT_BUS.register(ObeliskCommands)

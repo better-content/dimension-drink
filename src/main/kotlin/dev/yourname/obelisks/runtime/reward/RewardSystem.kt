@@ -7,9 +7,9 @@ import dev.yourname.obelisks.data.KillCurrencyDefinition
 import dev.yourname.obelisks.data.RewardEntryDefinition
 import dev.yourname.obelisks.data.RewardPoolDefinition
 import dev.yourname.obelisks.data.RewardTableDefinition
+import dev.yourname.obelisks.integration.tcon.TConAffixRewards
 import dev.yourname.obelisks.runtime.run.RunRecord
 import net.minecraft.core.BlockPos
-import net.minecraft.core.Direction
 import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.resources.ResourceKey
 import net.minecraft.resources.ResourceLocation
@@ -22,7 +22,6 @@ import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.Items
 import net.minecraft.world.level.Level
-import net.minecraftforge.common.capabilities.ForgeCapabilities
 import net.minecraftforge.event.TickEvent
 import net.minecraftforge.eventbus.api.SubscribeEvent
 import net.minecraftforge.registries.ForgeRegistries
@@ -45,23 +44,24 @@ object RewardSystem {
         val obelisk = level.getBlockEntity(originPos) as? ObeliskBlockEntity ?: return false
         val rewardTableId = ObeliskDataManager.getObelisk(run.definitionId)?.rewardTableId ?: "default"
         val rewardTable = ObeliskDataManager.getRewardTable(rewardTableId)
-        val rewards = buildRewards(run, rewardTable)
-        val currencyRewards = buildKillCurrencyRewards(run, rewardTable)
-        if (rewards.isEmpty() && currencyRewards.isEmpty()) return false
-
-        val hasAutomation = Direction.values().any { side ->
-            val adjacent = level.getBlockEntity(originPos.relative(side))
-            adjacent?.getCapability(ForgeCapabilities.ITEM_HANDLER, side.opposite)?.isPresent == true
+        val recipients = run.survivors
+            .filterNot { it in run.disqualifiedPlayers }
+            .mapNotNull { server.playerList.getPlayer(it) }
+        if (recipients.isEmpty()) {
+            return false
         }
 
-        rewards.forEach { stack ->
-            if (hasAutomation) {
-                insertIntoBufferOrEject(level, originPos, obelisk, stack)
-            } else {
-                eject(level, originPos, stack)
+        var deliveredAny = false
+        recipients.forEach { player ->
+            val rewards = buildRewards(run, rewardTable).toMutableList()
+            TConAffixRewards.rollAffixedPart(level.random)?.let(rewards::add)
+            val currencyRewards = buildKillCurrencyRewards(run, rewardTable)
+            (rewards + currencyRewards).forEach { stack ->
+                deliverToPlayerOrFont(level, originPos, obelisk, player, stack)
+                deliveredAny = true
             }
         }
-        scheduleCurrencyEjections(level, originPos, currencyRewards)
+        if (!deliveredAny) return false
 
         level.playSound(null, originPos, SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.BLOCKS, 0.5f, 1.3f)
         level.sendParticles(
@@ -204,6 +204,20 @@ object RewardSystem {
         if (!remaining.isEmpty) {
             eject(level, pos, remaining)
         }
+    }
+
+    private fun deliverToPlayerOrFont(
+        level: ServerLevel,
+        pos: BlockPos,
+        obelisk: ObeliskBlockEntity,
+        player: net.minecraft.server.level.ServerPlayer,
+        stack: ItemStack
+    ) {
+        val remaining = stack.copy()
+        if (player.inventory.add(remaining) || remaining.isEmpty) {
+            return
+        }
+        insertIntoBufferOrEject(level, pos, obelisk, remaining)
     }
 
     private fun eject(level: ServerLevel, pos: BlockPos, stack: ItemStack) {

@@ -10,6 +10,6 @@ import net.minecraftforge.registries.RegistryObject
 object ModItems {
     val REGISTRY: DeferredRegister<Item> = DeferredRegister.create(ForgeRegistries.ITEMS, MOD_ID)
 
-    val OBELISK: RegistryObject<Item> = REGISTRY.register("meteoric_rift_anchor") { BlockItem(ModBlocks.OBELISK.get(), Item.Properties()) }
-    val RETURN_PAD: RegistryObject<Item> = REGISTRY.register("return_pad") { BlockItem(ModBlocks.RETURN_PAD.get(), Item.Properties()) }
+    val OBELISK: RegistryObject<Item> = REGISTRY.register("dimensional_font") { BlockItem(ModBlocks.OBELISK.get(), Item.Properties()) }
+    val RETURN_PAD: RegistryObject<Item> = REGISTRY.register("return_seal") { BlockItem(ModBlocks.RETURN_PAD.get(), Item.Properties()) }
 }

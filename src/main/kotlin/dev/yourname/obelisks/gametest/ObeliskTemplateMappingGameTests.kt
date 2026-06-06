@@ -6,7 +6,7 @@ import net.minecraftforge.gametest.PrefixGameTestTemplate
 
 @PrefixGameTestTemplate(false)
 class ObeliskTemplateMappingGameTests {
-    @GameTest(templateNamespace = "obelisks", template = "bootstrap/empty", batch = "obelisk_template", timeoutTicks = 400)
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_template", timeoutTicks = 400)
     fun legacy_instance_template_id_selects_target_dimension(helper: GameTestHelper) {
         ObeliskGameTestSupport.instanceTemplateIdSelectsRuntimeInstanceTemplate(helper)
     }

@@ -4,22 +4,10 @@ import dev.yourname.obelisks.runtime.backend.RunBackendManager
 import dev.yourname.obelisks.runtime.run.RunRegistry
 import net.minecraft.server.level.ServerPlayer
 import net.minecraftforge.event.TickEvent
-import net.minecraftforge.event.entity.living.LivingDeathEvent
 import net.minecraftforge.eventbus.api.EventPriority
 import net.minecraftforge.eventbus.api.SubscribeEvent
 
 object PlayerReturnHandler {
-    private const val VOID_RETURN_MARGIN = 8.0
-
-    @SubscribeEvent
-    fun onPlayerDeath(event: LivingDeathEvent) {
-        val player = event.entity as? ServerPlayer ?: return
-        if (player.level().isClientSide) return
-
-        RunRegistry.clearPlayerAssignment(player.server, player.uuid)
-        RunBackendManager.backend.clearPlayer(player.uuid)
-    }
-
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     fun onPlayerTick(event: TickEvent.PlayerTickEvent) {
         if (event.phase != TickEvent.Phase.END) return
@@ -51,12 +39,6 @@ object PlayerReturnHandler {
             RunRegistry.clearPlayerAssignment(player.server, player.uuid)
             RunBackendManager.backend.clearPlayer(player.uuid)
             return
-        }
-
-        if (player.y < player.serverLevel().minBuildHeight.toDouble() - VOID_RETURN_MARGIN) {
-            if (RunRegistry.returnPlayer(player)) {
-                return
-            }
         }
 
         if (!bounds.contains(player.blockPosition())) {

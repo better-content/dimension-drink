@@ -23,7 +23,7 @@ object ObeliskCommands {
 
     @SubscribeEvent
     fun onRegisterCommands(event: RegisterCommandsEvent) {
-        val root = Commands.literal("obelisk").requires { it.hasPermission(2) }
+        val root = Commands.literal("font").requires { it.hasPermission(2) }
 
         root.then(
             Commands.literal("debug_spawn")
@@ -44,7 +44,7 @@ object ObeliskCommands {
             Commands.literal("list_runs").executes { ctx ->
                 val runs = RunRegistry.snapshot().sortedBy { it.createdGameTime }
                 if (runs.isEmpty()) {
-                    ctx.source.sendSuccess({ Component.literal("No active or pending rift anchor runs.") }, false)
+                    ctx.source.sendSuccess({ Component.literal("No active or pending font runs.") }, false)
                 } else {
                     ctx.source.sendSuccess({ Component.literal("Runs (${runs.size}):") }, false)
                     runs.forEach { run ->
@@ -63,10 +63,10 @@ object ObeliskCommands {
             Commands.literal("return").executes { ctx ->
                 val player = ctx.source.playerOrException
                 if (RunRegistry.returnPlayer(player)) {
-                    ctx.source.sendSuccess({ Component.literal("Returning to origin rift anchor.") }, false)
+                    ctx.source.sendSuccess({ Component.literal("Returning to origin font.") }, false)
                     1
                 } else {
-                    ctx.source.sendFailure(Component.literal("Player is not bound to an active rift anchor run."))
+                    ctx.source.sendFailure(Component.literal("Player is not bound to an active font run."))
                     0
                 }
             }
@@ -93,7 +93,7 @@ object ObeliskCommands {
                 val player = ctx.source.playerOrException
                 val handle = RunRegistry.getRun(player.uuid)
                 if (handle == null) {
-                    ctx.source.sendSuccess({ Component.literal("Player is not assigned to a rift anchor run.") }, false)
+                    ctx.source.sendSuccess({ Component.literal("Player is not assigned to a font run.") }, false)
                     return@executes 1
                 }
 
@@ -111,7 +111,7 @@ object ObeliskCommands {
                     if (obelisk != null) {
                         ctx.source.sendSuccess({
                             Component.literal(
-                                "Rift anchor FE=${obelisk.getEnergyStored()}/${obelisk.getMaxEnergyStored()} cooldown=${obelisk.getCooldownRemainingTicks()} activeRun=${obelisk.activeRunId}"
+                                "Font blood=${obelisk.bloodStored.toInt()}/${obelisk.getMaxBlood().toInt()} cooldown=${obelisk.getCooldownRemainingTicks()} activeRun=${obelisk.activeRunId} heartLevel=${obelisk.getHeartLevel()}"
                             )
                         }, false)
                     }
@@ -125,11 +125,11 @@ object ObeliskCommands {
                 val player = ctx.source.playerOrException
                 val obelisk = lookedAtObelisk(player)
                 if (obelisk == null) {
-                    ctx.source.sendFailure(Component.literal("Not looking at a rift anchor."))
+                    ctx.source.sendFailure(Component.literal("Not looking at a dimensional font."))
                     return@executes 0
                 }
 
-                ctx.source.sendSuccess({ Component.literal("Rift anchor ${obelisk.obeliskId} definition=${obelisk.definitionId} template=${obelisk.targetTemplateId}") }, false)
+                ctx.source.sendSuccess({ Component.literal("Dimensional font ${obelisk.obeliskId} definition=${obelisk.definitionId} template=${obelisk.targetTemplateId}") }, false)
                 obelisk.modifiers.forEachIndexed { index, modifier ->
                     ctx.source.sendSuccess({
                         Component.literal("${index + 1}. ${modifier.stat.name} +${modifier.bonusPercent}%")
@@ -137,7 +137,7 @@ object ObeliskCommands {
                 }
                 ctx.source.sendSuccess({
                     Component.literal(
-                        "storage=${obelisk.getModifiedMaxStorage()} regen=${obelisk.getModifiedRegenRate()} baseDrain=${obelisk.getModifiedBaseDrain()} playerDrain=${obelisk.getModifiedPlayerDrain()} factor=${"%.4f".format(obelisk.getModifiedDrainFactor())}"
+                        "blood=${obelisk.bloodStored.toInt()}/${obelisk.getMaxBlood().toInt()} regen=${"%.3f".format(obelisk.getModifiedRegenRate())} baseDrain=${"%.3f".format(obelisk.getModifiedBaseDrain())} playerDrain=${"%.3f".format(obelisk.getModifiedPlayerDrain())} factor=${"%.4f".format(obelisk.getModifiedDrainFactor())}"
                     )
                 }, false)
                 1
@@ -149,14 +149,14 @@ object ObeliskCommands {
                 val player = ctx.source.playerOrException
                 val nearest = ObeliskRuntimeService.findNearestObelisk(player.serverLevel(), player.blockPosition(), radiusChunks = 8)
                 if (nearest == null) {
-                    ctx.source.sendFailure(Component.literal("No loaded rift anchors found within 8 chunks."))
+                    ctx.source.sendFailure(Component.literal("No loaded dimensional fonts found within 8 chunks."))
                     return@executes 0
                 }
 
                 val distance = sqrt(nearest.blockPos.distSqr(player.blockPosition()))
                 ctx.source.sendSuccess({
                     Component.literal(
-                        "Nearest loaded rift anchor is ${nearest.definitionId} -> ${nearest.targetTemplateId} at ${nearest.blockPos.x}, ${nearest.blockPos.y}, ${nearest.blockPos.z} (${distance.toInt()} blocks)"
+                        "Nearest loaded dimensional font is ${nearest.definitionId} -> ${nearest.targetTemplateId} at ${nearest.blockPos.x}, ${nearest.blockPos.y}, ${nearest.blockPos.z} (${distance.toInt()} blocks)"
                     )
                 }, false)
                 1
@@ -166,7 +166,7 @@ object ObeliskCommands {
         root.then(
             Commands.literal("reload_data").executes { ctx ->
                 ObeliskDataManager.reload()
-                ctx.source.sendSuccess({ Component.literal("Reloaded rift anchor definitions and reward tables.") }, true)
+                ctx.source.sendSuccess({ Component.literal("Reloaded dimensional font definitions and reward tables.") }, true)
                 1
             }
         )
@@ -177,7 +177,7 @@ object ObeliskCommands {
     private fun spawnDebugObelisk(player: ServerPlayer, requestedTemplate: String?): Int {
         val template = requestedTemplate?.takeIf { ObeliskDataManager.getObelisk(it) != null }
             ?: requestedTemplate?.let {
-                player.sendSystemMessage(Component.literal("Unknown rift anchor definition '$it'."))
+                player.sendSystemMessage(Component.literal("Unknown dimensional font definition '$it'."))
                 return 0
             }
             ?: ObeliskDataManager.enabledObelisks()
@@ -188,20 +188,20 @@ object ObeliskCommands {
         val level = player.serverLevel()
         val pos = debugSpawnPos(level, player.blockPosition())
         if (!placeObelisk(level, pos)) {
-            player.sendSystemMessage(Component.literal("Failed to place debug rift anchor at $pos"))
+            player.sendSystemMessage(Component.literal("Failed to place debug dimensional font at $pos"))
             return 0
         }
 
         val obelisk = level.getBlockEntity(pos) as? ObeliskBlockEntity
         if (obelisk == null) {
-            player.sendSystemMessage(Component.literal("Placed block but no rift anchor block entity was created"))
+            player.sendSystemMessage(Component.literal("Placed block but no dimensional font block entity was created"))
             return 0
         }
 
         obelisk.setTargetTemplate(template)
         obelisk.fillToCapacity()
         obelisk.setActiveRun(null)
-        player.sendSystemMessage(Component.literal("Spawned charged $template rift anchor at $pos"))
+        player.sendSystemMessage(Component.literal("Spawned filled $template dimensional font at $pos"))
         return 1
     }
 

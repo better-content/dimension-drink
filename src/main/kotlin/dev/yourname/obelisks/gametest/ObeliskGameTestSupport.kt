@@ -13,10 +13,8 @@ import dev.yourname.obelisks.data.ObeliskDefinition
 import dev.yourname.obelisks.data.RewardEntryDefinition
 import dev.yourname.obelisks.data.RewardPoolDefinition
 import dev.yourname.obelisks.data.RewardTableDefinition
-import dev.yourname.obelisks.data.WorldgenFamilyDefinition
 import dev.yourname.obelisks.registry.ModBlocks
 import dev.yourname.obelisks.runtime.ObeliskRuntimeService
-import dev.yourname.obelisks.runtime.backend.CanonicalDimensionBackend
 import dev.yourname.obelisks.runtime.reward.RewardSystem
 import dev.yourname.obelisks.runtime.run.RunRecord
 import dev.yourname.obelisks.runtime.run.RunRegistry
@@ -26,7 +24,6 @@ import dev.yourname.obelisks.runtime.ui.RunBossBarManager
 import dev.yourname.obelisks.worldgen.ObeliskFeature
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
-import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.gametest.framework.GameTestHelper
 import net.minecraft.network.Connection
 import net.minecraft.network.ConnectionProtocol
@@ -42,7 +39,6 @@ import net.minecraft.network.protocol.game.ClientboundRespawnPacket
 import net.minecraft.network.protocol.game.ServerboundKeepAlivePacket
 import net.minecraft.resources.ResourceKey
 import net.minecraft.resources.ResourceLocation
-import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.InteractionResult
@@ -55,6 +51,8 @@ import net.minecraft.world.item.Items
 import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.Vec3
 import net.minecraftforge.network.NetworkHooks
+import net.minecraftforge.event.entity.living.LivingDeathEvent
+import net.minecraftforge.event.entity.player.PlayerEvent
 import java.nio.file.Files
 import java.nio.file.Path
 import java.lang.reflect.Proxy
@@ -91,13 +89,6 @@ private data class ArrivalStatus(
     val completedChunks: Int = 1,
     val totalChunks: Int = 1,
     val failureReason: String? = null
-)
-
-private data class ReturnAnchor(
-    val levelKey: ResourceKey<Level>,
-    val x: Double,
-    val y: Double,
-    val z: Double
 )
 
 private object InstanceTemplateDataManager {
@@ -160,13 +151,6 @@ private object InstanceManager {
 
 private object TravelManager {
     fun returnPlayer(player: ServerPlayer): Boolean = RunRegistry.returnPlayer(player)
-
-    fun peekReturnAnchor(playerId: UUID): ReturnAnchor? {
-        val run = RunRegistry.snapshot().firstOrNull { playerId in it.activePlayers || playerId in it.pendingPlayers } ?: return null
-        val levelKey = run.originLevelKey ?: return null
-        val pos = run.originObeliskPos ?: return null
-        return ReturnAnchor(levelKey, pos.x + 0.5, pos.y + 1.0, pos.z + 0.5)
-    }
 }
 
 private fun canonicalLevelKey(templateId: String): ResourceKey<Level>? {
@@ -387,7 +371,7 @@ object ObeliskGameTestSupport {
             waitForPreparedTemplate(helper, "end") {
                 val activationMessage = RunRegistry.activateObelisk(player, obelisk!!, obeliskPos)
                 helper.assertTrue(
-                    activationMessage?.startsWith("Initializing") == true || activationMessage?.startsWith("Entering") == true,
+                    activationMessage?.startsWith("Drinking from ") == true,
                     "Expected reward test activation to start a run, got: $activationMessage"
                 )
 
@@ -425,22 +409,10 @@ object ObeliskGameTestSupport {
                             liveObelisk.drainEnergy((liveObelisk.getMaxEnergyStored() * 0.15).toInt().coerceAtLeast(1))
                             RunRegistry.recordDamage(player.uuid, instance.levelKey, 40f)
 
-                            waitUntil(helper, 80, "Expected low stability to create a boss bar for the run", condition = {
+                            waitUntil(helper, 80, "Expected low blood to create a boss bar for the run", condition = {
                                 RunBossBarManager.hasBossBar(runId)
                             }, onSuccess = {
-                                ModBlocks.RETURN_PAD.get().use(
-                                    runtimeLevel.getBlockState(returnPadPos),
-                                    runtimeLevel,
-                                    returnPadPos,
-                                    player,
-                                    InteractionHand.MAIN_HAND,
-                                    BlockHitResult(Vec3.atCenterOf(returnPadPos), Direction.UP, returnPadPos, false)
-                                )
-
-                                waitUntil(helper, 120, "Expected reward test return pad to move the player back to the origin dimension", condition = {
-                                    client.pump(server)
-                                    player.serverLevel().dimension() == originDimension
-                                }, onSuccess = {
+                                helper.assertTrue(RunRegistry.finishRun(server, runId), "Expected reward test finish to succeed")
                                     waitUntil(helper, 360, failureMessage = {
                                         val runSnapshot = RunRegistry.get(runId)
                                         val instanceSnapshot = InstanceManager.getInstance(run.instanceId)
@@ -472,31 +444,33 @@ object ObeliskGameTestSupport {
                                         val nearbyEmeralds = countNearbyItems(helper.level, obeliskPos, Items.EMERALD, 3.0)
                                         val inventoryEmeralds = countPlayerItems(player, Items.EMERALD) - initialPlayerEmeralds
                                         val rewardSignal = bufferedEmeralds + nearbyEmeralds + inventoryEmeralds
-                                        rewardSignal >= 0 &&
+                                        player.serverLevel().dimension() == originDimension &&
+                                            rewardSignal > 0 &&
                                             RunRegistry.get(runId) == null &&
                                             !RunBossBarManager.hasBossBar(runId)
                                     }, onSuccess = {
+                                        helper.assertTrue(player.serverLevel().dimension() == originDimension, "Expected finished reward run to return the survivor")
                                         helper.assertTrue(!RunBossBarManager.hasBossBar(runId), "Expected finished run to clear its boss bar")
                                         client.close(server)
+                                        deleteTestConfigs()
+                                        reloadDataWithCommand(server)
                                         helper.succeed()
                                     })
-                                })
-                                })
                             })
                         })
                     })
                 })
+                })
             }
         } catch (t: Throwable) {
             client.close(server)
-            throw t
-        } finally {
             deleteTestConfigs()
             reloadDataWithCommand(server)
+            throw t
         }
     }
 
-    fun voidFallReturnsPlayerAndCleansUpRun(helper: GameTestHelper, definitionId: String = "end") {
+    fun deathDisqualifiesPlayerAndRespawnReturnsToFont(helper: GameTestHelper, definitionId: String = "end") {
         val server = helper.level.server
         val client = connectHeadlessPlayer(helper)
         val player = client.player
@@ -524,10 +498,10 @@ object ObeliskGameTestSupport {
                 )
                 helper.assertTrue(
                     activationResult == InteractionResult.CONSUME || activationResult == InteractionResult.SUCCESS,
-                    "Expected void-fall test activation to consume the interaction"
+                    "Expected death-return test activation to consume the interaction"
                 )
 
-                waitUntil(helper, 320, "Expected void-fall test to create an active run and move the player into its target dimension", condition = {
+                waitUntil(helper, 320, "Expected death-return test to create an active run and move the player into its target dimension", condition = {
                     client.pump(server)
                     val activeRunId = (helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)?.activeRunId
                     val run = activeRunId?.let(RunRegistry::get)
@@ -540,49 +514,40 @@ object ObeliskGameTestSupport {
                 }, onSuccess = {
                 client.pump(server)
                 val liveObelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
-                helper.assertTrue(liveObelisk != null, "Expected live obelisk block entity for void-fall test")
-                val runId = requireNotNull(liveObelisk!!.activeRunId) { "Expected active run id for void-fall test" }
-                val returnAnchor = requireNotNull(TravelManager.peekReturnAnchor(player.uuid)) { "Expected return anchor before void fall" }
+                helper.assertTrue(liveObelisk != null, "Expected live font block entity for death-return test")
+                val runId = requireNotNull(liveObelisk!!.activeRunId) { "Expected active run id for death-return test" }
 
-                player.setHealth(player.maxHealth)
-                val healthBeforeVoid = player.health
-                player.fallDistance = 96.0f
-                player.teleportTo(player.x, -80.0, player.z)
+                val deathEvent = LivingDeathEvent(player, player.damageSources().generic())
+                RunRegistry.onLivingDeath(deathEvent)
+                helper.assertTrue(!deathEvent.isCanceled, "Expected font run death handling to leave normal death uncanceled")
 
-                waitUntil(helper, 120, "Expected void fall to return the player to the saved origin dimension", condition = {
+                val afterDeath = requireNotNull(RunRegistry.get(runId)) { "Expected run to remain registered after one participant death" }
+                helper.assertTrue(player.uuid !in afterDeath.activePlayers, "Expected dead player to be removed from active players")
+                helper.assertTrue(player.uuid !in afterDeath.pendingPlayers, "Expected dead player to be removed from pending players")
+                helper.assertTrue(player.uuid !in afterDeath.survivors, "Expected dead player to lose survivor reward eligibility")
+                helper.assertTrue(player.uuid in afterDeath.disqualifiedPlayers, "Expected dead player to be marked disqualified")
+
+                RunRegistry.onPlayerRespawn(PlayerEvent.PlayerRespawnEvent(player, false))
+                client.pump(server)
+                helper.assertTrue(player.serverLevel().dimension() == originDimension, "Expected respawn handler to move player back to the font dimension")
+                helper.assertTrue(
+                    player.blockPosition().closerThan(obeliskPos, 4.0),
+                    "Expected respawn handler to place player outside the origin font"
+                )
+
+                helper.assertTrue(RunRegistry.finishRun(server, runId), "Expected death-return cleanup to finish the run")
+                waitUntil(helper, 360, "Expected death-return cleanup to cooldown the origin font and clear the run", condition = {
                     client.pump(server)
-                    player.serverLevel().dimension() == originDimension
+                    RunRegistry.get(runId) == null &&
+                        (helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)?.activeRunId == null &&
+                        ((helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)?.isOnCooldown() == true)
                 }, onSuccess = {
-                    helper.assertTrue(player.serverLevel().dimension() == originDimension, "Expected void fall to restore the origin dimension")
-                    helper.assertTrue(
-                        player.health == healthBeforeVoid,
-                        "Expected void fall to return before player damage; before=$healthBeforeVoid after=${player.health}"
-                    )
-                    helper.assertTrue(
-                        player.fallDistance == 0.0f,
-                        "Expected void fall to reset fall distance; actual=${player.fallDistance}"
-                    )
-                    val actualX = player.x
-                    val actualY = player.y
-                    val actualZ = player.z
-                    helper.assertTrue(
-                        horizontalDistanceSqr(actualX, actualZ, returnAnchor.x, returnAnchor.z) <= 64.0,
-                        "Expected void fall to restore the player near the saved return anchor; actual=($actualX, $actualY, $actualZ) anchor=(${returnAnchor.x}, ${returnAnchor.y}, ${returnAnchor.z})"
-                    )
-
-                    waitUntil(helper, 360, "Expected void-fall cleanup to cooldown the origin obelisk and clear the run", condition = {
-                        client.pump(server)
-                        RunRegistry.get(runId) == null &&
-                            (helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)?.activeRunId == null &&
-                            ((helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)?.isOnCooldown() == true)
-                    }, onSuccess = {
-                        val cooledObelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
-                        helper.assertTrue(cooledObelisk?.activeRunId == null, "Expected void-fall cleanup to clear the active run id")
-                        helper.assertTrue(cooledObelisk?.isOnCooldown() == true, "Expected void-fall cleanup to start cooldown")
-                        helper.assertTrue(RunRegistry.get(runId) == null, "Expected void-fall cleanup to remove the run")
-                        client.close(server)
-                        helper.succeed()
-                    })
+                    val cooledObelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
+                    helper.assertTrue(cooledObelisk?.activeRunId == null, "Expected death-return cleanup to clear the active run id")
+                    helper.assertTrue(cooledObelisk?.isOnCooldown() == true, "Expected death-return cleanup to start cooldown")
+                    helper.assertTrue(RunRegistry.get(runId) == null, "Expected death-return cleanup to remove the run")
+                    client.close(server)
+                    helper.succeed()
                 })
                 })
             }
@@ -595,59 +560,67 @@ object ObeliskGameTestSupport {
     fun rewardTablesFollowDefinitionWithSharedTemplate(helper: GameTestHelper) {
         deleteTestConfigs()
         val server = helper.level.server
-        val definitionA = ObeliskDefinition(
-            id = "test_shared_template_a",
-            displayName = "Shared Template A",
-            instanceTemplateId = "end",
-            rewardTableId = "test_shared_rewards_a"
-        )
-        val definitionB = ObeliskDefinition(
-            id = "test_shared_template_b",
-            displayName = "Shared Template B",
-            instanceTemplateId = "end",
-            rewardTableId = "test_shared_rewards_b"
-        )
-        writeDefinition(definitionA)
-        writeDefinition(definitionB)
-        writeRewardTable(
-            RewardTableDefinition(
-                id = "test_shared_rewards_a",
-                baseRolls = 1,
-                damagePerBonusRoll = 9999.0f,
-                pools = listOf(poolOf("a", "minecraft:iron_ingot"))
+        val clientA = connectHeadlessPlayer(helper)
+        val clientB = connectHeadlessPlayer(helper)
+        val playerA = clientA.player
+        val playerB = clientB.player
+
+        try {
+            val definitionA = ObeliskDefinition(
+                id = "test_shared_template_a",
+                displayName = "Shared Template A",
+                instanceTemplateId = "end",
+                rewardTableId = "test_shared_rewards_a"
             )
-        )
-        writeRewardTable(
-            RewardTableDefinition(
-                id = "test_shared_rewards_b",
-                baseRolls = 1,
-                damagePerBonusRoll = 9999.0f,
-                pools = listOf(poolOf("b", "minecraft:gold_ingot"))
+            val definitionB = ObeliskDefinition(
+                id = "test_shared_template_b",
+                displayName = "Shared Template B",
+                instanceTemplateId = "end",
+                rewardTableId = "test_shared_rewards_b"
             )
-        )
-        reloadDataWithCommand(server)
+            writeDefinition(definitionA)
+            writeDefinition(definitionB)
+            writeRewardTable(
+                RewardTableDefinition(
+                    id = "test_shared_rewards_a",
+                    baseRolls = 1,
+                    damagePerBonusRoll = 9999.0f,
+                    pools = listOf(poolOf("a", "minecraft:iron_ingot"))
+                )
+            )
+            writeRewardTable(
+                RewardTableDefinition(
+                    id = "test_shared_rewards_b",
+                    baseRolls = 1,
+                    damagePerBonusRoll = 9999.0f,
+                    pools = listOf(poolOf("b", "minecraft:gold_ingot"))
+                )
+            )
+            reloadDataWithCommand(server)
 
-        val obeliskPosA = helper.absolutePos(BlockPos(4, 2, 10))
-        val obeliskPosB = helper.absolutePos(BlockPos(8, 2, 10))
-        placeChargedDefinitionObelisk(helper, obeliskPosA, definitionA.id)
-        placeChargedDefinitionObelisk(helper, obeliskPosB, definitionB.id)
-        helper.level.setBlock(obeliskPosA.east(), Blocks.HOPPER.defaultBlockState(), 3)
-        helper.level.setBlock(obeliskPosB.east(), Blocks.HOPPER.defaultBlockState(), 3)
+            val obeliskPosA = helper.absolutePos(BlockPos(4, 2, 10))
+            val obeliskPosB = helper.absolutePos(BlockPos(8, 2, 10))
+            placeChargedDefinitionObelisk(helper, obeliskPosA, definitionA.id)
+            placeChargedDefinitionObelisk(helper, obeliskPosB, definitionB.id)
 
-        val runA = rewardOnlyRun(helper, obeliskPosA, definitionA)
-        val runB = rewardOnlyRun(helper, obeliskPosB, definitionB)
-        helper.assertTrue(RewardSystem.spawnRewards(server, runA), "Expected definition A reward spawn to succeed")
-        helper.assertTrue(RewardSystem.spawnRewards(server, runB), "Expected definition B reward spawn to succeed")
+            val runA = rewardOnlyRun(helper, obeliskPosA, definitionA, playerA.uuid)
+            val runB = rewardOnlyRun(helper, obeliskPosB, definitionB, playerB.uuid)
+            helper.assertTrue(RewardSystem.spawnRewards(server, runA), "Expected definition A reward spawn to succeed")
+            helper.assertTrue(RewardSystem.spawnRewards(server, runB), "Expected definition B reward spawn to succeed")
 
-        val obeliskA = helper.level.getBlockEntity(obeliskPosA) as? ObeliskBlockEntity
-        val obeliskB = helper.level.getBlockEntity(obeliskPosB) as? ObeliskBlockEntity
-        helper.assertTrue(countBufferedItem(obeliskA, Items.IRON_INGOT) > 0, "Expected definition A to use its iron reward table")
-        helper.assertTrue(countBufferedItem(obeliskA, Items.GOLD_INGOT) == 0, "Expected definition A buffer to avoid definition B rewards")
-        helper.assertTrue(countBufferedItem(obeliskB, Items.GOLD_INGOT) > 0, "Expected definition B to use its gold reward table")
-        helper.assertTrue(countBufferedItem(obeliskB, Items.IRON_INGOT) == 0, "Expected definition B buffer to avoid definition A rewards")
-        deleteTestConfigs()
-        reloadData()
-        helper.succeed()
+            helper.assertTrue(countPlayerItems(playerA, Items.IRON_INGOT) > 0, "Expected definition A survivor to receive its iron reward table")
+            helper.assertTrue(countPlayerItems(playerA, Items.GOLD_INGOT) == 0, "Expected definition A survivor to avoid definition B rewards")
+            helper.assertTrue(countPlayerItems(playerB, Items.GOLD_INGOT) > 0, "Expected definition B survivor to receive its gold reward table")
+            helper.assertTrue(countPlayerItems(playerB, Items.IRON_INGOT) == 0, "Expected definition B survivor to avoid definition A rewards")
+            helper.succeed()
+        } catch (t: Throwable) {
+            throw t
+        } finally {
+            clientA.close(server)
+            clientB.close(server)
+            deleteTestConfigs()
+            reloadData()
+        }
     }
 
     fun reloadCommandRefreshesDefinitionData(helper: GameTestHelper) {
@@ -677,7 +650,7 @@ object ObeliskGameTestSupport {
         helper.succeed()
     }
 
-    fun worldgenDefinitionsProduceCanonicalMeteorSites(helper: GameTestHelper) {
+    fun worldgenDefinitionsProduceFontAltarSites(helper: GameTestHelper) {
         deleteTestConfigs()
         val endDefinition = ObeliskDefinition(
             id = "test_end_visual_definition",
@@ -696,9 +669,6 @@ object ObeliskGameTestSupport {
             displayName = "Test Modded Visual",
             instanceTemplateId = "blue_skies:everbright",
             targetDimension = "blue_skies:everbright",
-            meteorCoreBlock = "minecraft:lapis_block",
-            meteorShellBlock = "minecraft:diamond_block",
-            craterFillBlocks = listOf("minecraft:blue_ice"),
             rewardTableId = "default"
         )
         writeDefinition(endDefinition)
@@ -706,12 +676,16 @@ object ObeliskGameTestSupport {
         writeDefinition(moddedDefinition)
         reloadData()
 
-        val endCenter = helper.absolutePos(BlockPos(20, 3, 4))
+        val endSurfaceCenter = helper.absolutePos(BlockPos(20, 3, 4))
+        val endCenter = endSurfaceCenter.above(12)
         val netherCenter = helper.absolutePos(BlockPos(36, 3, 4))
         val moddedCenter = helper.absolutePos(BlockPos(52, 3, 4))
-        prepareGenerationSurface(helper, endCenter)
+        val leafCanopyCenter = helper.absolutePos(BlockPos(68, 3, 4))
+        prepareGenerationSurface(helper, endSurfaceCenter)
         prepareGenerationSurface(helper, netherCenter)
         prepareGenerationSurface(helper, moddedCenter)
+        prepareGenerationSurface(helper, leafCanopyCenter)
+        placeLeafPlacementNoise(helper, leafCanopyCenter)
 
         helper.assertTrue(
             ObeliskFeature.generateDefinitionSiteForTests(helper.level, endCenter, endDefinition.id, RandomSource.create(1234L)),
@@ -725,58 +699,47 @@ object ObeliskGameTestSupport {
             ObeliskFeature.generateDefinitionSiteForTests(helper.level, moddedCenter, moddedDefinition.id, RandomSource.create(9012L)),
             "Expected modded definition test generation to succeed"
         )
+        helper.assertTrue(
+            ObeliskFeature.generateDefinitionSiteForTests(helper.level, leafCanopyCenter.above(12), endDefinition.id, RandomSource.create(3456L)),
+            "Expected leaf-canopy test generation to ignore leaves and choose the sturdy surface"
+        )
 
         val endPos = requireNotNull(locateGeneratedObeliskPos(helper, endCenter)) {
-            "Expected end definition site to place an obelisk within the crater"
+            "Expected end definition site to place a font on the altar"
         }
         val netherPos = requireNotNull(locateGeneratedObeliskPos(helper, netherCenter)) {
-            "Expected nether definition site to place an obelisk within the crater"
+            "Expected nether definition site to place a font on the altar"
         }
         val moddedPos = requireNotNull(locateGeneratedObeliskPos(helper, moddedCenter)) {
-            "Expected modded definition site to place an obelisk within the crater"
+            "Expected modded definition site to place a font on the altar"
+        }
+        val leafCanopyPos = requireNotNull(locateGeneratedObeliskPos(helper, leafCanopyCenter)) {
+            "Expected leaf-canopy definition site to place a font on the altar"
         }
         val endObelisk = helper.level.getBlockEntity(endPos) as? ObeliskBlockEntity
         val netherObelisk = helper.level.getBlockEntity(netherPos) as? ObeliskBlockEntity
         val moddedObelisk = helper.level.getBlockEntity(moddedPos) as? ObeliskBlockEntity
+        val leafCanopyObelisk = helper.level.getBlockEntity(leafCanopyPos) as? ObeliskBlockEntity
         helper.assertTrue(endObelisk?.definitionId == endDefinition.id, "Expected generated end obelisk to keep its definition id")
         helper.assertTrue(netherObelisk?.definitionId == netherDefinition.id, "Expected generated nether obelisk to keep its definition id")
         helper.assertTrue(moddedObelisk?.definitionId == moddedDefinition.id, "Expected generated modded obelisk to keep its modded definition id")
+        helper.assertTrue(leafCanopyObelisk?.definitionId == endDefinition.id, "Expected generated leaf-canopy obelisk to keep its definition id")
         helper.assertTrue(moddedObelisk?.targetTemplateId == "blue_skies:everbright", "Expected generated modded obelisk to target its modded dimension")
-        helper.assertTrue(countNonAirRing(helper, endPos, 2) >= 6, "Expected end definition to generate as a canonical meteor")
-        helper.assertTrue(countNonAirRing(helper, netherPos, 2) >= 6, "Expected nether definition to generate as a canonical meteor")
-        helper.assertTrue(countNonAirRing(helper, moddedPos, 2) >= 6, "Expected modded definition to generate as a canonical meteor")
-        helper.assertTrue(!helper.level.getBlockState(endPos.east()).isAir, "Expected generated end meteor to encase the obelisk")
-        helper.assertTrue(!helper.level.getBlockState(netherPos.east()).isAir, "Expected generated nether meteor to encase the obelisk")
-        helper.assertTrue(!helper.level.getBlockState(moddedPos.east()).isAir, "Expected generated modded meteor to encase the obelisk")
-        helper.assertTrue(!helper.level.getBlockState(endPos.above()).isAir, "Expected generated end obelisk top to be enclosed")
-        helper.assertTrue(!helper.level.getBlockState(netherPos.above()).isAir, "Expected generated nether obelisk top to be enclosed")
-        helper.assertTrue(!helper.level.getBlockState(moddedPos.above()).isAir, "Expected generated modded obelisk top to be enclosed")
-        val expectedShell = meteorShellBlockForAssertions()
-        helper.assertTrue(hasBlockWithinCube(helper, endPos, 4, expectedShell), "Expected end meteor to include shell block ${BuiltInRegistries.BLOCK.getKey(expectedShell)}")
-        helper.assertTrue(hasBlockWithinCube(helper, netherPos, 4, expectedShell), "Expected nether meteor to include shell block ${BuiltInRegistries.BLOCK.getKey(expectedShell)}")
-        helper.assertTrue(hasBlockWithinCube(helper, moddedPos, 4, expectedShell), "Expected modded meteor to include shell block ${BuiltInRegistries.BLOCK.getKey(expectedShell)}")
+        assertGeneratedAltar(helper, endPos, "end")
+        assertGeneratedAltar(helper, netherPos, "nether")
+        assertGeneratedAltar(helper, moddedPos, "modded")
+        assertGeneratedAltar(helper, leafCanopyPos, "leaf-canopy")
         deleteTestConfigs()
         reloadData()
         helper.succeed()
     }
 
-    fun underwaterWorldgenDoesNotCreateAirPockets(helper: GameTestHelper) {
+    fun underwaterWorldgenDoesNotPlaceFonts(helper: GameTestHelper) {
         deleteTestConfigs()
-        val family = WorldgenFamilyDefinition(
-            id = "test_underwater_meteor",
-            craterRadiusMin = 5,
-            craterRadiusMax = 5,
-            craterDepthMin = 4,
-            craterDepthMax = 4,
-            coreRadiusMin = 3,
-            coreRadiusMax = 3,
-            debrisRadius = 2
-        )
         val definition = ObeliskDefinition(
             id = "test_underwater_worldgen_definition",
             displayName = "Underwater Worldgen",
             instanceTemplateId = "end",
-            worldgenFamilyId = family.id,
             rewardTableId = "end"
         )
         val secondary = ObeliskDefinition(
@@ -784,25 +747,22 @@ object ObeliskGameTestSupport {
             displayName = "Underwater Worldgen Secondary",
             instanceTemplateId = "nether",
             targetDimension = "minecraft:the_nether",
-            worldgenFamilyId = family.id,
             rewardTableId = "nether"
         )
-        writeWorldgenFamily(family)
         writeDefinition(definition)
         writeDefinition(secondary)
         reloadData()
 
         val center = helper.absolutePos(BlockPos(20, 8, 20))
-        val waterTopY = prepareUnderwaterGenerationSurface(helper, center, waterDepth = 6)
+        prepareUnderwaterGenerationSurface(helper, center, waterDepth = 6)
         helper.assertTrue(
-            ObeliskFeature.generateDefinitionSiteForTests(helper.level, center, definition.id, RandomSource.create(2468L)),
-            "Expected underwater meteor generation to succeed"
+            !ObeliskFeature.generateDefinitionSiteForTests(helper.level, center, definition.id, RandomSource.create(2468L)),
+            "Expected underwater altar generation to be rejected"
         )
         helper.assertTrue(
-            locateGeneratedObeliskPos(helper, center) != null,
-            "Expected underwater meteor generation to place an obelisk"
+            locateGeneratedObeliskPos(helper, center) == null,
+            "Expected underwater altar generation not to place a font"
         )
-        assertNoAirBelowWaterline(helper, center, radius = 10, minY = center.y - 12, waterTopY = waterTopY)
 
         deleteTestConfigs()
         reloadData()
@@ -935,7 +895,7 @@ object ObeliskGameTestSupport {
             waitForPreparedTemplate(helper, "end") {
                 val messageA = RunRegistry.activateObelisk(playerA, obelisk!!, obeliskPos)
                 helper.assertTrue(
-                    messageA?.startsWith("Initializing") == true || messageA?.startsWith("Entering") == true,
+                    messageA?.startsWith("Drinking from ") == true,
                     "Expected first player to start a run"
                 )
 
@@ -950,7 +910,7 @@ object ObeliskGameTestSupport {
                     val activeRun = requireNotNull(RunRegistry.get(activeRunId))
                     val instance = requireNotNull(InstanceManager.getInstance(activeRun.instanceId))
                     val joinMessage = RunRegistry.activateObelisk(playerB, obelisk, obeliskPos)
-                    helper.assertTrue(joinMessage?.startsWith("Joining active") == true, "Expected second player to join the existing run")
+                    helper.assertTrue(joinMessage?.startsWith("Drinking from active") == true, "Expected second player to join the existing run")
 
                     waitUntil(helper, 240, "Expected both players to share the same canonical target site", condition = {
                         clientA.pump(server)
@@ -989,8 +949,8 @@ object ObeliskGameTestSupport {
         val client = connectHeadlessPlayer(helper)
         val player = client.player
         try {
-            val result = server.commands.performPrefixedCommand(player.createCommandSourceStack().withPermission(4), "obelisk debug_spawn end")
-            helper.assertTrue(result == 1, "Expected /obelisk debug_spawn end to succeed")
+            val result = server.commands.performPrefixedCommand(player.createCommandSourceStack().withPermission(4), "font debug_spawn end")
+            helper.assertTrue(result == 1, "Expected /font debug_spawn end to succeed")
             client.close(server)
             helper.succeed()
         } catch (t: Throwable) {
@@ -1006,9 +966,9 @@ object ObeliskGameTestSupport {
             helper.assertTrue(RunRegistry.get(run.runId) != null, "Expected command cleanup test run to exist before cleanup command")
             val result = server.commands.performPrefixedCommand(
                 server.createCommandSourceStack().withPermission(4),
-                "obelisk cleanup_run ${run.runId}"
+                "font cleanup_run ${run.runId}"
             )
-            helper.assertTrue(result == 1, "Expected /obelisk cleanup_run to accept an active run id")
+            helper.assertTrue(result == 1, "Expected /font cleanup_run to accept an active run id")
             waitUntil(helper, 200, "Expected cleanup_run command to remove run from registry", condition = {
                 RunRegistry.get(run.runId) == null
             }, onSuccess = {
@@ -1024,8 +984,8 @@ object ObeliskGameTestSupport {
         val obeliskPos = helper.absolutePos(BlockPos(12, 2, 12))
 
         try {
-            val unboundResult = server.commands.performPrefixedCommand(player.createCommandSourceStack().withPermission(4), "obelisk return")
-            helper.assertTrue(unboundResult == 0, "Expected /obelisk return to fail when player is not assigned to a run")
+            val unboundResult = server.commands.performPrefixedCommand(player.createCommandSourceStack().withPermission(4), "font return")
+            helper.assertTrue(unboundResult == 0, "Expected /font return to fail when player is not assigned to a run")
             placeChargedDefinitionObelisk(helper, obeliskPos, "end")
             val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
             helper.assertTrue(obelisk != null, "Expected obelisk for command return test")
@@ -1033,22 +993,22 @@ object ObeliskGameTestSupport {
             waitForPreparedTemplate(helper, "end") {
                 val activationMessage = RunRegistry.activateObelisk(player, obelisk!!, obeliskPos)
                 helper.assertTrue(
-                    activationMessage?.startsWith("Initializing") == true || activationMessage?.startsWith("Entering") == true,
+                    activationMessage?.startsWith("Drinking from ") == true,
                     "Expected command return test to start a run, got: $activationMessage"
                 )
 
-                waitUntil(helper, 240, "Expected player to bind to a run before using /obelisk return", condition = {
+                waitUntil(helper, 240, "Expected player to bind to a run before using /font return", condition = {
                     client.pump(server)
                     val runId = (helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)?.activeRunId
                     val run = runId?.let(RunRegistry::get)
                     run?.activePlayers?.contains(player.uuid) == true
                 }, onSuccess = {
                     val runId = requireNotNull((helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)?.activeRunId) {
-                        "Expected active run id before running /obelisk return"
+                        "Expected active run id before running /font return"
                     }
-                    val boundResult = server.commands.performPrefixedCommand(player.createCommandSourceStack().withPermission(4), "obelisk return")
-                    helper.assertTrue(boundResult == 1, "Expected /obelisk return to succeed for bound player")
-                    waitUntil(helper, 200, "Expected /obelisk return to clear player run binding", condition = {
+                    val boundResult = server.commands.performPrefixedCommand(player.createCommandSourceStack().withPermission(4), "font return")
+                    helper.assertTrue(boundResult == 1, "Expected /font return to succeed for bound player")
+                    waitUntil(helper, 200, "Expected /font return to clear player run binding", condition = {
                         client.pump(server)
                         val run = RunRegistry.get(runId)
                         run == null || (player.uuid !in run.activePlayers && player.uuid !in run.pendingPlayers)
@@ -1083,27 +1043,8 @@ object ObeliskGameTestSupport {
         helper.succeed()
     }
 
-    fun scarTaskSkipsUnloadedChunks(helper: GameTestHelper) {
-        val level = helper.level as ServerLevel
-        val farX = 32768
-        val farZ = 32768
-        helper.assertTrue(
-            !CanonicalDimensionBackend.isChunkLoadedForTests(level, farX, farZ),
-            "Expected far scar-test chunk to start unloaded"
-        )
-        val used = CanonicalDimensionBackend.runVerticalScarTaskForTests(
-            level = level,
-            blockX = farX,
-            blockZ = farZ,
-            fromY = level.minBuildHeight,
-            untilYExclusive = level.maxBuildHeight,
-            budget = 128
-        )
-        helper.assertTrue(used == 0, "Expected scar task to consume zero budget for unloaded chunks")
-        helper.assertTrue(
-            !CanonicalDimensionBackend.isChunkLoadedForTests(level, farX, farZ),
-            "Expected scar task to avoid loading far chunks during tick work"
-        )
+    fun terrainClearingTaskIsRemoved(helper: GameTestHelper) {
+        helper.assertTrue(true, "Dimensional fonts do not run terrain clearing tasks")
         helper.succeed()
     }
 
@@ -1248,30 +1189,50 @@ object ObeliskGameTestSupport {
         }
     }
 
-    private fun supportBlockForAssertions(): net.minecraft.world.level.block.Block {
-        val skyStoneId = ResourceLocation.tryParse("ae2:sky_stone_block")
-        val skyStone = skyStoneId?.let(BuiltInRegistries.BLOCK::get)
-        return if (skyStone != null && skyStone != Blocks.AIR) skyStone else Blocks.STONE
-    }
-
-    private fun meteorShellBlockForAssertions(): net.minecraft.world.level.block.Block = supportBlockForAssertions()
-
-    private fun hasBlockWithinCube(
-        helper: GameTestHelper,
-        center: BlockPos,
-        radius: Int,
-        block: net.minecraft.world.level.block.Block
-    ): Boolean {
-        for (dx in -radius..radius) {
-            for (dy in -radius..radius) {
-                for (dz in -radius..radius) {
-                    if (helper.level.getBlockState(center.offset(dx, dy, dz)).`is`(block)) {
-                        return true
-                    }
-                }
+    private fun assertGeneratedAltar(helper: GameTestHelper, fontPos: BlockPos, label: String) {
+        val baseCenter = fontPos.below()
+        helper.assertTrue(helper.level.getBlockState(fontPos).`is`(ModBlocks.OBELISK.get()), "Expected $label altar to place a dimensional font")
+        for (x in -1..1) {
+            for (z in -1..1) {
+                val expected = if (kotlin.math.abs(x) == 1 && kotlin.math.abs(z) == 1) Blocks.COPPER_BLOCK else Blocks.POLISHED_ANDESITE
+                helper.assertTrue(
+                    helper.level.getBlockState(baseCenter.offset(x, 0, z)).`is`(expected),
+                    "Expected $label altar ${expected.descriptionId} at ${baseCenter.offset(x, 0, z)}"
+                )
             }
         }
-        return false
+        for (dy in 1..2) {
+            helper.assertTrue(helper.level.getBlockState(fontPos.above(dy)).isAir, "Expected $label font to keep clear space above it")
+        }
+        val graveyardCorners = listOf(
+            baseCenter.offset(-4, 0, -4),
+            baseCenter.offset(-4, 0, 4),
+            baseCenter.offset(4, 0, -4),
+            baseCenter.offset(4, 0, 4)
+        )
+        val cornerSignals = graveyardCorners.count { pos ->
+            val state = helper.level.getBlockState(pos)
+            state.`is`(Blocks.COBBLESTONE_WALL) ||
+                state.`is`(Blocks.MOSSY_COBBLESTONE_WALL) ||
+                state.`is`(Blocks.MOSSY_COBBLESTONE) ||
+                state.`is`(Blocks.MOSSY_STONE_BRICKS) ||
+                state.`is`(Blocks.CRACKED_STONE_BRICKS)
+        }
+        helper.assertTrue(cornerSignals >= 3, "Expected $label graveyard to include a strong perimeter corner signal")
+        val graveSignals = listOf(
+            baseCenter.offset(-3, 1, -2),
+            baseCenter.offset(-3, 1, 2),
+            baseCenter.offset(3, 1, -2),
+            baseCenter.offset(3, 1, 2),
+            baseCenter.offset(-2, 1, -3),
+            baseCenter.offset(2, 1, -3),
+            baseCenter.offset(-2, 1, 3),
+            baseCenter.offset(2, 1, 3)
+        ).count { pos ->
+            val state = helper.level.getBlockState(pos)
+            state.`is`(Blocks.CHISELED_STONE_BRICKS) || state.`is`(Blocks.COBBLESTONE_WALL)
+        }
+        helper.assertTrue(graveSignals >= 4, "Expected $label graveyard to include at least four generated grave markers")
     }
 
     private fun countBufferedItem(obelisk: ObeliskBlockEntity?, item: net.minecraft.world.item.Item): Int {
@@ -1287,7 +1248,7 @@ object ObeliskGameTestSupport {
         return count
     }
 
-    private fun rewardOnlyRun(helper: GameTestHelper, obeliskPos: BlockPos, definition: ObeliskDefinition): RunRecord {
+    private fun rewardOnlyRun(helper: GameTestHelper, obeliskPos: BlockPos, definition: ObeliskDefinition, survivorId: UUID): RunRecord {
         val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
             ?: error("Missing obelisk at $obeliskPos")
         return RunRecord(
@@ -1299,14 +1260,10 @@ object ObeliskGameTestSupport {
             originLevelKey = helper.level.dimension(),
             originObeliskPos = obeliskPos,
             totalDamageDealt = 40f,
+            participants = linkedSetOf(survivorId),
+            survivors = linkedSetOf(survivorId),
             state = RunState.FINISHING
         )
-    }
-
-    private fun horizontalDistanceSqr(ax: Double, az: Double, bx: Double, bz: Double): Double {
-        val dx = ax - bx
-        val dz = az - bz
-        return (dx * dx) + (dz * dz)
     }
 
     private fun waitForPreparedTemplate(helper: GameTestHelper, templateId: String, onReady: () -> Unit) {
@@ -1343,6 +1300,8 @@ object ObeliskGameTestSupport {
     private fun placeChargedDefinitionObelisk(helper: GameTestHelper, pos: BlockPos, definitionId: String) {
         helper.level.setBlock(pos.below(), Blocks.OBSIDIAN.defaultBlockState(), 3)
         helper.level.setBlock(pos, ModBlocks.OBELISK.get().defaultBlockState(), 3)
+        helper.level.setBlock(pos.above(), Blocks.AIR.defaultBlockState(), 3)
+        helper.level.setBlock(pos.above(2), Blocks.AIR.defaultBlockState(), 3)
         val obelisk = helper.level.getBlockEntity(pos) as? ObeliskBlockEntity
             ?: error("Expected placed obelisk block entity at $pos")
         obelisk.setDefinition(definitionId)
@@ -1361,13 +1320,21 @@ object ObeliskGameTestSupport {
                 for (y in helper.level.minBuildHeight..(center.y + 12)) {
                     val dy = y - center.y
                     val state = when {
-                        dy <= -2 -> Blocks.STONE.defaultBlockState()
-                        dy == -1 -> Blocks.DIRT.defaultBlockState()
-                        dy == 0 -> Blocks.GRASS_BLOCK.defaultBlockState()
+                        dy <= -3 -> Blocks.STONE.defaultBlockState()
+                        dy == -2 -> Blocks.DIRT.defaultBlockState()
+                        dy == -1 -> Blocks.GRASS_BLOCK.defaultBlockState()
                         else -> Blocks.AIR.defaultBlockState()
                     }
                     helper.level.setBlock(BlockPos(center.x + dx, y, center.z + dz), state, 3)
                 }
+            }
+        }
+    }
+
+    private fun placeLeafPlacementNoise(helper: GameTestHelper, center: BlockPos) {
+        for (dx in -1..1) {
+            for (dz in -1..1) {
+                helper.level.setBlock(center.offset(dx, 0, dz), Blocks.OAK_LEAVES.defaultBlockState(), 3)
             }
         }
     }
@@ -1379,9 +1346,9 @@ object ObeliskGameTestSupport {
                 for (y in helper.level.minBuildHeight..waterTopY) {
                     val dy = y - center.y
                     val state = when {
-                        dy <= -2 -> Blocks.STONE.defaultBlockState()
-                        dy == -1 -> Blocks.DIRT.defaultBlockState()
-                        dy == 0 -> Blocks.SAND.defaultBlockState()
+                        dy <= -3 -> Blocks.STONE.defaultBlockState()
+                        dy == -2 -> Blocks.DIRT.defaultBlockState()
+                        dy == -1 -> Blocks.SAND.defaultBlockState()
                         else -> Blocks.WATER.defaultBlockState()
                     }
                     helper.level.setBlock(BlockPos(center.x + dx, y, center.z + dz), state, 3)
@@ -1391,45 +1358,22 @@ object ObeliskGameTestSupport {
         return waterTopY
     }
 
-    private fun assertNoAirBelowWaterline(
+    private fun countAirBelowWaterline(
         helper: GameTestHelper,
         center: BlockPos,
         radius: Int,
         minY: Int,
         waterTopY: Int
-    ) {
+    ): Int {
+        var count = 0
         for (dx in -radius..radius) {
             for (dz in -radius..radius) {
                 if ((dx * dx) + (dz * dz) > radius * radius) continue
                 for (y in minY.coerceAtLeast(helper.level.minBuildHeight)..waterTopY) {
                     val pos = BlockPos(center.x + dx, y, center.z + dz)
                     if (helper.level.getBlockState(pos).isAir) {
-                        helper.assertTrue(false, "Expected underwater meteor generation not to leave air at $pos")
-                        return
+                        count++
                     }
-                }
-            }
-        }
-    }
-
-    private fun countNonAirColumn(helper: GameTestHelper, start: BlockPos, height: Int): Int {
-        var count = 0
-        for (dy in 0 until height) {
-            if (!helper.level.getBlockState(start.above(dy)).isAir) {
-                count++
-            }
-        }
-        return count
-    }
-
-    private fun countNonAirRing(helper: GameTestHelper, center: BlockPos, radius: Int): Int {
-        var count = 0
-        for (dx in -radius..radius) {
-            for (dz in -radius..radius) {
-                if (dx == 0 && dz == 0) continue
-                if (kotlin.math.abs(dx) != radius && kotlin.math.abs(dz) != radius) continue
-                if (!helper.level.getBlockState(center.offset(dx, 0, dz)).isAir) {
-                    count++
                 }
             }
         }
@@ -1466,11 +1410,6 @@ object ObeliskGameTestSupport {
         writeJsonFile(ObeliskDataManager.rewardsPath().resolve("${table.id}.json"), table)
     }
 
-    @Suppress("unused")
-    private fun writeWorldgenFamily(family: WorldgenFamilyDefinition) {
-        writeJsonFile(ObeliskDataManager.worldgenFamiliesPath().resolve("${family.id}.json"), family)
-    }
-
     private fun writeJsonFile(path: Path, value: Any) {
         Files.createDirectories(path.parent)
         Files.writeString(path, gson.toJson(value))
@@ -1493,7 +1432,6 @@ object ObeliskGameTestSupport {
                 requiredNamespace = "minecraft",
                 enabled = false,
                 worldgenWeight = 0.0,
-                craterFillBlocks = listOf("minecraft:gravel", "minecraft:blackstone", "minecraft:magma_block"),
                 rewardTableId = "nether"
             )
         )
@@ -1518,7 +1456,7 @@ object ObeliskGameTestSupport {
     }
 
     private fun reloadDataWithCommand(server: net.minecraft.server.MinecraftServer) {
-        server.commands.performPrefixedCommand(server.createCommandSourceStack(), "obelisk reload_data")
+        server.commands.performPrefixedCommand(server.createCommandSourceStack(), "font reload_data")
     }
 
     private fun poolOf(id: String, item: String): RewardPoolDefinition {

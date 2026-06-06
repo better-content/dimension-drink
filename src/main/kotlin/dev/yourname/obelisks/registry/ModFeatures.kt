@@ -12,7 +12,7 @@ object ModFeatures {
     val REGISTRY: DeferredRegister<Feature<*>> =
         DeferredRegister.create(ForgeRegistries.FEATURES, MOD_ID)
 
-    val OBELISK: RegistryObject<Feature<NoneFeatureConfiguration>> = REGISTRY.register("meteoric_rift_anchor") {
+    val OBELISK: RegistryObject<Feature<NoneFeatureConfiguration>> = REGISTRY.register("dimensional_font") {
         ObeliskFeature(NoneFeatureConfiguration.CODEC)
     }
 }

@@ -21,21 +21,17 @@ import net.minecraft.sounds.SoundSource
 import net.minecraft.world.phys.AABB
 import net.minecraft.world.phys.Vec3
 import java.util.UUID
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 
 object CanonicalDimensionBackend : RunWorldBackend {
     private const val SPAWN_CLEARANCE = 3
-    private const val SCAR_EDIT_BUDGET_PER_TICK = 384
     private const val SITE_SAVE_INTERVAL_TICKS = 100L
-    private const val LOW_POWER_DESTROY_REASON = "power-depleted"
-    private const val SUPPORT_BLOCK_ID = "ae2:sky_stone_block"
+    private const val SUPPORT_BLOCK_ID = "minecraft:stone"
 
     private val logger = LogUtils.getLogger()
     private val playerBindings = linkedMapOf<UUID, UUID>()
     private val configCache = linkedMapOf<String, BackendConfig>()
-    private val scarQueues = linkedMapOf<UUID, ScarQueue>()
     private var siteStateDirty = false
 
     override fun validateTemplate(server: MinecraftServer, templateId: String): String? {
@@ -109,7 +105,7 @@ object CanonicalDimensionBackend : RunWorldBackend {
         record.updatedGameTime = gameTime(server)
         markSiteDirty(server, immediate = true)
         logger.info(
-            "Activated canonical obelisk run site={} run={} target={} center={} origin={} {}",
+            "Activated canonical font run site={} run={} target={} center={} origin={} {}",
             record.siteId,
             runId,
             record.backendLevelKey.location(),
@@ -160,12 +156,8 @@ object CanonicalDimensionBackend : RunWorldBackend {
 
     override fun destroyRun(server: MinecraftServer, handle: ActiveSiteHandle, reason: String) {
         val record = site(server, handle.siteId) ?: return
-        scarQueues.remove(record.siteId)
         server.getLevel(record.backendLevelKey)?.let { level ->
             despawnRunMobs(level, record)
-            if (reason == LOW_POWER_DESTROY_REASON) {
-                enqueueScar(level, record, configFor(record.templateId), force = true)
-            }
         }
         playerBindings.entries.removeIf { (_, siteId) -> siteId == record.siteId }
         record.state = SiteState.SCARRED
@@ -174,33 +166,18 @@ object CanonicalDimensionBackend : RunWorldBackend {
         record.updatedGameTime = gameTime(server)
         markSiteDirty(server, immediate = true)
         logger.info(
-            "Closed canonical obelisk run site={} target={} center={} scarredColumns={} reason={}",
+            "Closed canonical font run site={} target={} center={} reason={}",
             record.siteId,
             record.backendLevelKey.location(),
             record.siteCenter,
-            record.scarredColumns.size,
             reason
         )
     }
 
     override fun tick(server: MinecraftServer) {
-        processScarQueues(server)
-
         val data = RunSiteSavedData.get(server)
         val activeSites = data.values().filter { it.state == SiteState.ACTIVE }
-        val now = gameTime(server)
-        activeSites.forEach { record ->
-            val config = configFor(record.templateId)
-            if (now - record.lastScarGameTime < config.scarIntervalTicks) {
-                return@forEach
-            }
-            val level = server.getLevel(record.backendLevelKey) ?: return@forEach
-            if (enqueueScar(level, record, config, force = false)) {
-                record.lastScarGameTime = now
-                record.updatedGameTime = now
-                markSiteDirty(server)
-            }
-        }
+        activeSites.forEach { record -> record.updatedGameTime = gameTime(server) }
         if (activeSites.isNotEmpty()) {
             val activeByDimension = activeSites.groupBy { it.backendLevelKey }
             server.playerList.players.forEach { player ->
@@ -228,25 +205,13 @@ object CanonicalDimensionBackend : RunWorldBackend {
 
     override fun describeProgress(server: MinecraftServer, handle: PreparedSiteHandle): String {
         val record = site(server, handle.siteId) ?: return "missing"
-        return "ready target=${record.backendLevelKey.location()} arrival=${record.spawnPos ?: record.siteCenter} scars=${record.scarredColumns.size}"
+        return "ready target=${record.backendLevelKey.location()} arrival=${record.spawnPos ?: record.siteCenter}"
     }
 
     override fun findActiveHandle(server: MinecraftServer, siteId: UUID): ActiveSiteHandle? = site(server, siteId)?.activeHandle()
 
     internal fun isChunkLoadedForTests(level: ServerLevel, blockX: Int, blockZ: Int): Boolean {
         return level.chunkSource.getChunkNow(blockX shr 4, blockZ shr 4) != null
-    }
-
-    internal fun runVerticalScarTaskForTests(
-        level: ServerLevel,
-        blockX: Int,
-        blockZ: Int,
-        fromY: Int,
-        untilYExclusive: Int,
-        budget: Int
-    ): Int {
-        val task = VerticalClearTask(UUID.randomUUID(), ColumnPos(blockX, blockZ), fromY, untilYExclusive)
-        return task.apply(level, budget)
     }
 
     private fun reusableSite(
@@ -283,9 +248,6 @@ object CanonicalDimensionBackend : RunWorldBackend {
         val supportBlock = resolveSupportBlock()
         for (x in -1..1) {
             for (z in -1..1) {
-                val column = ColumnPos(floor.x + x, floor.z + z)
-                record.protectedColumns += column
-                record.scarredColumns.remove(column)
                 level.setBlock(floor.offset(x, 0, z), supportBlock.defaultBlockState(), 3)
                 for (dy in 1..SPAWN_CLEARANCE) {
                     level.setBlock(floor.offset(x, dy, z), Blocks.AIR.defaultBlockState(), 3)
@@ -313,86 +275,6 @@ object CanonicalDimensionBackend : RunWorldBackend {
     private fun playReturnSounds(level: ServerLevel, at: BlockPos) {
         level.playSound(null, at, SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS, 0.65f, 0.85f)
         level.playSound(null, at, SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS, 0.45f, 1.3f)
-    }
-
-    private fun enqueueScar(level: ServerLevel, record: RunSiteRecord, config: BackendConfig, force: Boolean): Boolean {
-        val players = level.players().filter { player -> record.siteBounds.contains(player.blockPosition()) }
-        val centers = if (players.isEmpty()) listOf(record.spawnPos ?: record.siteCenter) else players.map { it.blockPosition() }
-        val queue = scarQueues.getOrPut(record.siteId) { ScarQueue(record.siteId, record.backendLevelKey) }
-        queue.levelKey = record.backendLevelKey
-        var queued = 0
-        centers.forEach { center ->
-            for (radius in 1..config.scarRadius) {
-                for (dx in -radius..radius) {
-                    for (dz in -radius..radius) {
-                        if (abs(dx) != radius && abs(dz) != radius) continue
-                        val column = ColumnPos(center.x + dx, center.z + dz)
-                        if (column in record.protectedColumns || column in record.scarredColumns || column in queue.queuedColumns) {
-                            continue
-                        }
-                        queue.queuedColumns += column
-                        queue.tasks += VerticalClearTask(record.siteId, column, level.minBuildHeight, level.maxBuildHeight)
-                        queued++
-                        if (!force && queued >= config.scarColumnsPerInterval) {
-                            markSiteDirty(level.server)
-                            return queued > 0
-                        }
-                    }
-                }
-            }
-        }
-        if (queued > 0) {
-            markSiteDirty(level.server)
-        }
-        return queued > 0
-    }
-
-    private fun processScarQueues(server: MinecraftServer) {
-        if (scarQueues.isEmpty()) {
-            return
-        }
-        var remainingBudget = SCAR_EDIT_BUDGET_PER_TICK
-        val stalled = linkedSetOf<UUID>()
-        while (remainingBudget > 0 && stalled.size < scarQueues.size) {
-            val siteId = scarQueues.keys.firstOrNull { it !in stalled } ?: break
-            val queue = scarQueues.remove(siteId) ?: break
-            val level = server.getLevel(queue.levelKey)
-            if (level == null) {
-                continue
-            }
-            val progress = drainScarQueue(level, queue, remainingBudget)
-            remainingBudget -= progress
-            if (queue.tasks.isNotEmpty()) {
-                scarQueues[siteId] = queue
-                if (progress <= 0) {
-                    stalled += siteId
-                }
-            }
-        }
-    }
-
-    private fun drainScarQueue(level: ServerLevel, queue: ScarQueue, budget: Int): Int {
-        var remaining = budget
-        var spent = 0
-        while (remaining > 0 && queue.tasks.isNotEmpty()) {
-            val task = queue.tasks.first()
-            val used = task.apply(level, remaining)
-            if (used <= 0) {
-                break
-            }
-            spent += used
-            remaining -= used
-            if (task.isComplete()) {
-                queue.tasks.removeFirst()
-                val record = site(level.server, task.siteId)
-                if (record != null) {
-                    task.onCompleted(record)
-                    queue.queuedColumns.remove(task.column)
-                    markSiteDirty(level.server)
-                }
-            }
-        }
-        return spent
     }
 
     private fun mapOriginToTarget(config: BackendConfig, templateId: String, origin: BlockPos): BlockPos {
@@ -497,63 +379,15 @@ object CanonicalDimensionBackend : RunWorldBackend {
         }
     }
 
-    private data class ScarQueue(
-        val siteId: UUID,
-        var levelKey: ResourceKey<Level>,
-        val tasks: ArrayDeque<VerticalClearTask> = ArrayDeque(),
-        val queuedColumns: MutableSet<ColumnPos> = linkedSetOf()
-    )
-
-    private class VerticalClearTask(
-        val siteId: UUID,
-        val column: ColumnPos,
-        private val fromY: Int,
-        private val untilYExclusive: Int
-    ) {
-        private var nextY: Int = fromY
-        private val cursor = BlockPos.MutableBlockPos()
-
-        fun apply(level: ServerLevel, budget: Int): Int {
-            val chunkX = column.x shr 4
-            val chunkZ = column.z shr 4
-            if (level.chunkSource.getChunkNow(chunkX, chunkZ) == null) {
-                return 0
-            }
-            var spent = 0
-            while (spent < budget && nextY < untilYExclusive) {
-                cursor.set(column.x, nextY, column.z)
-                val state = level.getBlockState(cursor)
-                if (!state.isAir || !level.getFluidState(cursor).isEmpty) {
-                    level.setBlock(cursor, Blocks.AIR.defaultBlockState(), 3)
-                }
-                nextY++
-                spent++
-            }
-            return spent
-        }
-
-        fun isComplete(): Boolean = nextY >= untilYExclusive
-
-        fun onCompleted(record: RunSiteRecord) {
-            record.scarredColumns += column
-        }
-    }
-
     private data class BackendConfig(
         val coordinateScale: Double?,
-        val runRadius: Int,
-        val scarRadius: Int,
-        val scarIntervalTicks: Long,
-        val scarColumnsPerInterval: Int
+        val runRadius: Int
     ) {
         companion object {
             fun from(definition: ObeliskDefinition?, templateId: String): BackendConfig {
                 return BackendConfig(
                     coordinateScale = definition?.coordinateScale ?: CanonicalTargetResolver.coordinateScale(templateId),
-                    runRadius = definition?.runRadius ?: 96,
-                    scarRadius = definition?.scarRadius ?: 10,
-                    scarIntervalTicks = definition?.scarIntervalTicks ?: 20L,
-                    scarColumnsPerInterval = definition?.scarColumnsPerInterval ?: 3
+                    runRadius = definition?.runRadius ?: 96
                 )
             }
         }

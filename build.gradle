@@ -4,21 +4,21 @@ plugins {
 }
 
 ext {
-    modId = 'obelisks'
-    modName = 'Dimensional Scar Expeditions'
+    modId = 'dimensionalfonts'
+    modName = 'Dimensional Fonts'
     modGroupId = 'dev.yourname.obelisks'
-    modDescription = 'Meteoric rift anchors open real-dimension expeditions where instability leaves permanent scars.'
+    modDescription = 'Dimensional blood fonts open real-dimension expeditions from small altars.'
 }
 
 apply from: rootProject.file('gradle/forge-module.gradle')
 
-def obeliskGameTestNamespaces = (findProperty('obelisksGameTestNamespaces') ?: modId).toString()
-def obeliskGameTestSelection = (findProperty('obelisksGameTestSelection') ?: 'all').toString()
+def dimensionalFontGameTestNamespaces = (findProperty('dimensionalFontsGameTestNamespaces') ?: modId).toString()
+def dimensionalFontGameTestSelection = (findProperty('dimensionalFontsGameTestSelection') ?: 'all').toString()
 
 gradle.projectsEvaluated {
     minecraft.runs.configureEach {
-        property 'forge.enabledGameTestNamespaces', obeliskGameTestNamespaces
-        property 'obelisks.gametest.selection', obeliskGameTestSelection
+        property 'forge.enabledGameTestNamespaces', dimensionalFontGameTestNamespaces
+        property 'dimensionalfonts.gametest.selection', dimensionalFontGameTestSelection
     }
 }
 
@@ -26,7 +26,7 @@ def registerGameTestServerSelectionTask = { String taskName, String selection ->
     tasks.register(taskName, Exec) {
         workingDir rootProject.projectDir
         def gradleTask = ':runGameTestServer'
-        def selectionProp = "-PobelisksGameTestSelection=${selection}"
+        def selectionProp = "-PdimensionalFontsGameTestSelection=${selection}"
         if (org.gradle.internal.os.OperatingSystem.current().isWindows()) {
             commandLine 'cmd', '/c', 'gradlew.bat', '--no-daemon', gradleTask, selectionProp
         } else {
