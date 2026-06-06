@@ -6,6 +6,7 @@ import dev.yourname.obelisks.data.ObeliskDataManager
 import dev.yourname.obelisks.registry.ModBlocks
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
+import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.tags.BlockTags
 import net.minecraft.util.RandomSource
@@ -13,6 +14,7 @@ import net.minecraft.world.level.Level
 import net.minecraft.world.level.LevelAccessor
 import net.minecraft.world.level.WorldGenLevel
 import net.minecraft.world.level.block.Blocks
+import net.minecraft.world.level.block.BushBlock
 import net.minecraft.world.level.block.LeavesBlock
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.levelgen.feature.Feature
@@ -62,7 +64,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     val aboveState = level.getBlockState(above)
                     if (state.isAir || !state.fluidState.isEmpty || isLeafLike(state) || state.`is`(Blocks.ICE)) return false
                     if (!state.isFaceSturdy(level, surface, Direction.UP)) return false
-                    if (!aboveState.fluidState.isEmpty || (!aboveState.canBeReplaced() && !isLeafLike(aboveState))) return false
+                    if (!canReplaceSiteAirspace(aboveState)) return false
                 }
             }
             return true
@@ -273,7 +275,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
         private fun canReplaceDecoration(level: LevelAccessor, pos: BlockPos): Boolean {
             val state = level.getBlockState(pos)
-            return state.fluidState.isEmpty && state.canBeReplaced()
+            return canReplaceSiteAirspace(state)
         }
 
         private fun canPlaceStructureBase(level: LevelAccessor, pos: BlockPos): Boolean {
@@ -283,7 +285,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             if (supportState.isAir || !supportState.fluidState.isEmpty || isLeafLike(supportState) || supportState.`is`(Blocks.ICE)) return false
             if (!supportState.isFaceSturdy(level, support, Direction.UP)) return false
             return state.fluidState.isEmpty && (
-                state.canBeReplaced() ||
+                canReplaceSiteAirspace(state) ||
                     state.`is`(Blocks.COBBLESTONE_WALL) ||
                     state.`is`(Blocks.MOSSY_COBBLESTONE_WALL) ||
                     state.`is`(Blocks.GRAVEL) ||
@@ -304,6 +306,31 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
         private fun isLeafLike(state: BlockState): Boolean =
             state.`is`(BlockTags.LEAVES) || state.block is LeavesBlock
+
+        private fun canReplaceSiteAirspace(state: BlockState): Boolean =
+            state.fluidState.isEmpty && (state.canBeReplaced() || isLeafLike(state) || isFoliageLikeAirspace(state))
+
+        private fun isFoliageLikeAirspace(state: BlockState): Boolean {
+            if (state.block is BushBlock) return true
+            val path = BuiltInRegistries.BLOCK.getKey(state.block).path
+            return path == "grass" ||
+                path == "tall_grass" ||
+                path == "fern" ||
+                path == "large_fern" ||
+                path == "dead_bush" ||
+                path.endsWith("_grass") ||
+                path.endsWith("_fern") ||
+                path.endsWith("_bush") ||
+                path.endsWith("_shrub") ||
+                path.endsWith("_sprout") ||
+                path.endsWith("_shoots") ||
+                path.endsWith("_roots") ||
+                path.endsWith("_vine") ||
+                path.endsWith("_vines") ||
+                path.endsWith("_foliage") ||
+                path.endsWith("_flower") ||
+                path.endsWith("_flowers")
+        }
 
         private fun isGateGap(x: Int, z: Int): Boolean =
             (kotlin.math.abs(x) == GRAVEYARD_RADIUS && kotlin.math.abs(z) <= 1) ||

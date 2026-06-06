@@ -681,11 +681,14 @@ object ObeliskGameTestSupport {
         val netherCenter = helper.absolutePos(BlockPos(36, 3, 4))
         val moddedCenter = helper.absolutePos(BlockPos(52, 3, 4))
         val leafCanopyCenter = helper.absolutePos(BlockPos(68, 3, 4))
+        val foliageCenter = helper.absolutePos(BlockPos(84, 3, 4))
         prepareGenerationSurface(helper, endSurfaceCenter)
         prepareGenerationSurface(helper, netherCenter)
         prepareGenerationSurface(helper, moddedCenter)
         prepareGenerationSurface(helper, leafCanopyCenter)
+        prepareGenerationSurface(helper, foliageCenter)
         placeLeafPlacementNoise(helper, leafCanopyCenter)
+        placeFoliagePlacementNoise(helper, foliageCenter)
 
         helper.assertTrue(
             ObeliskFeature.generateDefinitionSiteForTests(helper.level, endCenter, endDefinition.id, RandomSource.create(1234L)),
@@ -703,6 +706,10 @@ object ObeliskGameTestSupport {
             ObeliskFeature.generateDefinitionSiteForTests(helper.level, leafCanopyCenter.above(12), endDefinition.id, RandomSource.create(3456L)),
             "Expected leaf-canopy test generation to ignore leaves and choose the sturdy surface"
         )
+        helper.assertTrue(
+            ObeliskFeature.generateDefinitionSiteForTests(helper.level, foliageCenter.above(12), endDefinition.id, RandomSource.create(4567L)),
+            "Expected foliage test generation to treat tall grass and bushes as replaceable airspace"
+        )
 
         val endPos = requireNotNull(locateGeneratedObeliskPos(helper, endCenter)) {
             "Expected end definition site to place a font on the altar"
@@ -716,19 +723,25 @@ object ObeliskGameTestSupport {
         val leafCanopyPos = requireNotNull(locateGeneratedObeliskPos(helper, leafCanopyCenter)) {
             "Expected leaf-canopy definition site to place a font on the altar"
         }
+        val foliagePos = requireNotNull(locateGeneratedObeliskPos(helper, foliageCenter)) {
+            "Expected foliage definition site to place a font on the altar"
+        }
         val endObelisk = helper.level.getBlockEntity(endPos) as? ObeliskBlockEntity
         val netherObelisk = helper.level.getBlockEntity(netherPos) as? ObeliskBlockEntity
         val moddedObelisk = helper.level.getBlockEntity(moddedPos) as? ObeliskBlockEntity
         val leafCanopyObelisk = helper.level.getBlockEntity(leafCanopyPos) as? ObeliskBlockEntity
+        val foliageObelisk = helper.level.getBlockEntity(foliagePos) as? ObeliskBlockEntity
         helper.assertTrue(endObelisk?.definitionId == endDefinition.id, "Expected generated end obelisk to keep its definition id")
         helper.assertTrue(netherObelisk?.definitionId == netherDefinition.id, "Expected generated nether obelisk to keep its definition id")
         helper.assertTrue(moddedObelisk?.definitionId == moddedDefinition.id, "Expected generated modded obelisk to keep its modded definition id")
         helper.assertTrue(leafCanopyObelisk?.definitionId == endDefinition.id, "Expected generated leaf-canopy obelisk to keep its definition id")
+        helper.assertTrue(foliageObelisk?.definitionId == endDefinition.id, "Expected generated foliage obelisk to keep its definition id")
         helper.assertTrue(moddedObelisk?.targetTemplateId == "blue_skies:everbright", "Expected generated modded obelisk to target its modded dimension")
         assertGeneratedAltar(helper, endPos, "end")
         assertGeneratedAltar(helper, netherPos, "nether")
         assertGeneratedAltar(helper, moddedPos, "modded")
         assertGeneratedAltar(helper, leafCanopyPos, "leaf-canopy")
+        assertGeneratedAltar(helper, foliagePos, "foliage")
         deleteTestConfigs()
         reloadData()
         helper.succeed()
@@ -1335,6 +1348,16 @@ object ObeliskGameTestSupport {
         for (dx in -1..1) {
             for (dz in -1..1) {
                 helper.level.setBlock(center.offset(dx, 0, dz), Blocks.OAK_LEAVES.defaultBlockState(), 3)
+            }
+        }
+    }
+
+    private fun placeFoliagePlacementNoise(helper: GameTestHelper, center: BlockPos) {
+        val foliage = listOf(Blocks.GRASS, Blocks.TALL_GRASS, Blocks.FERN, Blocks.LARGE_FERN, Blocks.DEAD_BUSH)
+        for (dx in -1..1) {
+            for (dz in -1..1) {
+                val block = foliage[Math.floorMod(dx * 5 + dz, foliage.size)]
+                helper.level.setBlock(center.offset(dx, 0, dz), block.defaultBlockState(), 3)
             }
         }
     }
