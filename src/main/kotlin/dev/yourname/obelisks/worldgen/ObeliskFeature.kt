@@ -26,7 +26,9 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
     companion object {
         private const val FOOTPRINT_RADIUS = 1
         private const val GRAVEYARD_RADIUS = 4
-        private const val OUTER_RUN_RADIUS = 8
+        private const val OUTER_RUN_MIN_RADIUS = 12
+        private const val OUTER_RUN_RADIUS = 18
+        private const val OUTER_RUN_HALF_WIDTH = 2
 
         fun generateDefinitionSiteForTests(
             level: ServerLevel,
@@ -276,28 +278,28 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val directions = listOf(Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST).shuffled(random)
             directions.forEach { direction ->
                 val side = direction.clockWise
-                val runLength = 5 + random.nextInt(OUTER_RUN_RADIUS - GRAVEYARD_RADIUS + 1)
+                val runLength = OUTER_RUN_MIN_RADIUS + random.nextInt(OUTER_RUN_RADIUS - OUTER_RUN_MIN_RADIUS + 1)
                 for (step in GRAVEYARD_RADIUS + 1..runLength) {
-                    for (width in -1..1) {
+                    for (width in -OUTER_RUN_HALF_WIDTH..OUTER_RUN_HALF_WIDTH) {
                         val pos = center.relative(direction, step).relative(side, width)
                         if (!canPlaceDecoration(level, pos)) continue
                         val block = when {
                             width == 0 -> weightedBlock(random, Blocks.GRAVEL, Blocks.COARSE_DIRT, Blocks.MOSSY_COBBLESTONE)
-                            random.nextInt(4) == 0 -> weightedBlock(random, Blocks.COARSE_DIRT, Blocks.GRAVEL, Blocks.CRACKED_STONE_BRICKS)
+                            kotlin.math.abs(width) == 1 && random.nextInt(2) == 0 -> weightedBlock(random, Blocks.COARSE_DIRT, Blocks.GRAVEL, Blocks.CRACKED_STONE_BRICKS)
+                            random.nextInt(4) == 0 -> weightedBlock(random, Blocks.COARSE_DIRT, Blocks.GRAVEL, Blocks.MOSSY_COBBLESTONE)
                             else -> null
                         }
                         if (block != null) placeWeatheredFloor(setBlock, pos, block)
                     }
-                    if (step >= GRAVEYARD_RADIUS + 2 && random.nextInt(3) == 0) {
-                        val sideOffset = if (random.nextBoolean()) -2 else 2
-                        val graveBase = center.relative(direction, step).relative(side, sideOffset)
-                        buildGrave(
-                            level,
-                            setBlock,
-                            graveBase,
-                            GraveSlot(graveBase.x - center.x, graveBase.z - center.z),
-                            random
-                        )
+                    if (step >= GRAVEYARD_RADIUS + 2 && random.nextInt(2) == 0) {
+                        val sideOffset = if (random.nextBoolean()) -(OUTER_RUN_HALF_WIDTH + 1) else OUTER_RUN_HALF_WIDTH + 1
+                        buildOuterGrave(level, setBlock, center, center.relative(direction, step).relative(side, sideOffset), random)
+                        if (random.nextInt(3) == 0) {
+                            buildOuterGrave(level, setBlock, center, center.relative(direction, step).relative(side, -sideOffset), random)
+                        }
+                    }
+                    if (step in GRAVEYARD_RADIUS + 4 until runLength && step % 4 == 0 && random.nextInt(3) != 0) {
+                        buildBranchRun(level, setBlock, center, center.relative(direction, step), side, random)
                     }
                     if (step == runLength && random.nextBoolean()) {
                         val marker = center.relative(direction, step).relative(side, if (random.nextBoolean()) -1 else 1)
@@ -308,6 +310,43 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     }
                 }
             }
+        }
+
+        private fun buildBranchRun(
+            level: LevelAccessor,
+            setBlock: (BlockPos, BlockState, Int) -> Boolean,
+            center: BlockPos,
+            base: BlockPos,
+            side: Direction,
+            random: RandomSource
+        ) {
+            val branchDirection = if (random.nextBoolean()) side else side.opposite
+            val branchLength = 4 + random.nextInt(6)
+            for (step in 1..branchLength) {
+                val pos = base.relative(branchDirection, step)
+                if (canPlaceDecoration(level, pos)) {
+                    placeWeatheredFloor(setBlock, pos, weightedBlock(random, Blocks.GRAVEL, Blocks.COARSE_DIRT, Blocks.CRACKED_STONE_BRICKS))
+                }
+                if (step >= 2 && random.nextInt(2) == 0) {
+                    buildOuterGrave(level, setBlock, center, pos.relative(branchDirection, 1), random)
+                }
+            }
+        }
+
+        private fun buildOuterGrave(
+            level: LevelAccessor,
+            setBlock: (BlockPos, BlockState, Int) -> Boolean,
+            center: BlockPos,
+            base: BlockPos,
+            random: RandomSource
+        ) {
+            buildGrave(
+                level,
+                setBlock,
+                base,
+                GraveSlot(base.x - center.x, base.z - center.z),
+                random
+            )
         }
 
         private fun canPlaceDecoration(level: LevelAccessor, pos: BlockPos): Boolean {
