@@ -26,6 +26,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
     companion object {
         private const val FOOTPRINT_RADIUS = 1
         private const val GRAVEYARD_RADIUS = 4
+        private const val OUTER_RUN_RADIUS = 8
 
         fun generateDefinitionSiteForTests(
             level: ServerLevel,
@@ -123,6 +124,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
 
             buildAtmosphereDetails(level, setBlock, center, random)
+            buildOuterGraveyardRuns(level, setBlock, center, random)
         }
 
         private fun buildWeatheredFloor(
@@ -155,7 +157,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                         random.nextInt(6) == 0 -> if (random.nextBoolean()) Blocks.COARSE_DIRT else Blocks.GRAVEL
                         else -> null
                     }
-                    if (block != null) setBlock(pos, block.defaultBlockState(), 3)
+                    if (block != null) placeWeatheredFloor(setBlock, pos, block)
                 }
             }
         }
@@ -201,7 +203,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val foot = base.offset(dx, 0, dz)
             if (!canPlaceStructureBase(level, base) || !canPlaceStructureBase(level, foot) || !canReplaceDecoration(level, base.above())) return
             setBlock(base, weightedBlock(random, slab, Blocks.STONE_BRICKS, Blocks.MOSSY_COBBLESTONE, Blocks.CRACKED_STONE_BRICKS).defaultBlockState(), 3)
-            setBlock(foot, weightedBlock(random, slab, Blocks.GRAVEL, Blocks.COARSE_DIRT, Blocks.MOSSY_COBBLESTONE).defaultBlockState(), 3)
+            placeWeatheredFloor(setBlock, foot, weightedBlock(random, slab, Blocks.GRAVEL, Blocks.COARSE_DIRT, Blocks.MOSSY_COBBLESTONE))
             setBlock(base.above(), head.defaultBlockState(), 3)
             placeIfClear(level, setBlock, foot.above(), if (random.nextInt(3) == 0) Blocks.WITHER_ROSE else Blocks.RED_CANDLE)
         }
@@ -265,6 +267,49 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
         }
 
+        private fun buildOuterGraveyardRuns(
+            level: LevelAccessor,
+            setBlock: (BlockPos, BlockState, Int) -> Boolean,
+            center: BlockPos,
+            random: RandomSource
+        ) {
+            val directions = listOf(Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST).shuffled(random)
+            directions.forEach { direction ->
+                val side = direction.clockWise
+                val runLength = 5 + random.nextInt(OUTER_RUN_RADIUS - GRAVEYARD_RADIUS + 1)
+                for (step in GRAVEYARD_RADIUS + 1..runLength) {
+                    for (width in -1..1) {
+                        val pos = center.relative(direction, step).relative(side, width)
+                        if (!canPlaceDecoration(level, pos)) continue
+                        val block = when {
+                            width == 0 -> weightedBlock(random, Blocks.GRAVEL, Blocks.COARSE_DIRT, Blocks.MOSSY_COBBLESTONE)
+                            random.nextInt(4) == 0 -> weightedBlock(random, Blocks.COARSE_DIRT, Blocks.GRAVEL, Blocks.CRACKED_STONE_BRICKS)
+                            else -> null
+                        }
+                        if (block != null) placeWeatheredFloor(setBlock, pos, block)
+                    }
+                    if (step >= GRAVEYARD_RADIUS + 2 && random.nextInt(3) == 0) {
+                        val sideOffset = if (random.nextBoolean()) -2 else 2
+                        val graveBase = center.relative(direction, step).relative(side, sideOffset)
+                        buildGrave(
+                            level,
+                            setBlock,
+                            graveBase,
+                            GraveSlot(graveBase.x - center.x, graveBase.z - center.z),
+                            random
+                        )
+                    }
+                    if (step == runLength && random.nextBoolean()) {
+                        val marker = center.relative(direction, step).relative(side, if (random.nextBoolean()) -1 else 1)
+                        if (canPlaceStructureBase(level, marker)) {
+                            setBlock(marker, Blocks.MOSSY_COBBLESTONE_WALL.defaultBlockState(), 3)
+                            placeIfClear(level, setBlock, marker.above(), Blocks.SOUL_LANTERN)
+                        }
+                    }
+                }
+            }
+        }
+
         private fun canPlaceDecoration(level: LevelAccessor, pos: BlockPos): Boolean {
             val support = pos.below()
             val supportState = level.getBlockState(support)
@@ -300,6 +345,9 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             if (!canReplaceDecoration(level, pos)) return false
             return setBlock(pos, block.defaultBlockState(), 3)
         }
+
+        private fun placeWeatheredFloor(setBlock: (BlockPos, BlockState, Int) -> Boolean, pos: BlockPos, block: net.minecraft.world.level.block.Block): Boolean =
+            setBlock(pos, block.defaultBlockState(), 3)
 
         private fun weightedBlock(random: RandomSource, vararg blocks: net.minecraft.world.level.block.Block): net.minecraft.world.level.block.Block =
             blocks[random.nextInt(blocks.size)]
