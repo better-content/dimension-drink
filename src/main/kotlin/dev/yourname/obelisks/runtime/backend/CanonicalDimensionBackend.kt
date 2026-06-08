@@ -233,7 +233,8 @@ object CanonicalDimensionBackend : RunWorldBackend {
             record.spawnPos!!.below()
         } else {
             val desired = record.siteCenter
-            findSafeFloor(level, desired.x, desired.z) ?: BlockPos(desired.x, emergencySpawnY(level) - 1, desired.z)
+            findSafeFloor(level, desired.x, desired.z, config.spawnSearchRadius)
+                ?: BlockPos(desired.x, emergencySpawnY(level) - 1, desired.z)
         }
         ensureArrivalAnchor(level, record, resolvedFloor)
         val spawn = resolvedFloor.above().immutable()
@@ -280,6 +281,17 @@ object CanonicalDimensionBackend : RunWorldBackend {
     private fun mapOriginToTarget(config: BackendConfig, templateId: String, origin: BlockPos): BlockPos {
         val scale = config.coordinateScale ?: CanonicalTargetResolver.coordinateScale(templateId)
         return BlockPos((origin.x * scale).roundToInt(), origin.y, (origin.z * scale).roundToInt())
+    }
+
+    private fun findSafeFloor(level: ServerLevel, x: Int, z: Int, searchRadius: Int): BlockPos? {
+        val radius = searchRadius.coerceAtLeast(0)
+        for (dx in -radius..radius) {
+            for (dz in -radius..radius) {
+                val floor = findSafeFloor(level, x + dx, z + dz)
+                if (floor != null) return floor
+            }
+        }
+        return null
     }
 
     private fun findSafeFloor(level: ServerLevel, x: Int, z: Int): BlockPos? {
@@ -381,13 +393,15 @@ object CanonicalDimensionBackend : RunWorldBackend {
 
     private data class BackendConfig(
         val coordinateScale: Double?,
-        val runRadius: Int
+        val runRadius: Int,
+        val spawnSearchRadius: Int
     ) {
         companion object {
             fun from(definition: ObeliskDefinition?, templateId: String): BackendConfig {
                 return BackendConfig(
                     coordinateScale = definition?.coordinateScale ?: CanonicalTargetResolver.coordinateScale(templateId),
-                    runRadius = definition?.runRadius ?: 96
+                    runRadius = definition?.runRadius ?: 96,
+                    spawnSearchRadius = definition?.spawnSearchRadius ?: 16
                 )
             }
         }

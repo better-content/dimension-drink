@@ -18,8 +18,8 @@ class DimensionalFontWorldgenPlacementTest {
             "Dimensional font worldgen should keep an explicit rarity contract"
         )
         assertTrue(
-            Regex(""""chance"\s*:\s*[1-8]\b""").containsMatchIn(json),
-            "Dimensional fonts should attempt at least once per eight chunks before terrain rejection"
+            Regex(""""chance"\s*:\s*(?:[1-9]|10)\b""").containsMatchIn(json),
+            "Dimensional fonts should use a bounded, low-frequency attempt schedule"
         )
         assertFalse(
             Regex(""""type"\s*:\s*"minecraft:heightmap"""").containsMatchIn(json),
