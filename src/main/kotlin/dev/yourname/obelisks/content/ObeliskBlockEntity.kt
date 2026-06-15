@@ -10,7 +10,10 @@ import net.minecraft.core.Direction
 import net.minecraft.nbt.CompoundTag
 import net.minecraft.nbt.Tag
 import net.minecraft.resources.ResourceLocation
+import net.minecraft.sounds.SoundEvents
+import net.minecraft.sounds.SoundSource
 import net.minecraft.world.item.ItemStack
+import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraftforge.common.capabilities.Capability
@@ -71,6 +74,9 @@ class ObeliskBlockEntity(
 
     var heartStack: ItemStack = ItemStack.EMPTY
         private set
+
+    private var nextReadyAmbientGameTime: Long = 0L
+    private var nextLowBloodAmbientGameTime: Long = 0L
 
     private val energyStorage = object : IEnergyStorage {
         override fun receiveEnergy(maxReceive: Int, simulate: Boolean): Int {
@@ -266,6 +272,41 @@ class ObeliskBlockEntity(
     fun shouldShowBeam(): Boolean = beamVisible && (isRunActive() || bloodStored >= getMaxBlood())
 
     fun hasHeart(): Boolean = !heartStack.isEmpty
+
+    fun isReadyToOpen(): Boolean = hasHeart() && !isRunActive() && !isOnCooldown() && bloodStored >= getBloodStartCost()
+
+    fun isLowBloodWarning(): Boolean = hasHeart() && !isReadyToOpen() && bloodStored < getBloodStartCost() * 0.35
+
+    fun clientAmbientTick(tickLevel: Level, tickPos: BlockPos) {
+        if (!tickLevel.isClientSide) return
+        val gameTime = tickLevel.gameTime
+        if (isReadyToOpen() && gameTime >= nextReadyAmbientGameTime) {
+            nextReadyAmbientGameTime = gameTime + 75L + tickLevel.random.nextInt(55)
+            tickLevel.playLocalSound(
+                tickPos.x + 0.5,
+                tickPos.y + 0.5,
+                tickPos.z + 0.5,
+                SoundEvents.AMETHYST_BLOCK_CHIME,
+                SoundSource.BLOCKS,
+                0.35f,
+                0.55f + tickLevel.random.nextFloat() * 0.2f,
+                false
+            )
+        }
+        if (isLowBloodWarning() && gameTime >= nextLowBloodAmbientGameTime) {
+            nextLowBloodAmbientGameTime = gameTime + 95L + tickLevel.random.nextInt(75)
+            tickLevel.playLocalSound(
+                tickPos.x + 0.5,
+                tickPos.y + 0.5,
+                tickPos.z + 0.5,
+                if (tickLevel.random.nextBoolean()) SoundEvents.SOUL_ESCAPE else SoundEvents.WARDEN_AMBIENT,
+                SoundSource.BLOCKS,
+                0.45f,
+                0.65f + tickLevel.random.nextFloat() * 0.25f,
+                false
+            )
+        }
+    }
 
     fun canAcceptHeart(stack: ItemStack): Boolean = heartStack.isEmpty && isStillBeatingHeart(stack)
 

@@ -52,6 +52,21 @@ class ObeliskBlockEntityRenderer(
             12.0f / 16.0f,
             packedLight
         )
+
+        val meniscus = 0.02f + percent * 0.025f
+        renderBox(
+            poseStack,
+            consumer,
+            3.7f / 16.0f,
+            top,
+            3.7f / 16.0f,
+            12.3f / 16.0f,
+            (top + meniscus).coerceAtMost(UPPER_BLOOD_Y + 0.035f),
+            12.3f / 16.0f,
+            packedLight,
+            205,
+            (72 + percent * 72.0f).toInt().coerceIn(72, 144)
+        )
     }
 
     private fun renderHeart(
@@ -96,21 +111,37 @@ class ObeliskBlockEntityRenderer(
         maxZ: Float,
         packedLight: Int
     ) {
+        renderBox(poseStack, consumer, minX, minY, minZ, maxX, maxY, maxZ, packedLight, 145, 210)
+    }
+
+    private fun renderBox(
+        poseStack: PoseStack,
+        consumer: VertexConsumer,
+        minX: Float,
+        minY: Float,
+        minZ: Float,
+        maxX: Float,
+        maxY: Float,
+        maxZ: Float,
+        packedLight: Int,
+        red: Int,
+        alpha: Int
+    ) {
         val pose = poseStack.last()
-        vertex(consumer, pose, minX, maxY, minZ, 0.0f, 0.0f, packedLight)
-        vertex(consumer, pose, minX, maxY, maxZ, 0.0f, 1.0f, packedLight)
-        vertex(consumer, pose, maxX, maxY, maxZ, 1.0f, 1.0f, packedLight)
-        vertex(consumer, pose, maxX, maxY, minZ, 1.0f, 0.0f, packedLight)
+        vertex(consumer, pose, minX, maxY, minZ, 0.0f, 0.0f, packedLight, red, alpha)
+        vertex(consumer, pose, minX, maxY, maxZ, 0.0f, 1.0f, packedLight, red, alpha)
+        vertex(consumer, pose, maxX, maxY, maxZ, 1.0f, 1.0f, packedLight, red, alpha)
+        vertex(consumer, pose, maxX, maxY, minZ, 1.0f, 0.0f, packedLight, red, alpha)
 
-        vertex(consumer, pose, minX, minY, minZ, 0.0f, 0.0f, packedLight)
-        vertex(consumer, pose, maxX, minY, minZ, 1.0f, 0.0f, packedLight)
-        vertex(consumer, pose, maxX, minY, maxZ, 1.0f, 1.0f, packedLight)
-        vertex(consumer, pose, minX, minY, maxZ, 0.0f, 1.0f, packedLight)
+        vertex(consumer, pose, minX, minY, minZ, 0.0f, 0.0f, packedLight, red, alpha)
+        vertex(consumer, pose, maxX, minY, minZ, 1.0f, 0.0f, packedLight, red, alpha)
+        vertex(consumer, pose, maxX, minY, maxZ, 1.0f, 1.0f, packedLight, red, alpha)
+        vertex(consumer, pose, minX, minY, maxZ, 0.0f, 1.0f, packedLight, red, alpha)
 
-        side(consumer, pose, minX, minY, minZ, maxX, maxY, minZ, packedLight)
-        side(consumer, pose, maxX, minY, minZ, maxX, maxY, maxZ, packedLight)
-        side(consumer, pose, maxX, minY, maxZ, minX, maxY, maxZ, packedLight)
-        side(consumer, pose, minX, minY, maxZ, minX, maxY, minZ, packedLight)
+        side(consumer, pose, minX, minY, minZ, maxX, maxY, minZ, packedLight, red, alpha)
+        side(consumer, pose, maxX, minY, minZ, maxX, maxY, maxZ, packedLight, red, alpha)
+        side(consumer, pose, maxX, minY, maxZ, minX, maxY, maxZ, packedLight, red, alpha)
+        side(consumer, pose, minX, minY, maxZ, minX, maxY, minZ, packedLight, red, alpha)
     }
 
     private fun side(
@@ -122,12 +153,14 @@ class ObeliskBlockEntityRenderer(
         x2: Float,
         y2: Float,
         z2: Float,
-        packedLight: Int
+        packedLight: Int,
+        red: Int,
+        alpha: Int
     ) {
-        vertex(consumer, pose, x1, y1, z1, 0.0f, 1.0f, packedLight)
-        vertex(consumer, pose, x2, y1, z2, 1.0f, 1.0f, packedLight)
-        vertex(consumer, pose, x2, y2, z2, 1.0f, 0.0f, packedLight)
-        vertex(consumer, pose, x1, y2, z1, 0.0f, 0.0f, packedLight)
+        vertex(consumer, pose, x1, y1, z1, 0.0f, 1.0f, packedLight, red, alpha)
+        vertex(consumer, pose, x2, y1, z2, 1.0f, 1.0f, packedLight, red, alpha)
+        vertex(consumer, pose, x2, y2, z2, 1.0f, 0.0f, packedLight, red, alpha)
+        vertex(consumer, pose, x1, y2, z1, 0.0f, 0.0f, packedLight, red, alpha)
     }
 
     private fun vertex(
@@ -138,10 +171,12 @@ class ObeliskBlockEntityRenderer(
         z: Float,
         u: Float,
         v: Float,
-        packedLight: Int
+        packedLight: Int,
+        red: Int,
+        alpha: Int
     ) {
         consumer.vertex(pose.pose(), x, y, z)
-            .color(145, 0, 8, 210)
+            .color(red, 0, 8, alpha)
             .uv(u, v)
             .overlayCoords(OverlayTexture.NO_OVERLAY)
             .uv2(packedLight)

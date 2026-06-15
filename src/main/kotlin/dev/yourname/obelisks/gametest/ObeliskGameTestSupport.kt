@@ -1203,10 +1203,11 @@ object ObeliskGameTestSupport {
     }
 
     private fun assertGeneratedAltar(helper: GameTestHelper, fontPos: BlockPos, label: String) {
-        val baseCenter = fontPos.below()
+        val baseCenter = fontPos
         helper.assertTrue(helper.level.getBlockState(fontPos).`is`(ModBlocks.OBELISK.get()), "Expected $label altar to place a dimensional font")
         for (x in -1..1) {
             for (z in -1..1) {
+                if (x == 0 && z == 0) continue
                 val expected = if (kotlin.math.abs(x) == 1 && kotlin.math.abs(z) == 1) Blocks.COPPER_BLOCK else Blocks.POLISHED_ANDESITE
                 helper.assertTrue(
                     helper.level.getBlockState(baseCenter.offset(x, 0, z)).`is`(expected),

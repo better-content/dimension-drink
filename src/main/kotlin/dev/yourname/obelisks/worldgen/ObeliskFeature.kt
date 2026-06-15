@@ -39,7 +39,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val definition = ObeliskDataManager.getObelisk(definitionId) ?: return false
             val placementCenter = findPlacementCenter(level, center) ?: return false
             buildSiteBlocks(level, level::setBlock, placementCenter, random)
-            val fontPos = placementCenter.above()
+            val fontPos = placementCenter
             if (!level.setBlock(fontPos, ModBlocks.OBELISK.get().defaultBlockState(), 3)) return false
             val font = level.getBlockEntity(fontPos) as? ObeliskBlockEntity ?: return false
             font.setDefinition(definition.id)
@@ -61,12 +61,12 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private fun canPlace(level: LevelAccessor, center: BlockPos): Boolean {
             for (x in -FOOTPRINT_RADIUS..FOOTPRINT_RADIUS) {
                 for (z in -FOOTPRINT_RADIUS..FOOTPRINT_RADIUS) {
-                    val surface = center.offset(x, -1, z)
-                    val above = center.offset(x, 0, z)
-                    val state = level.getBlockState(surface)
+                    val surface = center.offset(x, 0, z)
+                    val above = center.offset(x, 1, z)
+                    val surfaceState = level.getBlockState(surface)
                     val aboveState = level.getBlockState(above)
-                    if (state.isAir || !state.fluidState.isEmpty || isLeafLike(state) || state.`is`(Blocks.ICE)) return false
-                    if (!state.isFaceSturdy(level, surface, Direction.UP)) return false
+                    if (surfaceState.isAir || !surfaceState.fluidState.isEmpty || isLeafLike(surfaceState) || surfaceState.`is`(Blocks.ICE)) return false
+                    if (!surfaceState.isFaceSturdy(level, surface, Direction.UP)) return false
                     if (!canReplaceSiteAirspace(aboveState)) return false
                 }
             }
@@ -350,11 +350,11 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         }
 
         private fun canPlaceDecoration(level: LevelAccessor, pos: BlockPos): Boolean {
-            val support = pos.below()
-            val supportState = level.getBlockState(support)
-            if (supportState.isAir || !supportState.fluidState.isEmpty || isLeafLike(supportState) || supportState.`is`(Blocks.ICE)) return false
-            if (!supportState.isFaceSturdy(level, support, Direction.UP)) return false
-            return canReplaceDecoration(level, pos)
+            val state = level.getBlockState(pos)
+            val aboveState = level.getBlockState(pos.above())
+            if (state.isAir || !state.fluidState.isEmpty || isLeafLike(state) || state.`is`(Blocks.ICE)) return false
+            if (!state.isFaceSturdy(level, pos, Direction.UP)) return false
+            return canReplaceSiteAirspace(aboveState)
         }
 
         private fun canReplaceDecoration(level: LevelAccessor, pos: BlockPos): Boolean {
@@ -363,20 +363,20 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         }
 
         private fun canPlaceStructureBase(level: LevelAccessor, pos: BlockPos): Boolean {
-            val support = pos.below()
-            val supportState = level.getBlockState(support)
             val state = level.getBlockState(pos)
-            if (supportState.isAir || !supportState.fluidState.isEmpty || isLeafLike(supportState) || supportState.`is`(Blocks.ICE)) return false
-            if (!supportState.isFaceSturdy(level, support, Direction.UP)) return false
-            return state.fluidState.isEmpty && (
-                canReplaceSiteAirspace(state) ||
+            val aboveState = level.getBlockState(pos.above())
+            if (state.isAir || !state.fluidState.isEmpty || isLeafLike(state) || state.`is`(Blocks.ICE)) return false
+            if (!state.isFaceSturdy(level, pos, Direction.UP)) return false
+            return canReplaceSiteAirspace(aboveState) || (
+                state.fluidState.isEmpty && (
                     state.`is`(Blocks.COBBLESTONE_WALL) ||
-                    state.`is`(Blocks.MOSSY_COBBLESTONE_WALL) ||
-                    state.`is`(Blocks.GRAVEL) ||
-                    state.`is`(Blocks.COARSE_DIRT) ||
-                    state.`is`(Blocks.MOSSY_COBBLESTONE) ||
-                    state.`is`(Blocks.STONE_BRICKS) ||
-                    state.`is`(Blocks.CRACKED_STONE_BRICKS)
+                        state.`is`(Blocks.MOSSY_COBBLESTONE_WALL) ||
+                        state.`is`(Blocks.GRAVEL) ||
+                        state.`is`(Blocks.COARSE_DIRT) ||
+                        state.`is`(Blocks.MOSSY_COBBLESTONE) ||
+                        state.`is`(Blocks.STONE_BRICKS) ||
+                        state.`is`(Blocks.CRACKED_STONE_BRICKS)
+                    )
                 )
         }
 
@@ -446,7 +446,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         val center = findPlacementCenter(level, origin) ?: return false
 
         buildSite(level, center, context.random())
-        val fontPos = center.above()
+        val fontPos = center
         if (!level.setBlock(fontPos, ModBlocks.OBELISK.get().defaultBlockState(), 3)) return false
         val font = level.getBlockEntity(fontPos) as? ObeliskBlockEntity ?: return false
         font.setDefinition(definition.id)

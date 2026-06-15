@@ -10,6 +10,8 @@ import net.minecraft.sounds.SoundEvents
 import net.minecraft.sounds.SoundSource
 import net.minecraft.util.RandomSource
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.level.block.entity.BlockEntityTicker
+import net.minecraft.world.level.block.entity.BlockEntityType
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.InteractionResult
 import net.minecraft.world.entity.player.Player
@@ -19,8 +21,6 @@ import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.EntityBlock
 import net.minecraft.world.level.block.RenderShape
 import net.minecraft.world.level.block.entity.BlockEntity
-import net.minecraft.world.level.block.entity.BlockEntityTicker
-import net.minecraft.world.level.block.entity.BlockEntityType
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.pathfinder.PathComputationType
 import net.minecraft.world.phys.BlockHitResult
@@ -36,7 +36,13 @@ class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
         level: Level,
         state: BlockState,
         blockEntityType: BlockEntityType<T>
-    ): BlockEntityTicker<T>? = null
+    ): BlockEntityTicker<T>? {
+        if (blockEntityType != ModBlockEntities.OBELISK.get()) return null
+        @Suppress("UNCHECKED_CAST")
+        return BlockEntityTicker { tickLevel: Level, tickPos: BlockPos, _: BlockState, blockEntity: T ->
+            if (blockEntity is ObeliskBlockEntity) blockEntity.clientAmbientTick(tickLevel, tickPos)
+        }
+    }
 
     override fun use(
         state: BlockState,
@@ -82,21 +88,24 @@ class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
 
     override fun animateTick(state: BlockState, level: Level, pos: BlockPos, random: RandomSource) {
         val obelisk = level.getBlockEntity(pos) as? ObeliskBlockEntity ?: return
-        if (!obelisk.shouldShowBeam() && obelisk.getEnergyPercent() < 0.25) {
+        val blood = obelisk.getEnergyPercent()
+        val ready = obelisk.isReadyToOpen()
+        val lowBlood = obelisk.isLowBloodWarning()
+        if (!ready && !lowBlood && !obelisk.shouldShowBeam() && blood < 0.25) {
             return
         }
 
         val dust = DustParticleOptions(Vector3f(0.42f, 0.02f, 0.03f), 0.8f)
-        repeat(if (obelisk.isRunActive()) 4 else 2) {
+        repeat(if (obelisk.isRunActive() || ready) 4 else 2) {
             val x = pos.x + 0.5 + (random.nextDouble() - 0.5) * 0.8
             val y = pos.y + 0.9 + random.nextDouble() * 1.4
             val z = pos.z + 0.5 + (random.nextDouble() - 0.5) * 0.8
             level.addParticle(dust, x, y, z, 0.0, 0.02 + random.nextDouble() * 0.02, 0.0)
         }
 
-        if (obelisk.isRunActive() && random.nextFloat() < 0.35f) {
+        if ((obelisk.isRunActive() || ready) && random.nextFloat() < 0.45f) {
             level.addParticle(
-                ParticleTypes.PORTAL,
+                if (ready) ParticleTypes.SOUL_FIRE_FLAME else ParticleTypes.PORTAL,
                 pos.x + 0.5 + (random.nextDouble() - 0.5),
                 pos.y + 1.0 + random.nextDouble(),
                 pos.z + 0.5 + (random.nextDouble() - 0.5),
@@ -104,6 +113,34 @@ class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
                 -random.nextDouble() * 0.1,
                 (random.nextDouble() - 0.5) * 0.2
             )
+        }
+
+        if (ready && random.nextFloat() < 0.25f) {
+            level.addParticle(
+                ParticleTypes.END_ROD,
+                pos.x + 0.5 + (random.nextDouble() - 0.5) * 1.5,
+                pos.y + 0.35 + random.nextDouble() * 1.6,
+                pos.z + 0.5 + (random.nextDouble() - 0.5) * 1.5,
+                0.0,
+                0.01 + random.nextDouble() * 0.03,
+                0.0
+            )
+        }
+
+        if (lowBlood) {
+            repeat(2) {
+                val radius = 3.0 + random.nextDouble() * 8.0
+                val angle = random.nextDouble() * Math.PI * 2.0
+                level.addParticle(
+                    if (random.nextBoolean()) ParticleTypes.SMOKE else ParticleTypes.SOUL,
+                    pos.x + 0.5 + kotlin.math.cos(angle) * radius,
+                    pos.y + 0.2 + random.nextDouble() * 0.9,
+                    pos.z + 0.5 + kotlin.math.sin(angle) * radius,
+                    (random.nextDouble() - 0.5) * 0.04,
+                    0.01 + random.nextDouble() * 0.03,
+                    (random.nextDouble() - 0.5) * 0.04
+                )
+            }
         }
     }
 
