@@ -24,6 +24,8 @@ import net.minecraft.network.chat.Component
 import net.minecraft.resources.ResourceKey
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.effect.MobEffectInstance
+import net.minecraft.world.effect.MobEffects
 import net.minecraft.world.level.Level
 import net.minecraftforge.event.TickEvent
 import net.minecraftforge.event.entity.living.LivingFallEvent
@@ -40,6 +42,7 @@ import kotlin.math.exp
 object RunRegistry : RunService {
 
     private const val RUN_SAVE_INTERVAL_TICKS = 100L
+    private const val ENTRY_WARMUP_TICKS = 30L
 
     private val logger = LogUtils.getLogger()
     private val backend = RunBackendManager.backend
@@ -47,6 +50,7 @@ object RunRegistry : RunService {
     private val dirtyRunIds = linkedSetOf<UUID>()
     private val fallDamageSuppressedPlayers = linkedSetOf<UUID>()
     private val pendingDeathReturns = linkedMapOf<UUID, DeathReturnTarget>()
+    private val pendingEntryWarmups = linkedMapOf<UUID, EntryWarmup>()
     private var shuttingDown = false
 
     private sealed interface RunEntryAttempt {
@@ -58,6 +62,13 @@ object RunRegistry : RunService {
     private data class DeathReturnTarget(
         val levelKey: ResourceKey<Level>,
         val pos: BlockPos
+    )
+
+    private data class EntryWarmup(
+        val runId: UUID,
+        val startedGameTime: Long,
+        val bloodCost: Double,
+        val message: String
     )
 
     override fun getRun(playerId: UUID): RunHandle? {
@@ -88,6 +99,7 @@ object RunRegistry : RunService {
                 player.fallDistance = 0.0f
                 val record = mutableRunForPlayer(player.uuid)
                 if (record != null) {
+                    clearEntryWarmup(player)
                     removePlayer(record, player.uuid, disqualify = disqualify)
                     persistRunNow(player.server, record)
                 }
@@ -101,6 +113,7 @@ object RunRegistry : RunService {
     fun clearPlayerAssignment(server: MinecraftServer, playerId: UUID): Boolean {
         val record = mutableRunForPlayer(playerId) ?: return false
         removePlayer(record, playerId, disqualify = true)
+        clearEntryWarmup(server, playerId)
         backend.clearPlayer(playerId)
         persistRunNow(server, record)
         return true
@@ -193,6 +206,7 @@ object RunRegistry : RunService {
                 existingRun.updatedGameTime = currentGameTime(server)
                 persistRunNow(server, existingRun)
             }
+            startEntryWarmup(server, existingRun, player, joinCost, "Drinking from active ${displayName(existingRun.definitionId)}...")
             return when (val entry = tryQueueEntry(server, existingRun, player)) {
                 RunEntryAttempt.Entered -> "Drinking from active ${displayName(existingRun.definitionId)}..."
                 is RunEntryAttempt.Waiting -> entry.message
@@ -226,6 +240,7 @@ object RunRegistry : RunService {
         obelisk.drainBlood(startCost)
         obelisk.setActiveRun(created.id)
         markEligible(created, player.uuid)
+        startEntryWarmup(server, created, player, startCost, "Drinking from ${displayName(created.definitionId)}...")
         return when (val entry = tryQueueEntry(server, created, player)) {
             RunEntryAttempt.Entered -> "Drinking from ${displayName(created.definitionId)}..."
             is RunEntryAttempt.Waiting -> entry.message
@@ -270,6 +285,7 @@ object RunRegistry : RunService {
             persistRunNow(player.server, run)
         }
         fallDamageSuppressedPlayers.remove(player.uuid)
+        clearEntryWarmup(player)
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
@@ -299,6 +315,7 @@ object RunRegistry : RunService {
     fun onPlayerRespawn(event: PlayerEvent.PlayerRespawnEvent) {
         val player = event.entity as? ServerPlayer ?: return
         val target = pendingDeathReturns.remove(player.uuid) ?: return
+        clearEntryWarmup(player)
         val level = player.server.getLevel(target.levelKey) ?: return
         val x = target.pos.x + 0.5
         val y = target.pos.y + 1.0
@@ -320,6 +337,7 @@ object RunRegistry : RunService {
         }
         runs.clear()
         dirtyRunIds.clear()
+        pendingEntryWarmups.clear()
         RunSavedData.get(event.server).replaceAll(emptyList())
     }
 
@@ -328,11 +346,13 @@ object RunRegistry : RunService {
         shuttingDown = false
         runs.clear()
         dirtyRunIds.clear()
+        pendingEntryWarmups.clear()
     }
 
     fun restoreFromSavedData(server: MinecraftServer) {
         runs.clear()
         dirtyRunIds.clear()
+        pendingEntryWarmups.clear()
         RunSavedData.get(server).values().forEach { record ->
             runs[record.id] = record.deepCopy()
         }
@@ -527,9 +547,26 @@ object RunRegistry : RunService {
     }
 
     private fun tryQueueEntry(server: MinecraftServer, record: RunRecord, player: ServerPlayer): RunEntryAttempt {
+        val warmup = pendingEntryWarmups[player.uuid]
+        if (warmup == null || warmup.runId != record.id) {
+            startEntryWarmup(server, record, player, 0.0, "Drinking from ${displayName(record.definitionId)}...")
+            return RunEntryAttempt.Waiting(pendingEntryWarmups[player.uuid]?.message ?: "Drinking...")
+        }
+        applyEntryWarmupEffects(player)
+        val elapsed = currentGameTime(server) - warmup.startedGameTime
+        if (elapsed < ENTRY_WARMUP_TICKS) {
+            return RunEntryAttempt.Waiting(warmup.message)
+        }
         val handle = activeHandle(server, record)
-            ?: return RunEntryAttempt.Rejected("Run is unavailable right now - backend site is missing")
+        if (handle == null) {
+            refundEntryCost(server, record, player)
+            clearEntryWarmup(player)
+            removePlayer(record, player.uuid)
+            persistRunNow(server, record)
+            return RunEntryAttempt.Rejected("Run is unavailable right now - backend site is missing")
+        }
         if (backend.isPlayerInRun(player, handle)) {
+            clearEntryWarmup(player)
             record.pendingPlayers.remove(player.uuid)
             record.activePlayers.add(player.uuid)
             record.state = RunState.ACTIVE
@@ -541,6 +578,7 @@ object RunRegistry : RunService {
         return when (val result = backend.enterPlayer(player, handle)) {
             EnterRunResult.Entered -> {
                 logger.info("Entered player {} into font run {} site {}", player.gameProfile.name, record.id, record.instanceId)
+                clearEntryWarmup(player)
                 record.pendingPlayers.remove(player.uuid)
                 record.activePlayers.add(player.uuid)
                 markEligible(record, player.uuid)
@@ -558,6 +596,8 @@ object RunRegistry : RunService {
                     record.instanceId,
                     result.reason
                 )
+                refundEntryCost(server, record, player)
+                clearEntryWarmup(player)
                 removePlayer(record, player.uuid)
                 persistRunNow(server, record)
                 player.sendSystemMessage(Component.literal("Failed to enter font run: ${result.reason}"))
@@ -585,6 +625,45 @@ object RunRegistry : RunService {
         activeHandle(server, record)?.let { backend.destroyRun(server, it, reason) }
         runs.remove(record.id)
         deleteRunNow(server, record.id)
+    }
+
+    private fun startEntryWarmup(server: MinecraftServer, record: RunRecord, player: ServerPlayer, bloodCost: Double, message: String) {
+        val current = pendingEntryWarmups[player.uuid]
+        if (current?.runId == record.id) {
+            applyEntryWarmupEffects(player)
+            return
+        }
+        pendingEntryWarmups[player.uuid] = EntryWarmup(
+            runId = record.id,
+            startedGameTime = currentGameTime(server),
+            bloodCost = bloodCost,
+            message = message
+        )
+        record.state = RunState.WARMING_UP
+        applyEntryWarmupEffects(player)
+    }
+
+    private fun applyEntryWarmupEffects(player: ServerPlayer) {
+        player.addEffect(MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 12, 3, false, false, true))
+        player.addEffect(MobEffectInstance(MobEffects.DARKNESS, 12, 0, false, false, true))
+        player.foodData.addExhaustion(0.16f)
+    }
+
+    private fun clearEntryWarmup(player: ServerPlayer) {
+        pendingEntryWarmups.remove(player.uuid)
+        player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN)
+        player.removeEffect(MobEffects.DARKNESS)
+    }
+
+    private fun clearEntryWarmup(server: MinecraftServer, playerId: UUID) {
+        pendingEntryWarmups.remove(playerId)
+        server.playerList.getPlayer(playerId)?.let(::clearEntryWarmup)
+    }
+
+    private fun refundEntryCost(server: MinecraftServer, record: RunRecord, player: ServerPlayer) {
+        val cost = pendingEntryWarmups[player.uuid]?.bloodCost ?: 0.0
+        if (cost <= 0.0) return
+        getOriginObelisk(server, record)?.restoreRunBlood(cost)
     }
 
     private fun preparedHandleFromRecord(record: RunRecord): PreparedSiteHandle? {
@@ -645,6 +724,7 @@ object RunRegistry : RunService {
     private fun removePlayer(record: RunRecord, playerId: UUID, disqualify: Boolean = false) {
         record.activePlayers.remove(playerId)
         record.pendingPlayers.remove(playerId)
+        pendingEntryWarmups.remove(playerId)
         if (disqualify) {
             record.survivors.remove(playerId)
             record.disqualifiedPlayers += playerId

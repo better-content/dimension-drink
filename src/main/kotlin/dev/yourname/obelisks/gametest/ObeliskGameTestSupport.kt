@@ -1203,50 +1203,41 @@ object ObeliskGameTestSupport {
     }
 
     private fun assertGeneratedAltar(helper: GameTestHelper, fontPos: BlockPos, label: String) {
-        val baseCenter = fontPos
-        helper.assertTrue(helper.level.getBlockState(fontPos).`is`(ModBlocks.OBELISK.get()), "Expected $label altar to place a dimensional font")
-        for (x in -1..1) {
-            for (z in -1..1) {
-                if (x == 0 && z == 0) continue
-                val expected = if (kotlin.math.abs(x) == 1 && kotlin.math.abs(z) == 1) Blocks.COPPER_BLOCK else Blocks.POLISHED_ANDESITE
-                helper.assertTrue(
-                    helper.level.getBlockState(baseCenter.offset(x, 0, z)).`is`(expected),
-                    "Expected $label altar ${expected.descriptionId} at ${baseCenter.offset(x, 0, z)}"
-                )
-            }
-        }
-        for (dy in 1..2) {
+        val baseCenter = fontPos.below()
+        helper.assertTrue(helper.level.getBlockState(fontPos).`is`(ModBlocks.OBELISK.get()), "Expected $label graveyard to place a dimensional font")
+        helper.assertTrue(
+            helper.level.getBlockState(baseCenter).`is`(Blocks.POLISHED_ANDESITE) ||
+                helper.level.getBlockState(baseCenter).`is`(Blocks.STONE_BRICKS) ||
+                helper.level.getBlockState(baseCenter).`is`(Blocks.MOSSY_COBBLESTONE),
+            "Expected $label font to sit on a stone-family pedestal"
+        )
+        helper.assertTrue(!helper.level.getBlockState(baseCenter).isAir, "Expected $label pedestal not to float")
+        for (dy in 1..3) {
             helper.assertTrue(helper.level.getBlockState(fontPos.above(dy)).isAir, "Expected $label font to keep clear space above it")
         }
-        val graveyardCorners = listOf(
-            baseCenter.offset(-4, 0, -4),
-            baseCenter.offset(-4, 0, 4),
-            baseCenter.offset(4, 0, -4),
-            baseCenter.offset(4, 0, 4)
-        )
-        val cornerSignals = graveyardCorners.count { pos ->
-            val state = helper.level.getBlockState(pos)
-            state.`is`(Blocks.COBBLESTONE_WALL) ||
-                state.`is`(Blocks.MOSSY_COBBLESTONE_WALL) ||
-                state.`is`(Blocks.MOSSY_COBBLESTONE) ||
-                state.`is`(Blocks.MOSSY_STONE_BRICKS) ||
-                state.`is`(Blocks.CRACKED_STONE_BRICKS)
+        var graveSignals = 0
+        var pathSignals = 0
+        var forbiddenSignals = 0
+        for (dx in -20..20) {
+            for (dz in -20..20) {
+                for (dy in -1..3) {
+                    val pos = baseCenter.offset(dx, dy, dz)
+                    val state = helper.level.getBlockState(pos)
+                    if (state.`is`(Blocks.CHISELED_STONE_BRICKS) || state.`is`(Blocks.COBBLESTONE_WALL) || state.`is`(Blocks.MOSSY_COBBLESTONE_WALL)) {
+                        graveSignals++
+                    }
+                    if (state.`is`(Blocks.GRAVEL) || state.`is`(Blocks.COARSE_DIRT) || state.`is`(Blocks.CRACKED_STONE_BRICKS)) {
+                        pathSignals++
+                    }
+                    if (state.`is`(Blocks.WITHER_ROSE) || state.`is`(Blocks.COPPER_BLOCK)) {
+                        forbiddenSignals++
+                    }
+                }
+            }
         }
-        helper.assertTrue(cornerSignals >= 3, "Expected $label graveyard to include a strong perimeter corner signal")
-        val graveSignals = listOf(
-            baseCenter.offset(-3, 1, -2),
-            baseCenter.offset(-3, 1, 2),
-            baseCenter.offset(3, 1, -2),
-            baseCenter.offset(3, 1, 2),
-            baseCenter.offset(-2, 1, -3),
-            baseCenter.offset(2, 1, -3),
-            baseCenter.offset(-2, 1, 3),
-            baseCenter.offset(2, 1, 3)
-        ).count { pos ->
-            val state = helper.level.getBlockState(pos)
-            state.`is`(Blocks.CHISELED_STONE_BRICKS) || state.`is`(Blocks.COBBLESTONE_WALL)
-        }
-        helper.assertTrue(graveSignals >= 4, "Expected $label graveyard to include at least four generated grave markers")
+        helper.assertTrue(pathSignals >= 8, "Expected $label graveyard to include weathered path/floor tiles")
+        helper.assertTrue(graveSignals >= 4, "Expected $label graveyard to include generated grave markers")
+        helper.assertTrue(forbiddenSignals == 0, "Expected $label graveyard to avoid copper blocks and wither roses")
     }
 
     private fun countBufferedItem(obelisk: ObeliskBlockEntity?, item: net.minecraft.world.item.Item): Int {
@@ -1367,13 +1358,14 @@ object ObeliskGameTestSupport {
         val waterTopY = center.y + waterDepth
         for (dx in -20..20) {
             for (dz in -20..20) {
-                for (y in helper.level.minBuildHeight..waterTopY) {
+                for (y in helper.level.minBuildHeight..(center.y + 12)) {
                     val dy = y - center.y
                     val state = when {
                         dy <= -3 -> Blocks.STONE.defaultBlockState()
                         dy == -2 -> Blocks.DIRT.defaultBlockState()
                         dy == -1 -> Blocks.SAND.defaultBlockState()
-                        else -> Blocks.WATER.defaultBlockState()
+                        y <= waterTopY -> Blocks.WATER.defaultBlockState()
+                        else -> Blocks.AIR.defaultBlockState()
                     }
                     helper.level.setBlock(BlockPos(center.x + dx, y, center.z + dz), state, 3)
                 }

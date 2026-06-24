@@ -9,6 +9,13 @@
   "enabled": false,
   "worldgenWeight": 0.0,
   "worldgenFamilyId": "altar",
+  "graveyardPalette": {
+    "pedestalBlock": "minecraft:polished_andesite",
+    "pathBlocks": ["minecraft:gravel", "minecraft:coarse_dirt", "minecraft:mossy_cobblestone", "minecraft:cracked_stone_bricks"],
+    "graveBlocks": ["minecraft:stone_bricks", "minecraft:mossy_cobblestone", "minecraft:cracked_stone_bricks"],
+    "structureBlocks": ["minecraft:polished_andesite", "minecraft:mossy_stone_bricks", "minecraft:stone_bricks"],
+    "decorations": ["minecraft:red_candle", "minecraft:soul_lantern", "minecraft:dead_bush"]
+  },
   "rewardTableId": "overworld",
   "maxBlood": 15000,
   "bloodStartCost": 5000,

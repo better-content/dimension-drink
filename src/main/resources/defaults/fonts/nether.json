@@ -10,6 +10,13 @@
   "enabled": true,
   "worldgenWeight": 2.0,
   "worldgenFamilyId": "altar",
+  "graveyardPalette": {
+    "pedestalBlock": "minecraft:polished_blackstone",
+    "pathBlocks": ["minecraft:gravel", "minecraft:blackstone", "minecraft:soul_soil"],
+    "graveBlocks": ["minecraft:blackstone", "minecraft:polished_blackstone_bricks", "minecraft:cracked_polished_blackstone_bricks"],
+    "structureBlocks": ["minecraft:polished_blackstone", "minecraft:polished_blackstone_bricks", "minecraft:chiseled_polished_blackstone"],
+    "decorations": ["minecraft:red_candle", "minecraft:soul_lantern", "minecraft:dead_bush"]
+  },
   "rewardTableId": "nether",
   "maxBlood": 15000,
   "bloodStartCost": 5000,

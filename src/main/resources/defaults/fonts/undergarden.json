@@ -10,6 +10,13 @@
   "enabled": true,
   "worldgenWeight": 1.0,
   "worldgenFamilyId": "altar",
+  "graveyardPalette": {
+    "pedestalBlock": "undergarden:polished_depthrock",
+    "pathBlocks": ["undergarden:depthrock", "undergarden:deepsoil", "undergarden:coarse_deepsoil", "undergarden:sediment"],
+    "graveBlocks": ["undergarden:depthrock", "undergarden:shiverstone_bricks", "undergarden:polished_depthrock"],
+    "structureBlocks": ["undergarden:shiverstone_bricks", "undergarden:shiverstone", "undergarden:polished_depthrock"],
+    "decorations": ["minecraft:red_candle", "minecraft:soul_lantern", "minecraft:dead_bush"]
+  },
   "rewardTableId": "default",
   "maxBlood": 15000,
   "bloodStartCost": 5000,

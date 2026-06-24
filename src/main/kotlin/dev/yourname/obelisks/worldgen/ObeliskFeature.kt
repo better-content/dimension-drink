@@ -3,33 +3,37 @@ package dev.yourname.obelisks.worldgen
 import com.mojang.serialization.Codec
 import dev.yourname.obelisks.content.ObeliskBlockEntity
 import dev.yourname.obelisks.data.ObeliskDataManager
+import dev.yourname.obelisks.data.ObeliskDefinition
 import dev.yourname.obelisks.registry.ModBlocks
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.server.level.ServerLevel
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.tags.BlockTags
 import net.minecraft.util.RandomSource
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.LevelAccessor
 import net.minecraft.world.level.WorldGenLevel
+import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.BushBlock
 import net.minecraft.world.level.block.LeavesBlock
+import net.minecraft.world.level.block.SlabBlock
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.block.state.properties.SlabType
 import net.minecraft.world.level.levelgen.feature.Feature
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext
 import net.minecraft.world.level.levelgen.feature.configurations.NoneFeatureConfiguration
+import net.minecraft.server.level.ServerLevel
+import kotlin.math.abs
 
 class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatureConfiguration>(codec) {
 
     companion object {
-        private const val FOOTPRINT_RADIUS = 1
-        private const val GRAVEYARD_RADIUS = 4
-        private const val OUTER_RUN_MIN_RADIUS = 12
-        private const val OUTER_RUN_RADIUS = 18
-        private const val OUTER_RUN_HALF_WIDTH = 2
-
+        private const val TILE_SIZE = 4
+        private const val MAX_TILE_RADIUS = 16
+        private const val MIN_TILE_RADIUS = 10
+        private const val FONT_CLEARANCE = 3
         fun generateDefinitionSiteForTests(
             level: ServerLevel,
             center: BlockPos,
@@ -38,8 +42,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         ): Boolean {
             val definition = ObeliskDataManager.getObelisk(definitionId) ?: return false
             val placementCenter = findPlacementCenter(level, center) ?: return false
-            buildSiteBlocks(level, level::setBlock, placementCenter, random)
-            val fontPos = placementCenter
+            val fontPos = buildSiteBlocks(level, level::setBlock, placementCenter, definition, random) ?: return false
             if (!level.setBlock(fontPos, ModBlocks.OBELISK.get().defaultBlockState(), 3)) return false
             val font = level.getBlockEntity(fontPos) as? ObeliskBlockEntity ?: return false
             font.setDefinition(definition.id)
@@ -49,353 +52,298 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         }
 
         private fun findPlacementCenter(level: LevelAccessor, origin: BlockPos): BlockPos? {
-            val top = level.maxBuildHeight - 2
-            val bottom = level.minBuildHeight + 1
-            for (y in top downTo bottom) {
-                val center = BlockPos(origin.x, y, origin.z)
-                if (canPlace(level, center)) return center
-            }
-            return null
+            if (!level.getBlockState(origin).fluidState.isEmpty) return null
+            val snapped = snapToUniversalGrid(origin)
+            val surfaceY = findSurfaceY(level, snapped.x, snapped.z, scanTopForOrigin(level, origin), FONT_CLEARANCE + 1) ?: return null
+            val center = BlockPos(snapped.x, surfaceY, snapped.z)
+            return if (canPlacePedestalAndFont(level, center)) center else null
         }
 
-        private fun canPlace(level: LevelAccessor, center: BlockPos): Boolean {
-            for (x in -FOOTPRINT_RADIUS..FOOTPRINT_RADIUS) {
-                for (z in -FOOTPRINT_RADIUS..FOOTPRINT_RADIUS) {
-                    val surface = center.offset(x, 0, z)
-                    val above = center.offset(x, 1, z)
-                    val surfaceState = level.getBlockState(surface)
-                    val aboveState = level.getBlockState(above)
-                    if (surfaceState.isAir || !surfaceState.fluidState.isEmpty || isLeafLike(surfaceState) || surfaceState.`is`(Blocks.ICE)) return false
-                    if (!surfaceState.isFaceSturdy(level, surface, Direction.UP)) return false
-                    if (!canReplaceSiteAirspace(aboveState)) return false
-                }
-            }
-            return true
+        private fun scanTopForOrigin(level: LevelAccessor, origin: BlockPos): Int =
+            if (origin.y <= level.minBuildHeight + 2) level.maxBuildHeight - 2 else origin.y + 4
+
+        private fun snapToUniversalGrid(origin: BlockPos): BlockPos {
+            val cellX = Math.floorDiv(origin.x, TILE_SIZE)
+            val cellZ = Math.floorDiv(origin.z, TILE_SIZE)
+            return BlockPos(cellX * TILE_SIZE + TILE_SIZE / 2, origin.y, cellZ * TILE_SIZE + TILE_SIZE / 2)
         }
 
         private fun buildSiteBlocks(
             level: LevelAccessor,
             setBlock: (BlockPos, BlockState, Int) -> Boolean,
             center: BlockPos,
+            definition: ObeliskDefinition,
             random: RandomSource
-        ) {
-            buildGraveyardBlocks(level, setBlock, center, random)
-            buildAltarBlocks(setBlock, center)
+        ): BlockPos? {
+            val palette = GraveyardPalette.from(definition)
+            val tiles = planTiles(level, center, random)
+            val fontTile = tiles[TileCoord(0, 0)] ?: return null
+            if (!canPlacePedestalAndFont(level, fontTile.groundPos)) return null
+
+            tiles.values.sortedWith(compareBy<TilePlan> { abs(it.coord.x) + abs(it.coord.z) }.thenBy { it.coord.x }.thenBy { it.coord.z }).forEach { tile ->
+                placeTile(level, setBlock, tile, tiles, palette, random)
+            }
+
+            setBlock(fontTile.groundPos, palette.pedestal.defaultBlockState(), 3)
+            for (dy in 1..FONT_CLEARANCE) {
+                setBlock(fontTile.groundPos.above(dy), Blocks.AIR.defaultBlockState(), 3)
+            }
+            return fontTile.groundPos.above()
         }
 
-        private fun buildAltarBlocks(setBlock: (BlockPos, BlockState, Int) -> Boolean, center: BlockPos) {
-            val baseY = center.y
-            for (x in -FOOTPRINT_RADIUS..FOOTPRINT_RADIUS) {
-                for (z in -FOOTPRINT_RADIUS..FOOTPRINT_RADIUS) {
-                    val block = if (kotlin.math.abs(x) == FOOTPRINT_RADIUS && kotlin.math.abs(z) == FOOTPRINT_RADIUS) {
-                        Blocks.COPPER_BLOCK
+        private fun planTiles(level: LevelAccessor, center: BlockPos, random: RandomSource): Map<TileCoord, TilePlan> {
+            val radius = MIN_TILE_RADIUS + random.nextInt(MAX_TILE_RADIUS - MIN_TILE_RADIUS + 1)
+            val candidates = linkedMapOf<TileCoord, TilePlan>()
+            for (x in -MAX_TILE_RADIUS..MAX_TILE_RADIUS) {
+                for (z in -MAX_TILE_RADIUS..MAX_TILE_RADIUS) {
+                    val coord = TileCoord(x, z)
+                    if (!insideOrganicShape(coord, radius)) continue
+                    val ground = tileGround(level, center, coord) ?: continue
+                    if (!canUseTileGround(level, ground, clearance = 2)) continue
+                    candidates[coord] = TilePlan(coord, ground, TileType.DECOR, emptySet())
+                }
+            }
+
+            val font = candidates[TileCoord(0, 0)] ?: return emptyMap()
+            val paths = linkedSetOf(font.coord)
+            val exits = listOf(TileCoord(radius, 0), TileCoord(-radius, 0), TileCoord(0, radius), TileCoord(0, -radius)).shuffled(random).take(3)
+            exits.forEach { target ->
+                var x = 0
+                var z = 0
+                var previous = TileCoord(0, 0)
+                while (x != target.x || z != target.z) {
+                    val stepX = if (x < target.x) 1 else if (x > target.x) -1 else 0
+                    val stepZ = if (z < target.z) 1 else if (z > target.z) -1 else 0
+                    if ((stepX != 0 && stepZ == 0) || (stepX != 0 && random.nextBoolean())) x += stepX else z += stepZ
+                    val next = TileCoord(x, z)
+                    if (next !in candidates) break
+                    if (isPathable(candidates[previous], candidates[next])) {
+                        paths += next
+                        previous = next
                     } else {
-                        Blocks.POLISHED_ANDESITE
+                        break
                     }
-                    setBlock(BlockPos(center.x + x, baseY, center.z + z), block.defaultBlockState(), 3)
                 }
             }
-            for (y in 1..3) {
-                setBlock(center.above(y), Blocks.AIR.defaultBlockState(), 3)
+
+            val planned = linkedMapOf<TileCoord, TilePlan>()
+            candidates.forEach { (coord, tile) ->
+                val exitsForTile = Direction.Plane.HORIZONTAL.filter { direction ->
+                    val other = coord.relative(direction)
+                    other in paths && isPathable(tile, candidates[other])
+                }.toSet()
+                val type = when {
+                    coord == TileCoord(0, 0) -> TileType.FONT_PEDESTAL
+                    coord in paths -> TileType.PATH
+                    abs(coord.x) + abs(coord.z) <= 4 && random.nextInt(3) == 0 -> TileType.SHRINE
+                    random.nextInt(100) < 52 -> if (random.nextInt(5) == 0) TileType.GRAVE_DOUBLE else TileType.GRAVE_SINGLE
+                    random.nextInt(100) < 9 -> TileType.MAUSOLEUM_SMALL
+                    random.nextInt(100) < 10 -> TileType.STATUE_RUIN
+                    random.nextInt(100) < 12 -> TileType.TREE_STUMP
+                    else -> TileType.DECOR
+                }
+                planned[coord] = tile.copy(type = type, pathExits = exitsForTile)
             }
+            return planned
         }
 
-        private fun buildGraveyardBlocks(
-            level: LevelAccessor,
-            setBlock: (BlockPos, BlockState, Int) -> Boolean,
-            center: BlockPos,
-            random: RandomSource
-        ) {
-            buildWeatheredFloor(level, setBlock, center, random)
-            buildPerimeterWall(level, setBlock, center, random)
-            buildEntranceArch(level, setBlock, center)
-            buildCornerShrines(level, setBlock, center, random)
-
-            val graveSlots = listOf(
-                GraveSlot(-3, -2),
-                GraveSlot(-3, 2),
-                GraveSlot(3, -2),
-                GraveSlot(3, 2),
-                GraveSlot(-2, -3),
-                GraveSlot(2, -3),
-                GraveSlot(-2, 3),
-                GraveSlot(2, 3)
-            )
-            graveSlots.shuffled(random).take(5 + random.nextInt(2)).forEach { slot ->
-                buildGrave(level, setBlock, center.offset(slot.x, 0, slot.z), slot, random)
-            }
-
-            buildAtmosphereDetails(level, setBlock, center, random)
-            buildOuterGraveyardRuns(level, setBlock, center, random)
+        private fun insideOrganicShape(coord: TileCoord, radius: Int): Boolean {
+            val manhattan = abs(coord.x) + abs(coord.z)
+            val chebyshev = maxOf(abs(coord.x), abs(coord.z))
+            val noise = Math.floorDiv(coord.x * 31 + coord.z * 17 + coord.x * coord.z * 7, 11).let { abs(it % 5) - 2 }
+            return chebyshev <= radius && manhattan <= radius + (radius / 2) + noise
         }
 
-        private fun buildWeatheredFloor(
-            level: LevelAccessor,
-            setBlock: (BlockPos, BlockState, Int) -> Boolean,
-            center: BlockPos,
-            random: RandomSource
-        ) {
-            for (x in -GRAVEYARD_RADIUS..GRAVEYARD_RADIUS) {
-                for (z in -GRAVEYARD_RADIUS..GRAVEYARD_RADIUS) {
-                    if (kotlin.math.abs(x) <= FOOTPRINT_RADIUS && kotlin.math.abs(z) <= FOOTPRINT_RADIUS) continue
-                    val pos = center.offset(x, 0, z)
-                    if (!canPlaceDecoration(level, pos)) continue
-                    val distance = kotlin.math.abs(x) + kotlin.math.abs(z)
-                    val block = when {
-                        x == 0 || z == 0 -> weightedBlock(
-                            random,
-                            Blocks.GRAVEL,
-                            Blocks.COARSE_DIRT,
-                            Blocks.MOSSY_COBBLESTONE,
-                            Blocks.CRACKED_STONE_BRICKS
-                        )
-                        distance <= 5 && random.nextInt(3) == 0 -> weightedBlock(
-                            random,
-                            Blocks.MOSSY_COBBLESTONE,
-                            Blocks.STONE_BRICKS,
-                            Blocks.CRACKED_STONE_BRICKS,
-                            Blocks.GRAVEL
-                        )
-                        random.nextInt(6) == 0 -> if (random.nextBoolean()) Blocks.COARSE_DIRT else Blocks.GRAVEL
-                        else -> null
-                    }
-                    if (block != null) placeWeatheredFloor(setBlock, pos, block)
+        private fun tileGround(level: LevelAccessor, center: BlockPos, coord: TileCoord): BlockPos? {
+            val x = center.x + coord.x * TILE_SIZE
+            val z = center.z + coord.z * TILE_SIZE
+            val y = findSurfaceY(level, x, z, center.y + 8, 2) ?: return null
+            return BlockPos(x, y, z)
+        }
+
+        private fun findSurfaceY(level: LevelAccessor, x: Int, z: Int, maxY: Int, clearance: Int): Int? {
+            val top = maxY.coerceAtMost(level.maxBuildHeight - 2)
+            val bottom = level.minBuildHeight + 1
+            for (y in top downTo bottom) {
+                val pos = BlockPos(x, y, z)
+                val state = level.getBlockState(pos)
+                if (isSupportedGround(level, pos, state) && hasClearance(level, pos, clearance)) {
+                    return y
                 }
             }
+            return null
         }
 
-        private fun buildPerimeterWall(
+        private fun isPathable(a: TilePlan?, b: TilePlan?): Boolean {
+            if (a == null || b == null) return false
+            return abs(a.groundPos.y - b.groundPos.y) <= 1
+        }
+
+        private fun placeTile(
             level: LevelAccessor,
             setBlock: (BlockPos, BlockState, Int) -> Boolean,
-            center: BlockPos,
+            tile: TilePlan,
+            tiles: Map<TileCoord, TilePlan>,
+            palette: GraveyardPalette,
             random: RandomSource
         ) {
-            for (x in -GRAVEYARD_RADIUS..GRAVEYARD_RADIUS) {
-                for (z in -GRAVEYARD_RADIUS..GRAVEYARD_RADIUS) {
-                    if (kotlin.math.abs(x) != GRAVEYARD_RADIUS && kotlin.math.abs(z) != GRAVEYARD_RADIUS) continue
-                    if (isGateGap(x, z)) continue
-                    val pos = center.offset(x, 0, z)
-                    if (!canPlaceStructureBase(level, pos)) continue
-                    val wall = weightedBlock(
-                        random,
-                        Blocks.COBBLESTONE_WALL,
-                        Blocks.MOSSY_COBBLESTONE_WALL,
-                        Blocks.COBBLESTONE_WALL,
-                        Blocks.MOSSY_COBBLESTONE_WALL
-                    )
-                    setBlock(pos, wall.defaultBlockState(), 3)
-                    if ((kotlin.math.abs(x) == GRAVEYARD_RADIUS && kotlin.math.abs(z) == GRAVEYARD_RADIUS) || random.nextInt(7) == 0) {
-                        placeIfClear(level, setBlock, pos.above(), if (random.nextBoolean()) Blocks.MOSSY_STONE_BRICKS else Blocks.CRACKED_STONE_BRICKS)
-                    }
+            when (tile.type) {
+                TileType.FONT_PEDESTAL -> {
+                    placeGround(level, setBlock, tile.groundPos, palette.path(random))
+                    tile.pathExits.forEach { direction -> placePathArm(level, setBlock, tile, direction, palette, random) }
+                }
+                TileType.PATH -> {
+                    placeGround(level, setBlock, tile.groundPos, palette.path(random))
+                    tile.pathExits.forEach { direction -> placePathArm(level, setBlock, tile, direction, palette, random) }
+                    placeStepForRaisedNeighbors(level, setBlock, tile, tiles, palette)
+                }
+                TileType.GRAVE_SINGLE -> buildSingleGrave(level, setBlock, tile.groundPos, palette, random)
+                TileType.GRAVE_DOUBLE -> buildDoubleGrave(level, setBlock, tile.groundPos, palette, random)
+                TileType.MAUSOLEUM_SMALL -> buildMausoleum(level, setBlock, tile.groundPos, palette, random)
+                TileType.SHRINE -> buildShrine(level, setBlock, tile.groundPos, palette, random)
+                TileType.STATUE_RUIN -> buildRuin(level, setBlock, tile.groundPos, palette, random)
+                TileType.TREE_STUMP -> buildStump(level, setBlock, tile.groundPos, random)
+                TileType.DECOR -> buildDecor(level, setBlock, tile.groundPos, palette, random)
+            }
+        }
+
+        private fun placePathArm(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, tile: TilePlan, direction: Direction, palette: GraveyardPalette, random: RandomSource) {
+            for (step in 1 until TILE_SIZE) {
+                val pos = tile.groundPos.relative(direction, step)
+                if (canUseTileGround(level, pos, clearance = 1)) {
+                    placeGround(level, setBlock, pos, palette.path(random))
                 }
             }
         }
 
-        private fun buildGrave(
-            level: LevelAccessor,
-            setBlock: (BlockPos, BlockState, Int) -> Boolean,
-            base: BlockPos,
-            slot: GraveSlot,
-            random: RandomSource
-        ) {
-            val slab = if (random.nextBoolean()) Blocks.STONE_BRICKS else Blocks.MOSSY_COBBLESTONE
-            val head = if (random.nextBoolean()) Blocks.CHISELED_STONE_BRICKS else Blocks.COBBLESTONE_WALL
-            val dx = -slot.x.coerceIn(-1, 1)
-            val dz = -slot.z.coerceIn(-1, 1)
-            val foot = base.offset(dx, 0, dz)
-            if (!canPlaceStructureBase(level, base) || !canPlaceStructureBase(level, foot) || !canReplaceDecoration(level, base.above())) return
-            setBlock(base, weightedBlock(random, slab, Blocks.STONE_BRICKS, Blocks.MOSSY_COBBLESTONE, Blocks.CRACKED_STONE_BRICKS).defaultBlockState(), 3)
-            placeWeatheredFloor(setBlock, foot, weightedBlock(random, slab, Blocks.GRAVEL, Blocks.COARSE_DIRT, Blocks.MOSSY_COBBLESTONE))
-            setBlock(base.above(), head.defaultBlockState(), 3)
-            placeIfClear(level, setBlock, foot.above(), if (random.nextInt(3) == 0) Blocks.WITHER_ROSE else Blocks.RED_CANDLE)
-        }
-
-        private fun buildEntranceArch(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, center: BlockPos) {
-            val northLeft = center.offset(-2, 0, -GRAVEYARD_RADIUS)
-            val northRight = center.offset(2, 0, -GRAVEYARD_RADIUS)
-            val southLeft = center.offset(-2, 0, GRAVEYARD_RADIUS)
-            val southRight = center.offset(2, 0, GRAVEYARD_RADIUS)
-            listOf(northLeft, northRight, southLeft, southRight).forEach { base ->
-                if (canPlaceStructureBase(level, base)) {
-                    setBlock(base, Blocks.MOSSY_COBBLESTONE.defaultBlockState(), 3)
-                    placeIfClear(level, setBlock, base.above(), Blocks.CHISELED_STONE_BRICKS)
-                    placeIfClear(level, setBlock, base.above(2), Blocks.COBBLESTONE_WALL)
-                }
-            }
-            for (x in -1..1) {
-                placeIfClear(level, setBlock, center.offset(x, 2, -GRAVEYARD_RADIUS), Blocks.MOSSY_COBBLESTONE_WALL)
-                placeIfClear(level, setBlock, center.offset(x, 2, GRAVEYARD_RADIUS), Blocks.MOSSY_COBBLESTONE_WALL)
-            }
-            placeIfClear(level, setBlock, center.offset(0, 1, -GRAVEYARD_RADIUS + 1), Blocks.SOUL_LANTERN)
-            placeIfClear(level, setBlock, center.offset(0, 1, GRAVEYARD_RADIUS - 1), Blocks.SOUL_LANTERN)
-        }
-
-        private fun buildCornerShrines(
-            level: LevelAccessor,
-            setBlock: (BlockPos, BlockState, Int) -> Boolean,
-            center: BlockPos,
-            random: RandomSource
-        ) {
-            listOf(
-                center.offset(-GRAVEYARD_RADIUS, 0, -GRAVEYARD_RADIUS),
-                center.offset(-GRAVEYARD_RADIUS, 0, GRAVEYARD_RADIUS),
-                center.offset(GRAVEYARD_RADIUS, 0, -GRAVEYARD_RADIUS),
-                center.offset(GRAVEYARD_RADIUS, 0, GRAVEYARD_RADIUS)
-            ).forEach { corner ->
-                placeIfClear(level, setBlock, corner.above(), if (random.nextBoolean()) Blocks.CHISELED_STONE_BRICKS else Blocks.MOSSY_STONE_BRICKS)
-                placeIfClear(level, setBlock, corner.above(2), if (random.nextBoolean()) Blocks.SOUL_LANTERN else Blocks.SKELETON_SKULL)
-            }
-        }
-
-        private fun buildAtmosphereDetails(
-            level: LevelAccessor,
-            setBlock: (BlockPos, BlockState, Int) -> Boolean,
-            center: BlockPos,
-            random: RandomSource
-        ) {
-            val accentSlots = listOf(
-                center.offset(-2, 0, -1),
-                center.offset(2, 0, -1),
-                center.offset(-2, 0, 1),
-                center.offset(2, 0, 1),
-                center.offset(-1, 0, -2),
-                center.offset(1, 0, -2),
-                center.offset(-1, 0, 2),
-                center.offset(1, 0, 2)
-            )
-            accentSlots.shuffled(random).take(4).forEach { pos ->
-                val block = weightedBlock(random, Blocks.RED_CANDLE, Blocks.SOUL_LANTERN, Blocks.WITHER_ROSE, Blocks.DEAD_BUSH)
-                placeIfClear(level, setBlock, pos.above(), block)
-            }
-        }
-
-        private fun buildOuterGraveyardRuns(
-            level: LevelAccessor,
-            setBlock: (BlockPos, BlockState, Int) -> Boolean,
-            center: BlockPos,
-            random: RandomSource
-        ) {
-            val directions = listOf(Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST).shuffled(random)
-            directions.forEach { direction ->
-                val side = direction.clockWise
-                val runLength = OUTER_RUN_MIN_RADIUS + random.nextInt(OUTER_RUN_RADIUS - OUTER_RUN_MIN_RADIUS + 1)
-                for (step in GRAVEYARD_RADIUS + 1..runLength) {
-                    for (width in -OUTER_RUN_HALF_WIDTH..OUTER_RUN_HALF_WIDTH) {
-                        val pos = center.relative(direction, step).relative(side, width)
-                        if (!canPlaceDecoration(level, pos)) continue
-                        val block = when {
-                            width == 0 -> weightedBlock(random, Blocks.GRAVEL, Blocks.COARSE_DIRT, Blocks.MOSSY_COBBLESTONE)
-                            kotlin.math.abs(width) == 1 && random.nextInt(2) == 0 -> weightedBlock(random, Blocks.COARSE_DIRT, Blocks.GRAVEL, Blocks.CRACKED_STONE_BRICKS)
-                            random.nextInt(4) == 0 -> weightedBlock(random, Blocks.COARSE_DIRT, Blocks.GRAVEL, Blocks.MOSSY_COBBLESTONE)
-                            else -> null
-                        }
-                        if (block != null) placeWeatheredFloor(setBlock, pos, block)
-                    }
-                    if (step >= GRAVEYARD_RADIUS + 2 && random.nextInt(2) == 0) {
-                        val sideOffset = if (random.nextBoolean()) -(OUTER_RUN_HALF_WIDTH + 1) else OUTER_RUN_HALF_WIDTH + 1
-                        buildOuterGrave(level, setBlock, center, center.relative(direction, step).relative(side, sideOffset), random)
-                        if (random.nextInt(3) == 0) {
-                            buildOuterGrave(level, setBlock, center, center.relative(direction, step).relative(side, -sideOffset), random)
-                        }
-                    }
-                    if (step in GRAVEYARD_RADIUS + 4 until runLength && step % 4 == 0 && random.nextInt(3) != 0) {
-                        buildBranchRun(level, setBlock, center, center.relative(direction, step), side, random)
-                    }
-                    if (step == runLength && random.nextBoolean()) {
-                        val marker = center.relative(direction, step).relative(side, if (random.nextBoolean()) -1 else 1)
-                        if (canPlaceStructureBase(level, marker)) {
-                            setBlock(marker, Blocks.MOSSY_COBBLESTONE_WALL.defaultBlockState(), 3)
-                            placeIfClear(level, setBlock, marker.above(), Blocks.SOUL_LANTERN)
-                        }
-                    }
+        private fun placeStepForRaisedNeighbors(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, tile: TilePlan, tiles: Map<TileCoord, TilePlan>, palette: GraveyardPalette) {
+            Direction.Plane.HORIZONTAL.forEach { direction ->
+                val neighbor = tiles[tile.coord.relative(direction)] ?: return@forEach
+                if (abs(neighbor.groundPos.y - tile.groundPos.y) != 1) return@forEach
+                val lower = if (neighbor.groundPos.y < tile.groundPos.y) neighbor.groundPos else tile.groundPos
+                val slabPos = lower.relative(if (lower == tile.groundPos) direction else direction.opposite, TILE_SIZE / 2).above()
+                if (canReplaceDecoration(level, slabPos) && isSupportedGround(level, slabPos.below(), level.getBlockState(slabPos.below()))) {
+                    setBlock(slabPos, Blocks.SMOOTH_STONE_SLAB.defaultBlockState().setValue(SlabBlock.TYPE, SlabType.BOTTOM), 3)
                 }
             }
         }
 
-        private fun buildBranchRun(
-            level: LevelAccessor,
-            setBlock: (BlockPos, BlockState, Int) -> Boolean,
-            center: BlockPos,
-            base: BlockPos,
-            side: Direction,
-            random: RandomSource
-        ) {
-            val branchDirection = if (random.nextBoolean()) side else side.opposite
-            val branchLength = 4 + random.nextInt(6)
-            for (step in 1..branchLength) {
-                val pos = base.relative(branchDirection, step)
-                if (canPlaceDecoration(level, pos)) {
-                    placeWeatheredFloor(setBlock, pos, weightedBlock(random, Blocks.GRAVEL, Blocks.COARSE_DIRT, Blocks.CRACKED_STONE_BRICKS))
+        private fun buildSingleGrave(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
+            val direction = Direction.Plane.HORIZONTAL.toList().shuffled(random).first()
+            val foot = base.relative(direction)
+            if (!canUseTileGround(level, base, 2) || !canUseTileGround(level, foot, 1)) return
+            placeGround(level, setBlock, foot, palette.path(random))
+            placeGround(level, setBlock, base, palette.grave(random))
+            placeSupportedAbove(level, setBlock, base.above(), palette.headstone(random))
+            if (random.nextInt(4) == 0) placeSupportedAbove(level, setBlock, foot.above(), palette.decoration(random))
+        }
+
+        private fun buildDoubleGrave(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
+            buildSingleGrave(level, setBlock, base.west(), palette, random)
+            buildSingleGrave(level, setBlock, base.east(), palette, random)
+        }
+
+        private fun buildMausoleum(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
+            for (dx in -1..1) {
+                for (dz in -1..1) {
+                    val pos = base.offset(dx, 0, dz)
+                    if (!canUseTileGround(level, pos, 3)) return
                 }
-                if (step >= 2 && random.nextInt(2) == 0) {
-                    buildOuterGrave(level, setBlock, center, pos.relative(branchDirection, 1), random)
+            }
+            for (dx in -1..1) {
+                for (dz in -1..1) {
+                    val pos = base.offset(dx, 0, dz)
+                    placeGround(level, setBlock, pos, palette.structure(random))
+                    if (abs(dx) == 1 || abs(dz) == 1) {
+                        placeSupportedAbove(level, setBlock, pos.above(), palette.structure(random))
+                    }
+                }
+            }
+            placeSupportedAbove(level, setBlock, base.above(2), palette.headstone(random))
+        }
+
+        private fun buildShrine(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
+            if (!canUseTileGround(level, base, 3)) return
+            placeGround(level, setBlock, base, palette.structure(random))
+            placeSupportedAbove(level, setBlock, base.above(), palette.headstone(random))
+            placeSupportedAbove(level, setBlock, base.above(2), if (random.nextBoolean()) Blocks.SOUL_LANTERN else Blocks.SKELETON_SKULL)
+        }
+
+        private fun buildRuin(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
+            if (!canUseTileGround(level, base, 2)) return
+            placeGround(level, setBlock, base, palette.structure(random))
+            Direction.Plane.HORIZONTAL.toList().shuffled(random).take(2).forEach { direction ->
+                val pos = base.relative(direction)
+                if (canUseTileGround(level, pos, 2)) {
+                    placeSupportedAbove(level, setBlock, pos.above(), palette.wall(random))
                 }
             }
         }
 
-        private fun buildOuterGrave(
-            level: LevelAccessor,
-            setBlock: (BlockPos, BlockState, Int) -> Boolean,
-            center: BlockPos,
-            base: BlockPos,
-            random: RandomSource
-        ) {
-            buildGrave(
-                level,
-                setBlock,
-                base,
-                GraveSlot(base.x - center.x, base.z - center.z),
-                random
-            )
+        private fun buildStump(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, random: RandomSource) {
+            if (!canUseTileGround(level, base, 2)) return
+            placeGround(level, setBlock, base, if (random.nextBoolean()) Blocks.COARSE_DIRT else Blocks.ROOTED_DIRT)
+            placeSupportedAbove(level, setBlock, base.above(), if (random.nextBoolean()) Blocks.OAK_LOG else Blocks.SPRUCE_LOG)
         }
 
-        private fun canPlaceDecoration(level: LevelAccessor, pos: BlockPos): Boolean {
-            val state = level.getBlockState(pos)
-            val aboveState = level.getBlockState(pos.above())
-            if (state.isAir || !state.fluidState.isEmpty || isLeafLike(state) || state.`is`(Blocks.ICE)) return false
-            if (!state.isFaceSturdy(level, pos, Direction.UP)) return false
-            return canReplaceSiteAirspace(aboveState)
+        private fun buildDecor(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
+            if (!canUseTileGround(level, base, 1)) return
+            if (random.nextInt(3) == 0) placeGround(level, setBlock, base, palette.path(random))
+            if (random.nextInt(5) == 0) placeSupportedAbove(level, setBlock, base.above(), palette.decoration(random))
         }
 
-        private fun canReplaceDecoration(level: LevelAccessor, pos: BlockPos): Boolean {
-            val state = level.getBlockState(pos)
-            return canReplaceSiteAirspace(state)
+        private fun placeGround(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, pos: BlockPos, block: Block): Boolean {
+            if (!canUseTileGround(level, pos, clearance = 1)) return false
+            return setBlock(pos, block.defaultBlockState(), 3)
         }
 
-        private fun canPlaceStructureBase(level: LevelAccessor, pos: BlockPos): Boolean {
-            val state = level.getBlockState(pos)
-            val aboveState = level.getBlockState(pos.above())
-            if (state.isAir || !state.fluidState.isEmpty || isLeafLike(state) || state.`is`(Blocks.ICE)) return false
-            if (!state.isFaceSturdy(level, pos, Direction.UP)) return false
-            return canReplaceSiteAirspace(aboveState) || (
-                state.fluidState.isEmpty && (
-                    state.`is`(Blocks.COBBLESTONE_WALL) ||
-                        state.`is`(Blocks.MOSSY_COBBLESTONE_WALL) ||
-                        state.`is`(Blocks.GRAVEL) ||
-                        state.`is`(Blocks.COARSE_DIRT) ||
-                        state.`is`(Blocks.MOSSY_COBBLESTONE) ||
-                        state.`is`(Blocks.STONE_BRICKS) ||
-                        state.`is`(Blocks.CRACKED_STONE_BRICKS)
-                    )
-                )
-        }
-
-        private fun placeIfClear(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, pos: BlockPos, block: net.minecraft.world.level.block.Block): Boolean {
+        private fun placeSupportedAbove(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, pos: BlockPos, block: Block): Boolean {
+            val below = pos.below()
+            if (!isSupportedGround(level, below, level.getBlockState(below))) return false
             if (!canReplaceDecoration(level, pos)) return false
             return setBlock(pos, block.defaultBlockState(), 3)
         }
 
-        private fun placeWeatheredFloor(setBlock: (BlockPos, BlockState, Int) -> Boolean, pos: BlockPos, block: net.minecraft.world.level.block.Block): Boolean =
-            setBlock(pos, block.defaultBlockState(), 3)
+        private fun canPlacePedestalAndFont(level: LevelAccessor, pedestalPos: BlockPos): Boolean {
+            if (!canUseTileGround(level, pedestalPos, clearance = FONT_CLEARANCE + 1)) return false
+            for (dy in 1..FONT_CLEARANCE + 1) {
+                if (!canReplaceSiteAirspace(level.getBlockState(pedestalPos.above(dy)))) return false
+            }
+            return true
+        }
 
-        private fun weightedBlock(random: RandomSource, vararg blocks: net.minecraft.world.level.block.Block): net.minecraft.world.level.block.Block =
-            blocks[random.nextInt(blocks.size)]
+        private fun hasClearance(level: LevelAccessor, pos: BlockPos, clearance: Int): Boolean {
+            for (dy in 1..clearance) {
+                if (!canReplaceSiteAirspace(level.getBlockState(pos.above(dy)))) return false
+            }
+            return true
+        }
+
+        private fun canUseTileGround(level: LevelAccessor, pos: BlockPos, clearance: Int): Boolean {
+            val state = level.getBlockState(pos)
+            if (!isSupportedGround(level, pos, state)) return false
+            for (dy in 1..clearance) {
+                if (!canReplaceSiteAirspace(level.getBlockState(pos.above(dy)))) return false
+            }
+            return true
+        }
+
+        private fun isSupportedGround(level: LevelAccessor, pos: BlockPos, state: BlockState): Boolean {
+            if (state.`is`(ModBlocks.OBELISK.get())) return false
+            if (state.isAir || !state.fluidState.isEmpty || isLeafLike(state) || state.`is`(Blocks.ICE)) return false
+            return state.isFaceSturdy(level, pos, Direction.UP)
+        }
+
+        private fun canReplaceDecoration(level: LevelAccessor, pos: BlockPos): Boolean =
+            canReplaceSiteAirspace(level.getBlockState(pos))
 
         private fun isLeafLike(state: BlockState): Boolean =
             state.`is`(BlockTags.LEAVES) || state.block is LeavesBlock
 
         private fun canReplaceSiteAirspace(state: BlockState): Boolean =
-            state.fluidState.isEmpty && (state.canBeReplaced() || isLeafLike(state) || isFoliageLikeAirspace(state))
+            !state.`is`(ModBlocks.OBELISK.get()) &&
+                state.fluidState.isEmpty &&
+                (state.canBeReplaced() || isLeafLike(state) || isFoliageLikeAirspace(state))
 
         private fun isFoliageLikeAirspace(state: BlockState): Boolean {
             if (state.block is BushBlock) return true
@@ -419,9 +367,14 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 path.endsWith("_flowers")
         }
 
-        private fun isGateGap(x: Int, z: Int): Boolean =
-            (kotlin.math.abs(x) == GRAVEYARD_RADIUS && kotlin.math.abs(z) <= 1) ||
-                (kotlin.math.abs(z) == GRAVEYARD_RADIUS && kotlin.math.abs(x) <= 1)
+        private fun block(id: String?, fallback: Block): Block {
+            val location = id?.let(ResourceLocation::tryParse) ?: return fallback
+            val value = BuiltInRegistries.BLOCK.get(location)
+            return if (value == Blocks.AIR && location.path != "air") fallback else value
+        }
+
+        private fun blocks(ids: List<String>?, fallback: List<Block>): List<Block> =
+            ids.orEmpty().mapIndexed { index, id -> block(id, fallback[index % fallback.size]) }.takeIf { it.isNotEmpty() } ?: fallback
 
         private fun <T> List<T>.shuffled(random: RandomSource): List<T> {
             val copy = toMutableList()
@@ -434,7 +387,69 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             return copy
         }
 
-        private data class GraveSlot(val x: Int, val z: Int)
+        private data class GraveyardPalette(
+            val pedestal: Block,
+            val path: List<Block>,
+            val grave: List<Block>,
+            val structure: List<Block>,
+            val decorations: List<Block>
+        ) {
+            fun path(random: RandomSource): Block = path[random.nextInt(path.size)]
+            fun grave(random: RandomSource): Block = grave[random.nextInt(grave.size)]
+            fun structure(random: RandomSource): Block = structure[random.nextInt(structure.size)]
+            fun decoration(random: RandomSource): Block = decorations[random.nextInt(decorations.size)]
+            fun wall(random: RandomSource): Block = if (random.nextBoolean()) Blocks.COBBLESTONE_WALL else Blocks.MOSSY_COBBLESTONE_WALL
+            fun headstone(random: RandomSource): Block = if (random.nextBoolean()) Blocks.CHISELED_STONE_BRICKS else wall(random)
+
+            companion object {
+                fun from(definition: ObeliskDefinition): GraveyardPalette {
+                    val configured = definition.graveyardPalette
+                    val legacyStone = listOfNotNull(definition.meteorCoreBlock, definition.meteorShellBlock, definition.pedestalBlock)
+                    val legacyGround = definition.craterFillBlocks
+                    val pathIds = configured?.pathBlocks ?: definition.pathBlocks ?: legacyGround
+                    val graveIds = configured?.graveBlocks ?: definition.graveBlocks ?: legacyStone
+                    val structureIds = configured?.structureBlocks ?: definition.structureBlocks ?: legacyStone
+                    val decorationIds = configured?.decorations ?: definition.decorations
+                    val pedestalId = configured?.pedestalBlock ?: definition.pedestalBlock ?: definition.meteorCoreBlock
+                    return GraveyardPalette(
+                        pedestal = block(pedestalId, Blocks.POLISHED_ANDESITE),
+                        path = blocks(pathIds, listOf(Blocks.GRAVEL, Blocks.COARSE_DIRT, Blocks.MOSSY_COBBLESTONE, Blocks.CRACKED_STONE_BRICKS)),
+                        grave = blocks(graveIds, listOf(Blocks.STONE_BRICKS, Blocks.MOSSY_COBBLESTONE, Blocks.CRACKED_STONE_BRICKS)),
+                        structure = blocks(structureIds, listOf(Blocks.POLISHED_ANDESITE, Blocks.MOSSY_STONE_BRICKS, Blocks.STONE_BRICKS)),
+                        decorations = blocks(decorationIds, listOf(Blocks.RED_CANDLE, Blocks.SOUL_LANTERN, Blocks.DEAD_BUSH, Blocks.BONE_BLOCK))
+                    )
+                }
+            }
+        }
+
+        private enum class TileType {
+            FONT_PEDESTAL,
+            PATH,
+            GRAVE_SINGLE,
+            GRAVE_DOUBLE,
+            MAUSOLEUM_SMALL,
+            SHRINE,
+            STATUE_RUIN,
+            TREE_STUMP,
+            DECOR
+        }
+
+        private data class TileCoord(val x: Int, val z: Int) {
+            fun relative(direction: Direction): TileCoord = when (direction) {
+                Direction.NORTH -> copy(z = z - 1)
+                Direction.SOUTH -> copy(z = z + 1)
+                Direction.WEST -> copy(x = x - 1)
+                Direction.EAST -> copy(x = x + 1)
+                else -> this
+            }
+        }
+
+        private data class TilePlan(
+            val coord: TileCoord,
+            val groundPos: BlockPos,
+            val type: TileType,
+            val pathExits: Set<Direction>
+        )
     }
 
     override fun place(context: FeaturePlaceContext<NoneFeatureConfiguration>): Boolean {
@@ -442,11 +457,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         if (level.level.dimension() != Level.OVERWORLD) return false
 
         val definition = ObeliskDataManager.pickRandomObelisk() ?: return false
-        val origin = context.origin()
-        val center = findPlacementCenter(level, origin) ?: return false
-
-        buildSite(level, center, context.random())
-        val fontPos = center
+        val center = findPlacementCenter(level, context.origin()) ?: return false
+        val fontPos = buildSite(level, center, definition, context.random()) ?: return false
         if (!level.setBlock(fontPos, ModBlocks.OBELISK.get().defaultBlockState(), 3)) return false
         val font = level.getBlockEntity(fontPos) as? ObeliskBlockEntity ?: return false
         font.setDefinition(definition.id)
@@ -455,7 +467,6 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         return true
     }
 
-    private fun buildSite(level: WorldGenLevel, center: BlockPos, random: RandomSource) {
-        buildSiteBlocks(level, level::setBlock, center, random)
-    }
+    private fun buildSite(level: WorldGenLevel, center: BlockPos, definition: ObeliskDefinition, random: RandomSource): BlockPos? =
+        buildSiteBlocks(level, level::setBlock, center, definition, random)
 }

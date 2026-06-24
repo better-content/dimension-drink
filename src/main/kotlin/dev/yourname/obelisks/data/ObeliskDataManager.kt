@@ -129,9 +129,29 @@ object ObeliskDataManager {
             runBloodDrainPerTick = definition.runBloodDrainPerTick?.coerceAtLeast(0.0) ?: 20.0,
             requiredNamespace = requiredNamespace,
             worldgenFamilyId = stringOrNull(definition.worldgenFamilyId) ?: "altar",
-            rewardTableId = stringOrNull(definition.rewardTableId) ?: "default"
+            rewardTableId = stringOrNull(definition.rewardTableId) ?: "default",
+            graveyardPalette = definition.graveyardPalette?.let { palette ->
+                palette.copy(
+                    pathBlocks = sanitizeIdList(palette.pathBlocks),
+                    graveBlocks = sanitizeIdList(palette.graveBlocks),
+                    structureBlocks = sanitizeIdList(palette.structureBlocks),
+                    decorations = sanitizeIdList(palette.decorations),
+                    pedestalBlock = stringOrNull(palette.pedestalBlock)
+                )
+            },
+            pathBlocks = sanitizeIdList(definition.pathBlocks),
+            graveBlocks = sanitizeIdList(definition.graveBlocks),
+            structureBlocks = sanitizeIdList(definition.structureBlocks),
+            decorations = sanitizeIdList(definition.decorations),
+            pedestalBlock = stringOrNull(definition.pedestalBlock),
+            meteorCoreBlock = stringOrNull(definition.meteorCoreBlock),
+            meteorShellBlock = stringOrNull(definition.meteorShellBlock),
+            craterFillBlocks = sanitizeIdList(definition.craterFillBlocks)
         )
     }
+
+    private fun sanitizeIdList(values: List<String>?): List<String>? =
+        values.orEmpty().mapNotNull(::stringOrNull).takeIf { it.isNotEmpty() }
 
     private fun normalizeRewardTable(table: RewardTableDefinition): RewardTableDefinition? {
         val id = stringOrNull(table.id)

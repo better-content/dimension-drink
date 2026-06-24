@@ -10,6 +10,13 @@
   "enabled": true,
   "worldgenWeight": 0.5,
   "worldgenFamilyId": "altar",
+  "graveyardPalette": {
+    "pedestalBlock": "minecraft:end_stone_bricks",
+    "pathBlocks": ["minecraft:end_stone", "minecraft:gravel"],
+    "graveBlocks": ["minecraft:end_stone_bricks", "minecraft:purpur_block", "minecraft:chiseled_stone_bricks"],
+    "structureBlocks": ["minecraft:end_stone_bricks", "minecraft:purpur_pillar", "minecraft:purpur_block"],
+    "decorations": ["minecraft:red_candle", "minecraft:soul_lantern", "minecraft:dead_bush"]
+  },
   "rewardTableId": "end",
   "maxBlood": 15000,
   "bloodStartCost": 5000,

@@ -10,6 +10,13 @@
   "enabled": true,
   "worldgenWeight": 1.0,
   "worldgenFamilyId": "altar",
+  "graveyardPalette": {
+    "pedestalBlock": "deeperdarker:polished_sculk_stone",
+    "pathBlocks": ["minecraft:sculk", "deeperdarker:echo_soil", "deeperdarker:sculk_stone"],
+    "graveBlocks": ["deeperdarker:sculk_stone", "deeperdarker:sculk_stone_bricks", "deeperdarker:polished_sculk_stone"],
+    "structureBlocks": ["deeperdarker:sculk_stone_bricks", "deeperdarker:sculk_stone_tiles", "deeperdarker:polished_sculk_stone"],
+    "decorations": ["minecraft:red_candle", "minecraft:soul_lantern", "minecraft:dead_bush"]
+  },
   "rewardTableId": "default",
   "maxBlood": 15000,
   "bloodStartCost": 5000,

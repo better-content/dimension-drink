@@ -7,7 +7,7 @@ import kotlin.test.assertTrue
 
 class DimensionalFontWorldgenPlacementTest {
     @Test
-    fun placedFeatureKeepsFontAttemptsCommonAndColumnScanned() {
+    fun placedFeatureUsesPackRarityAndColumnScanned() {
         val resource = javaClass.classLoader.getResource(
             "data/dimensionalfonts/worldgen/placed_feature/dimensional_font_placed.json"
         )
@@ -18,8 +18,8 @@ class DimensionalFontWorldgenPlacementTest {
             "Dimensional font worldgen should keep an explicit rarity contract"
         )
         assertTrue(
-            Regex(""""chance"\s*:\s*(?:[1-9]|10)\b""").containsMatchIn(json),
-            "Dimensional fonts should use a bounded, low-frequency attempt schedule"
+            Regex(""""chance"\s*:\s*64\b""").containsMatchIn(json),
+            "Dimensional fonts should use the pack rarity contract"
         )
         assertFalse(
             Regex(""""type"\s*:\s*"minecraft:heightmap"""").containsMatchIn(json),

@@ -10,6 +10,13 @@
   "enabled": true,
   "worldgenWeight": 1.0,
   "worldgenFamilyId": "altar",
+  "graveyardPalette": {
+    "pedestalBlock": "blue_skies:polished_rimestone",
+    "pathBlocks": ["blue_skies:turquoise_stonebrick", "blue_skies:crystal_sandstone", "minecraft:gravel"],
+    "graveBlocks": ["blue_skies:turquoise_stonebrick", "blue_skies:chiseled_turquoise_stonebrick", "blue_skies:polished_rimestone"],
+    "structureBlocks": ["blue_skies:turquoise_stonebrick", "blue_skies:chiseled_turquoise_stonebrick", "blue_skies:polished_taratite"],
+    "decorations": ["minecraft:red_candle", "minecraft:soul_lantern", "minecraft:dead_bush"]
+  },
   "rewardTableId": "default",
   "maxBlood": 15000,
   "bloodStartCost": 5000,
