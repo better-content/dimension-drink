@@ -35,6 +35,9 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private const val MAX_TILE_RADIUS = 16
         private const val MIN_TILE_RADIUS = 10
         private const val FONT_CLEARANCE = 3
+        private const val ALTAR_HEIGHT = 3
+        private const val ALTAR_RADIUS = 3
+        private const val ALTAR_MAX_FOUNDATION_DROP = 2
         fun generateDefinitionSiteForTests(
             level: ServerLevel,
             center: BlockPos,
@@ -50,9 +53,9 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private fun findPlacementCenter(level: LevelAccessor, origin: BlockPos): BlockPos? {
             if (!level.getBlockState(origin).fluidState.isEmpty) return null
             val snapped = snapToUniversalGrid(origin)
-            val surfaceY = findSurfaceY(level, snapped.x, snapped.z, scanTopForOrigin(level, origin), FONT_CLEARANCE + 1) ?: return null
+            val surfaceY = findSurfaceY(level, snapped.x, snapped.z, scanTopForOrigin(level, origin), ALTAR_HEIGHT + FONT_CLEARANCE + 1) ?: return null
             val center = BlockPos(snapped.x, surfaceY, snapped.z)
-            return if (canPlacePedestalAndFont(level, center)) center else null
+            return if (canPlaceElevatedAltarAndFont(level, center)) center else null
         }
 
         private fun scanTopForOrigin(level: LevelAccessor, origin: BlockPos): Int =
@@ -74,18 +77,16 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val palette = GraveyardPalette.from(definition)
             val tiles = planTiles(level, center, random)
             val fontTile = tiles[TileCoord(0, 0)] ?: return null
-            if (!canPlacePedestalAndFont(level, fontTile.groundPos)) return null
+            val altarSurface = altarSurfaceMap(level, fontTile.groundPos) ?: return null
+            if (!canPlaceElevatedAltarAndFont(level, fontTile.groundPos, altarSurface)) return null
 
             tiles.values.sortedWith(compareBy<TilePlan> { abs(it.coord.x) + abs(it.coord.z) }.thenBy { it.coord.x }.thenBy { it.coord.z }).forEach { tile ->
                 placeTile(level, setBlock, tile, tiles, palette, random)
             }
             placeBoundaryAccents(level, setBlock, tiles, palette, random)
 
-            setBlock(fontTile.groundPos, palette.pedestal.defaultBlockState(), 3)
-            for (dy in 1..FONT_CLEARANCE) {
-                setBlock(fontTile.groundPos.above(dy), Blocks.AIR.defaultBlockState(), 3)
-            }
-            return BuiltSite(fontTile.groundPos.above(), generatedCapacityForSite(definition, tiles))
+            val fontPos = placeElevatedAltar(setBlock, fontTile.groundPos, altarSurface, palette, random)
+            return BuiltSite(fontPos, generatedCapacityForSite(definition, tiles))
         }
 
         private fun generatedCapacityForSite(definition: ObeliskDefinition, tiles: Map<TileCoord, TilePlan>): Double {
@@ -531,12 +532,73 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             return setBlock(pos, block.defaultBlockState(), 3)
         }
 
-        private fun canPlacePedestalAndFont(level: LevelAccessor, pedestalPos: BlockPos): Boolean {
-            if (!canUseTileGround(level, pedestalPos, clearance = FONT_CLEARANCE + 1)) return false
-            for (dy in 1..FONT_CLEARANCE + 1) {
-                if (!canReplaceSiteAirspace(level.getBlockState(pedestalPos.above(dy)))) return false
+        private fun placeElevatedAltar(
+            setBlock: (BlockPos, BlockState, Int) -> Boolean,
+            center: BlockPos,
+            surfaceByOffset: Map<Pair<Int, Int>, Int>,
+            palette: GraveyardPalette,
+            random: RandomSource
+        ): BlockPos {
+            val baseY = center.y
+            surfaceByOffset.forEach { (offset, surfaceY) ->
+                val dx = offset.first
+                val dz = offset.second
+                val distance = maxOf(abs(dx), abs(dz))
+                val topY = baseY + when {
+                    distance <= 1 -> ALTAR_HEIGHT
+                    distance == 2 -> 2
+                    else -> 1
+                }
+                val block = when {
+                    distance <= 1 -> palette.pedestal
+                    distance == 2 -> palette.structure(random)
+                    else -> if (random.nextInt(5) == 0) Blocks.MOSSY_STONE_BRICKS else palette.structure(random)
+                }
+                for (y in surfaceY + 1..topY) {
+                    setBlock(BlockPos(center.x + dx, y, center.z + dz), block.defaultBlockState(), 3)
+                }
             }
-            return true
+            val fontPos = center.above(ALTAR_HEIGHT + 1)
+            for (dy in 1..FONT_CLEARANCE) {
+                setBlock(fontPos.above(dy), Blocks.AIR.defaultBlockState(), 3)
+            }
+            return fontPos
+        }
+
+        private fun canPlaceElevatedAltarAndFont(level: LevelAccessor, center: BlockPos): Boolean {
+            val surfaceByOffset = altarSurfaceMap(level, center) ?: return false
+            return canPlaceElevatedAltarAndFont(level, center, surfaceByOffset)
+        }
+
+        private fun canPlaceElevatedAltarAndFont(level: LevelAccessor, center: BlockPos, surfaceByOffset: Map<Pair<Int, Int>, Int>): Boolean {
+            val fontPos = center.above(ALTAR_HEIGHT + 1)
+            for (dy in 0..FONT_CLEARANCE) {
+                if (!canReplaceSiteAirspace(level.getBlockState(fontPos.above(dy)))) return false
+            }
+            return surfaceByOffset.isNotEmpty()
+        }
+
+        private fun altarSurfaceMap(level: LevelAccessor, center: BlockPos): Map<Pair<Int, Int>, Int>? {
+            val surfaces = linkedMapOf<Pair<Int, Int>, Int>()
+            for (dx in -ALTAR_RADIUS..ALTAR_RADIUS) {
+                for (dz in -ALTAR_RADIUS..ALTAR_RADIUS) {
+                    if (maxOf(abs(dx), abs(dz)) > ALTAR_RADIUS) continue
+                    val x = center.x + dx
+                    val z = center.z + dz
+                    val surfaceY = findSurfaceY(level, x, z, center.y + 1, 1) ?: return null
+                    if (surfaceY > center.y || center.y - surfaceY > ALTAR_MAX_FOUNDATION_DROP) return null
+                    val topY = center.y + when {
+                        maxOf(abs(dx), abs(dz)) <= 1 -> ALTAR_HEIGHT
+                        maxOf(abs(dx), abs(dz)) == 2 -> 2
+                        else -> 1
+                    }
+                    for (y in surfaceY + 1..topY) {
+                        if (!canReplaceSiteAirspace(level.getBlockState(BlockPos(x, y, z)))) return null
+                    }
+                    surfaces[dx to dz] = surfaceY
+                }
+            }
+            return surfaces
         }
 
         private fun hasClearance(level: LevelAccessor, pos: BlockPos, clearance: Int): Boolean {

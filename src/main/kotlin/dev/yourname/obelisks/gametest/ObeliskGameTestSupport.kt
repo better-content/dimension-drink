@@ -1209,6 +1209,9 @@ object ObeliskGameTestSupport {
 
     private fun assertGeneratedAltar(helper: GameTestHelper, fontPos: BlockPos, label: String) {
         val baseCenter = fontPos.below()
+        val middleTierCenter = baseCenter.below()
+        val lowerTierCenter = baseCenter.below(2)
+        val graveyardFloorCenter = lowerTierCenter.below()
         val obelisk = helper.level.getBlockEntity(fontPos) as? ObeliskBlockEntity
         helper.assertTrue(helper.level.getBlockState(fontPos).`is`(ModBlocks.OBELISK.get()), "Expected $label graveyard to place a dimensional font")
         val definitionBaseCapacity = obelisk?.definitionId?.let { ObeliskDataManager.getObelisk(it)?.maxBlood } ?: 15_000.0
@@ -1226,7 +1229,13 @@ object ObeliskGameTestSupport {
                 helper.level.getBlockState(baseCenter).`is`(Blocks.MOSSY_COBBLESTONE),
             "Expected $label font to sit on a stone-family pedestal"
         )
-        helper.assertTrue(!helper.level.getBlockState(baseCenter).isAir, "Expected $label pedestal not to float")
+        helper.assertTrue(!helper.level.getBlockState(baseCenter).isAir, "Expected $label altar cap not to float")
+        helper.assertTrue(!helper.level.getBlockState(middleTierCenter).isAir, "Expected $label font to sit on an elevated altar middle tier")
+        helper.assertTrue(!helper.level.getBlockState(lowerTierCenter).isAir, "Expected $label font to sit on an elevated altar lower tier")
+        helper.assertTrue(!helper.level.getBlockState(lowerTierCenter.offset(3, 0, 0)).isAir, "Expected $label elevated altar to have a broad lower step")
+        helper.assertTrue(!helper.level.getBlockState(lowerTierCenter.offset(-3, 0, 0)).isAir, "Expected $label elevated altar to have a broad lower step")
+        helper.assertTrue(!helper.level.getBlockState(lowerTierCenter.offset(0, 0, 3)).isAir, "Expected $label elevated altar to have a broad lower step")
+        helper.assertTrue(!helper.level.getBlockState(lowerTierCenter.offset(0, 0, -3)).isAir, "Expected $label elevated altar to have a broad lower step")
         for (dy in 1..3) {
             helper.assertTrue(helper.level.getBlockState(fontPos.above(dy)).isAir, "Expected $label font to keep clear space above it")
         }
@@ -1253,7 +1262,7 @@ object ObeliskGameTestSupport {
         for (dx in -20..20) {
             for (dz in -20..20) {
                 for (dy in -1..3) {
-                    val pos = baseCenter.offset(dx, dy, dz)
+                    val pos = graveyardFloorCenter.offset(dx, dy, dz)
                     val state = helper.level.getBlockState(pos)
                     if (state.`is`(Blocks.CHISELED_STONE_BRICKS) || state.`is`(Blocks.COBBLESTONE_WALL) || state.`is`(Blocks.MOSSY_COBBLESTONE_WALL)) {
                         graveSignals++
@@ -1283,7 +1292,7 @@ object ObeliskGameTestSupport {
                 for (dx in sx - 2..sx + 2) {
                     for (dz in sz - 2..sz + 2) {
                         for (dy in -1..3) {
-                            localDetails += detailWeight(baseCenter.offset(dx, dy, dz))
+                            localDetails += detailWeight(graveyardFloorCenter.offset(dx, dy, dz))
                         }
                     }
                 }
