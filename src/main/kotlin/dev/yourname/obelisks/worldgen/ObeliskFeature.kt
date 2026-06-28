@@ -7,6 +7,7 @@ import dev.yourname.obelisks.data.ObeliskDataManager
 import dev.yourname.obelisks.data.ObeliskDefinition
 import dev.yourname.obelisks.registry.ModBlocks
 import net.minecraft.core.BlockPos
+import net.minecraft.world.level.ChunkPos
 import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.resources.ResourceLocation
@@ -1382,10 +1383,22 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
         val definition = ObeliskDataManager.pickRandomObelisk() ?: return false
         val center = findPlacementCenter(level, context.origin()) ?: return false
-        val site = buildSite(level, center, definition, context.random()) ?: return false
+        val chunk = ChunkPos(context.origin())
+        val site = buildSite(level, center, definition, context.random(), chunk) ?: return false
+        if (!isInsideChunk(site.fontPos, chunk)) return false
         return placeGeneratedFont(level, site, definition)
     }
 
-    private fun buildSite(level: WorldGenLevel, center: BlockPos, definition: ObeliskDefinition, random: RandomSource): BuiltSite? =
-        buildSiteBlocks(level, level::setBlock, center, definition, random)
+    private fun buildSite(level: WorldGenLevel, center: BlockPos, definition: ObeliskDefinition, random: RandomSource, chunk: ChunkPos): BuiltSite? {
+        val chunkLocalSetBlock = { pos: BlockPos, state: BlockState, flags: Int ->
+            if (isInsideChunk(pos, chunk)) level.setBlock(pos, state, flags) else false
+        }
+        return buildSiteBlocks(level, chunkLocalSetBlock, center, definition, random)
+    }
+
+    private fun isInsideChunk(pos: BlockPos, chunk: ChunkPos): Boolean =
+        pos.x >= chunk.minBlockX &&
+            pos.x <= chunk.maxBlockX &&
+            pos.z >= chunk.minBlockZ &&
+            pos.z <= chunk.maxBlockZ
 }
