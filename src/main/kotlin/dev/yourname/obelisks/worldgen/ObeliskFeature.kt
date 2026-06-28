@@ -21,6 +21,7 @@ import net.minecraft.world.level.block.BushBlock
 import net.minecraft.world.level.block.LeavesBlock
 import net.minecraft.world.level.block.SlabBlock
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.level.block.state.properties.SlabType
 import net.minecraft.world.level.levelgen.feature.Feature
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext
@@ -522,14 +523,19 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
         private fun placeGround(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, pos: BlockPos, block: Block): Boolean {
             if (!canUseTileGround(level, pos, clearance = 1)) return false
-            return setBlock(pos, block.defaultBlockState(), 3)
+            return setBlock(pos, generatedState(block), 3)
         }
 
         private fun placeSupportedAbove(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, pos: BlockPos, block: Block): Boolean {
             val below = pos.below()
             if (!isSupportedGround(level, below, level.getBlockState(below))) return false
             if (!canReplaceDecoration(level, pos)) return false
-            return setBlock(pos, block.defaultBlockState(), 3)
+            return setBlock(pos, generatedState(block), 3)
+        }
+
+        private fun generatedState(block: Block): BlockState {
+            val state = block.defaultBlockState()
+            return if (state.hasProperty(BlockStateProperties.LIT)) state.setValue(BlockStateProperties.LIT, true) else state
         }
 
         private fun placeElevatedAltar(

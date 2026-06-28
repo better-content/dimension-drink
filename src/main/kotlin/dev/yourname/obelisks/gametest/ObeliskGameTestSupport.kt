@@ -1244,6 +1244,7 @@ object ObeliskGameTestSupport {
         var trophySignals = 0
         var trophyGroundSignals = 0
         var forbiddenSignals = 0
+        var unlitCandleSignals = 0
         val pathDirections = mutableSetOf<Direction>()
         val expectedTrophy = when (label) {
             "end" -> Blocks.END_STONE
@@ -1282,6 +1283,9 @@ object ObeliskGameTestSupport {
                     if (state.`is`(Blocks.WITHER_ROSE) || state.`is`(Blocks.COPPER_BLOCK)) {
                         forbiddenSignals++
                     }
+                    if (state.`is`(Blocks.RED_CANDLE) && !state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.LIT)) {
+                        unlitCandleSignals++
+                    }
                 }
             }
         }
@@ -1309,6 +1313,7 @@ object ObeliskGameTestSupport {
             helper.assertTrue(trophyGroundSignals == 0, "Expected $label dimensional trophy blocks to be displayed above ground, not used as graveyard floor")
         }
         helper.assertTrue(forbiddenSignals == 0, "Expected $label graveyard to avoid copper blocks and wither roses")
+        helper.assertTrue(unlitCandleSignals == 0, "Expected $label generated graveyard candles to be lit")
     }
 
     private fun countBufferedItem(obelisk: ObeliskBlockEntity?, item: net.minecraft.world.item.Item): Int {
