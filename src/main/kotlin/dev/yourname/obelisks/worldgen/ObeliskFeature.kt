@@ -50,6 +50,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private const val SITE_GRID_CHUNKS = 6
         private const val SITE_GRID_BLOCKS = SITE_GRID_CHUNKS * 16
         private const val SITE_GRID_SCAN_RADIUS = 1
+        private const val TARGET_RARITY_CHUNKS = 64
         fun generateDefinitionSiteForTests(
             level: ServerLevel,
             center: BlockPos,
@@ -97,6 +98,9 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             value = value xor cellZ.toLong()
             return value
         }
+
+        private fun shouldGenerateSite(cellX: Int, cellZ: Int): Boolean =
+            RandomSource.create(siteSeed(cellX, cellZ)).nextInt(TARGET_RARITY_CHUNKS) < SITE_GRID_CHUNKS * SITE_GRID_CHUNKS
 
         private fun normalizeAltarCenter(level: LevelAccessor, center: BlockPos): BlockPos? {
             var highestSurface = center.y
@@ -1483,6 +1487,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         val chunkCellZ = Math.floorDiv(chunk.minBlockZ, SITE_GRID_BLOCKS)
         for (cellX in chunkCellX - SITE_GRID_SCAN_RADIUS..chunkCellX + SITE_GRID_SCAN_RADIUS) {
             for (cellZ in chunkCellZ - SITE_GRID_SCAN_RADIUS..chunkCellZ + SITE_GRID_SCAN_RADIUS) {
+                if (!shouldGenerateSite(cellX, cellZ)) continue
                 val siteRandom = RandomSource.create(siteSeed(cellX, cellZ))
                 val definition = pickDeterministicObelisk(siteRandom) ?: return false
                 val center = siteAnchorForCell(cellX, cellZ).atY(level.maxBuildHeight - TERRAIN_SCAN_UP - 2)
