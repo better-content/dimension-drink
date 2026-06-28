@@ -678,6 +678,15 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 if (value == Blocks.AIR && location.path != "air") null else value
             }.distinct()
 
+        private fun pathBlocks(ids: List<String>?, fallback: List<Block>): List<Block> =
+            blocks(ids, fallback).filterNot(::isStoneBrickPathBlock).takeIf { it.isNotEmpty() } ?: fallback
+
+        private fun isStoneBrickPathBlock(block: Block): Boolean =
+            block == Blocks.STONE_BRICKS ||
+                block == Blocks.MOSSY_STONE_BRICKS ||
+                block == Blocks.CRACKED_STONE_BRICKS ||
+                block == Blocks.CHISELED_STONE_BRICKS
+
         private fun <T> List<T>.shuffled(random: RandomSource): List<T> {
             val copy = toMutableList()
             for (i in copy.lastIndex downTo 1) {
@@ -723,7 +732,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     val decorationIds = configured?.decorations ?: definition.decorations
                     return GraveyardPalette(
                         pedestal = Blocks.POLISHED_ANDESITE,
-                        path = listOf(Blocks.GRAVEL, Blocks.COARSE_DIRT, Blocks.MOSSY_COBBLESTONE, Blocks.CRACKED_STONE_BRICKS),
+                        path = pathBlocks(configured?.pathBlocks ?: definition.pathBlocks, listOf(Blocks.GRAVEL, Blocks.COARSE_DIRT, Blocks.MOSSY_COBBLESTONE, Blocks.PODZOL)),
                         grave = listOf(Blocks.STONE_BRICKS, Blocks.MOSSY_COBBLESTONE, Blocks.CRACKED_STONE_BRICKS),
                         structure = listOf(Blocks.POLISHED_ANDESITE, Blocks.MOSSY_STONE_BRICKS, Blocks.STONE_BRICKS),
                         decorations = blocks(decorationIds, listOf(Blocks.RED_CANDLE, Blocks.SOUL_LANTERN, Blocks.DEAD_BUSH, Blocks.BONE_BLOCK)),

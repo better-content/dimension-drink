@@ -1268,7 +1268,7 @@ object ObeliskGameTestSupport {
                     if (state.`is`(Blocks.CHISELED_STONE_BRICKS) || state.`is`(Blocks.COBBLESTONE_WALL) || state.`is`(Blocks.MOSSY_COBBLESTONE_WALL)) {
                         graveSignals++
                     }
-                    if (state.`is`(Blocks.GRAVEL) || state.`is`(Blocks.COARSE_DIRT) || state.`is`(Blocks.CRACKED_STONE_BRICKS)) {
+                    if (state.`is`(Blocks.GRAVEL) || state.`is`(Blocks.COARSE_DIRT) || state.`is`(Blocks.MOSSY_COBBLESTONE) || state.`is`(Blocks.PODZOL)) {
                         pathSignals++
                         if (abs(dx) > abs(dz)) {
                             pathDirections += if (dx > 0) Direction.EAST else Direction.WEST
