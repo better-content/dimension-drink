@@ -18,7 +18,7 @@ class DimensionalFontWorldgenPlacementTest {
             "Dimensional font worldgen should keep an explicit rarity contract"
         )
         assertTrue(
-            Regex(""""chance"\s*:\s*64\b""").containsMatchIn(json),
+            Regex(""""chance"\s*:\s*1\b""").containsMatchIn(json),
             "Dimensional fonts should use the pack rarity contract"
         )
         assertFalse(
