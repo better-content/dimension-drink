@@ -27,6 +27,7 @@ import net.minecraft.world.level.levelgen.feature.Feature
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext
 import net.minecraft.world.level.levelgen.feature.configurations.NoneFeatureConfiguration
 import net.minecraft.server.level.ServerLevel
+import java.util.ArrayDeque
 import kotlin.math.abs
 
 class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatureConfiguration>(codec) {
@@ -38,7 +39,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private const val FONT_CLEARANCE = 3
         private const val ALTAR_HEIGHT = 3
         private const val ALTAR_RADIUS = 3
-        private const val ALTAR_MAX_FOUNDATION_DROP = 2
+        private const val ALTAR_MAX_FOUNDATION_DROP = 7
         fun generateDefinitionSiteForTests(
             level: ServerLevel,
             center: BlockPos,
@@ -55,7 +56,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             if (!level.getBlockState(origin).fluidState.isEmpty) return null
             val snapped = snapToUniversalGrid(origin)
             val surfaceY = findSurfaceY(level, snapped.x, snapped.z, scanTopForOrigin(level, origin), ALTAR_HEIGHT + FONT_CLEARANCE + 1) ?: return null
-            val center = BlockPos(snapped.x, surfaceY, snapped.z)
+            val center = normalizeAltarCenter(level, BlockPos(snapped.x, surfaceY, snapped.z)) ?: return null
             return if (canPlaceElevatedAltarAndFont(level, center)) center else null
         }
 
@@ -66,6 +67,19 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val cellX = Math.floorDiv(origin.x, TILE_SIZE)
             val cellZ = Math.floorDiv(origin.z, TILE_SIZE)
             return BlockPos(cellX * TILE_SIZE + TILE_SIZE / 2, origin.y, cellZ * TILE_SIZE + TILE_SIZE / 2)
+        }
+
+        private fun normalizeAltarCenter(level: LevelAccessor, center: BlockPos): BlockPos? {
+            var highestSurface = center.y
+            for (dx in -ALTAR_RADIUS..ALTAR_RADIUS) {
+                for (dz in -ALTAR_RADIUS..ALTAR_RADIUS) {
+                    val x = center.x + dx
+                    val z = center.z + dz
+                    val surfaceY = findSurfaceY(level, x, z, center.y + ALTAR_MAX_FOUNDATION_DROP, 1) ?: return null
+                    highestSurface = maxOf(highestSurface, surfaceY)
+                }
+            }
+            return center.atY(highestSurface)
         }
 
         private fun buildSiteBlocks(
@@ -194,6 +208,11 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }.distinct().shuffled(random)
 
         private fun carvePath(paths: MutableSet<TileCoord>, candidates: Map<TileCoord, TilePlan>, start: TileCoord, target: TileCoord, random: RandomSource) {
+            val routed = findPathThroughTerrain(candidates, start, target)
+            if (routed != null) {
+                paths += routed
+                return
+            }
             var current = start
             var guard = MAX_TILE_RADIUS * 4
             while (current != target && guard-- > 0) {
@@ -209,6 +228,34 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 paths += next
                 current = next
             }
+        }
+
+        private fun findPathThroughTerrain(candidates: Map<TileCoord, TilePlan>, start: TileCoord, target: TileCoord): List<TileCoord>? {
+            if (start !in candidates || target !in candidates) return null
+            val frontier = ArrayDeque<TileCoord>()
+            val cameFrom = mutableMapOf<TileCoord, TileCoord?>()
+            frontier += start
+            cameFrom[start] = null
+            while (frontier.isNotEmpty() && cameFrom.size <= candidates.size) {
+                val current = frontier.removeFirst()
+                if (current == target) break
+                Direction.Plane.HORIZONTAL
+                    .map { current.relative(it) }
+                    .filter { next -> next in candidates && next !in cameFrom && isPathable(candidates[current], candidates[next]) }
+                    .sortedWith(compareBy<TileCoord> { manhattanTo(it, target) }.thenBy { it.x }.thenBy { it.z })
+                    .forEach { next ->
+                        cameFrom[next] = current
+                        frontier += next
+                    }
+            }
+            if (target !in cameFrom) return null
+            val route = mutableListOf<TileCoord>()
+            var current: TileCoord? = target
+            while (current != null) {
+                route += current
+                current = cameFrom[current]
+            }
+            return route.asReversed()
         }
 
         private fun typeForZone(zone: TileZone, coord: TileCoord, paths: Set<TileCoord>, random: RandomSource): TileType {
@@ -260,6 +307,9 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private fun manhattan(coord: TileCoord): Int =
             abs(coord.x) + abs(coord.z)
 
+        private fun manhattanTo(a: TileCoord, b: TileCoord): Int =
+            abs(a.x - b.x) + abs(a.z - b.z)
+
         private fun insideOrganicShape(coord: TileCoord, radius: Int): Boolean {
             val manhattan = abs(coord.x) + abs(coord.z)
             val chebyshev = maxOf(abs(coord.x), abs(coord.z))
@@ -305,12 +355,12 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             when (tile.type) {
                 TileType.FONT_PEDESTAL -> {
                     placeGround(level, setBlock, tile.groundPos, palette.path(random))
-                    tile.pathExits.forEach { direction -> placePathArm(level, setBlock, tile, direction, palette, random) }
+                    tile.pathExits.forEach { direction -> placePathArm(level, setBlock, tile, tiles[tile.coord.relative(direction)], direction, palette, random) }
                     scatterTileDetails(level, setBlock, tile.groundPos, palette, random, 3)
                 }
                 TileType.PATH -> {
                     placeGround(level, setBlock, tile.groundPos, palette.path(random))
-                    tile.pathExits.forEach { direction -> placePathArm(level, setBlock, tile, direction, palette, random) }
+                    tile.pathExits.forEach { direction -> placePathArm(level, setBlock, tile, tiles[tile.coord.relative(direction)], direction, palette, random) }
                     placeStepForRaisedNeighbors(level, setBlock, tile, tiles)
                     scatterTileDetails(level, setBlock, tile.groundPos, palette, random, 2)
                 }
@@ -325,11 +375,17 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
         }
 
-        private fun placePathArm(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, tile: TilePlan, direction: Direction, palette: GraveyardPalette, random: RandomSource) {
+        private fun placePathArm(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, tile: TilePlan, neighbor: TilePlan?, direction: Direction, palette: GraveyardPalette, random: RandomSource) {
+            val maxScanY = maxOf(tile.groundPos.y, neighbor?.groundPos?.y ?: tile.groundPos.y) + 3
+            var previous = tile.groundPos
             for (step in 1 until TILE_SIZE) {
-                val pos = tile.groundPos.relative(direction, step)
+                val xz = tile.groundPos.relative(direction, step)
+                val y = findSurfaceY(level, xz.x, xz.z, maxScanY, 1) ?: continue
+                val pos = BlockPos(xz.x, y, xz.z)
                 if (canUseTileGround(level, pos, clearance = 1)) {
                     placeGround(level, setBlock, pos, palette.path(random))
+                    if (abs(pos.y - previous.y) == 1) placeSlopeStep(level, setBlock, previous, pos)
+                    previous = pos
                 }
             }
         }
@@ -343,6 +399,14 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 if (canReplaceDecoration(level, slabPos) && isSupportedGround(level, slabPos.below(), level.getBlockState(slabPos.below()))) {
                     setBlock(slabPos, Blocks.SMOOTH_STONE_SLAB.defaultBlockState().setValue(SlabBlock.TYPE, SlabType.BOTTOM), 3)
                 }
+            }
+        }
+
+        private fun placeSlopeStep(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, a: BlockPos, b: BlockPos) {
+            val lower = if (a.y < b.y) a else b
+            val slabPos = lower.above()
+            if (canReplaceDecoration(level, slabPos) && isSupportedGround(level, lower, level.getBlockState(lower))) {
+                setBlock(slabPos, Blocks.SMOOTH_STONE_SLAB.defaultBlockState().setValue(SlabBlock.TYPE, SlabType.BOTTOM), 3)
             }
         }
 
