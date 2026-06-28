@@ -30,9 +30,19 @@ class ObeliskDataGameTests {
         ObeliskGameTestSupport.reloadCommandRefreshesDefinitionData(helper)
     }
 
-    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data_worldgen", timeoutTicks = 200)
     fun worldgen_definitions_produce_font_altar_sites(helper: GameTestHelper) {
         ObeliskGameTestSupport.worldgenDefinitionsProduceFontAltarSites(helper)
+    }
+
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data_chunk_sliced", timeoutTicks = 300)
+    fun chunk_sliced_worldgen_produces_font_altar_sites(helper: GameTestHelper) {
+        ObeliskGameTestSupport.chunkSlicedWorldgenProducesFontAltarSites(helper)
+    }
+
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data_overworld_presence", timeoutTicks = 1600)
+    fun generated_overworld_chunks_produce_graveyard_altar_sites(helper: GameTestHelper) {
+        ObeliskGameTestSupport.generatedOverworldChunksProduceGraveyardAltarSites(helper)
     }
 
     @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)

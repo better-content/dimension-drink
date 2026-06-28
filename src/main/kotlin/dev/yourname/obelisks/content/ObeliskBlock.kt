@@ -80,6 +80,7 @@ class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
         if (result != null) {
             serverPlayer.sendSystemMessage(Component.literal(result))
             if (result.startsWith("Drinking")) {
+                serverPlayer.swing(hand, true)
                 level.playSound(null, pos, SoundEvents.HONEY_DRINK, SoundSource.BLOCKS, 0.7f, 0.75f)
             }
         }

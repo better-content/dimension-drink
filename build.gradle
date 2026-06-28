@@ -22,6 +22,16 @@ gradle.projectsEvaluated {
     }
 }
 
+dependencies {
+    def mantleDep = 'curse.maven:mantle-74924:7563777'
+    def tconstructDep = 'curse.maven:tinkers-construct-74072:7449219'
+
+    compileOnly fg.deobf(mantleDep)
+    compileOnly fg.deobf(tconstructDep)
+    runtimeOnly fg.deobf(mantleDep)
+    runtimeOnly fg.deobf(tconstructDep)
+}
+
 def registerGameTestServerSelectionTask = { String taskName, String selection ->
     tasks.register(taskName, Exec) {
         workingDir rootProject.projectDir
@@ -44,6 +54,7 @@ registerGameTestServerSelectionTask('runGameTestServerTemplate', 'template')
 registerGameTestServerSelectionTask('runGameTestServerMultiplayer', 'multiplayer')
 registerGameTestServerSelectionTask('runGameTestServerCommands', 'commands')
 registerGameTestServerSelectionTask('runGameTestServerRuntime', 'runtime')
+registerGameTestServerSelectionTask('runGameTestServerTCon', 'tcon')
 
 tasks.register('verifyGameTests') {
     dependsOn(
@@ -55,7 +66,8 @@ tasks.register('verifyGameTests') {
         tasks.named('runGameTestServerTemplate'),
         tasks.named('runGameTestServerMultiplayer'),
         tasks.named('runGameTestServerCommands'),
-        tasks.named('runGameTestServerRuntime')
+        tasks.named('runGameTestServerRuntime'),
+        tasks.named('runGameTestServerTCon')
     )
 }
 

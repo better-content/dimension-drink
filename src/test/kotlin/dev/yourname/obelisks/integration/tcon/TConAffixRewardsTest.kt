@@ -27,11 +27,42 @@ class TConAffixRewardsTest {
     }
 
     @Test
-    fun affixPoolIsWeightedTieredAndHasUniqueIds() {
-        assertTrue(TConAffixRewards.affixPool.size >= 20)
+    fun partPoolCoversBroadBaseTypeVariety() {
+        assertTrue(TConAffixRewards.partProfiles.size >= 20)
+        assertTrue(TConAffixRewards.partProfiles.map { it.itemId }.distinct().size == TConAffixRewards.partProfiles.size)
+
+        val families = TConAffixRewards.partProfiles.groupBy { it.family }
+        assertTrue(families[TConAffixRewards.PartFamily.TOOL_HEAD].orEmpty().size >= 5)
+        assertTrue(families[TConAffixRewards.PartFamily.MELEE_HEAD].orEmpty().size >= 2)
+        assertTrue(families[TConAffixRewards.PartFamily.BOW].orEmpty().size >= 3)
+        assertTrue(families[TConAffixRewards.PartFamily.RANGED].orEmpty().size >= 3)
+        assertTrue(families[TConAffixRewards.PartFamily.ARMOR].orEmpty().size >= 5)
+        assertTrue(families[TConAffixRewards.PartFamily.SHIELD].orEmpty().size >= 1)
+    }
+
+    @Test
+    fun affixPoolIsLargeUniqueAndIncludesCreativeModifierAffixes() {
+        assertTrue(TConAffixRewards.affixPool.size >= 40)
 
         val ids = TConAffixRewards.affixPool.map { it.id }
         assertEquals(ids.distinct(), ids)
+
+        val modifierOnly = TConAffixRewards.affixPool.filter { it.stats.isEmpty() && it.modifiers.isNotEmpty() }
+        assertTrue(modifierOnly.size >= 16)
+
+        val creativeModifierIds = modifierOnly.flatMap { it.modifiers }.map { it.id }.toSet()
+        assertTrue("tconstruct:magnetic" in creativeModifierIds)
+        assertTrue("tconstruct:autosmelt" in creativeModifierIds)
+        assertTrue("tconstruct:exchanging" in creativeModifierIds)
+        assertTrue("tconstruct:severing" in creativeModifierIds)
+        assertTrue("tconstruct:sweeping_edge" in creativeModifierIds)
+        assertTrue("tconstruct:piercing" in creativeModifierIds)
+        assertTrue("tconstruct:fiery" in creativeModifierIds)
+        assertTrue("tconstruct:freezing" in creativeModifierIds)
+        assertTrue("tconstruct:scope" in creativeModifierIds)
+        assertTrue("tconstruct:double_jump" in creativeModifierIds)
+        assertTrue("tconstruct:reflecting" in creativeModifierIds)
+        assertTrue("tconstruct:offhand_attack" in creativeModifierIds)
 
         TConAffixRewards.affixPool.forEach { definition ->
             assertTrue(definition.id.isNotBlank())
@@ -39,10 +70,14 @@ class TConAffixRewardsTest {
             assertTrue(definition.group.isNotBlank(), definition.id)
             assertTrue(definition.weight > 0, definition.id)
             assertTrue(definition.families.isNotEmpty(), definition.id)
-            assertTrue(definition.stats.isNotEmpty(), definition.id)
+            assertTrue(definition.stats.isNotEmpty() || definition.modifiers.isNotEmpty(), definition.id)
             definition.stats.forEach { line ->
                 assertTrue(line.stat.startsWith("tconstruct:"), definition.id)
                 assertTrue(line.scale > 0.0, definition.id)
+            }
+            definition.modifiers.forEach { grant ->
+                assertTrue(grant.id.startsWith("tconstruct:"), definition.id)
+                assertTrue(grant.level > 0, definition.id)
             }
             definition.tiers.forEach { tier ->
                 assertTrue(tier.rank in 1..5, definition.id)
@@ -59,7 +94,6 @@ class TConAffixRewardsTest {
     fun everyPartFamilyHasPrefixAndSuffixCandidates() {
         enumValues<TConAffixRewards.PartFamily>().forEach { family ->
             val candidates = TConAffixRewards.affixPool.filter { it.allows(family) }
-
             assertTrue(candidates.any { it.kind == TConAffixRewards.AffixKind.PREFIX }, family.name)
             assertTrue(candidates.any { it.kind == TConAffixRewards.AffixKind.SUFFIX }, family.name)
         }
@@ -78,11 +112,7 @@ class TConAffixRewardsTest {
                 assertTrue(affixes.size in 1..6, family.name)
                 assertTrue(affixes.count { it.getString("kind") == TConAffixRewards.AffixKind.PREFIX.id } <= 3, family.name)
                 assertTrue(affixes.count { it.getString("kind") == TConAffixRewards.AffixKind.SUFFIX.id } <= 3, family.name)
-                assertEquals(
-                    affixes.map { it.getString("group") }.distinct(),
-                    affixes.map { it.getString("group") },
-                    family.name
-                )
+                assertEquals(affixes.map { it.getString("group") }.distinct(), affixes.map { it.getString("group") }, family.name)
 
                 affixes.forEach { rolled ->
                     val definition = assertNotNull(TConAffixRewards.definition(rolled.getString("id")))
@@ -95,6 +125,7 @@ class TConAffixRewardsTest {
                     assertEquals(tier.name, rolled.getString("tier_name"))
                     assertEquals("test:${family.name.lowercase()}", rolled.getString("source_part"))
                     assertRollsMatchDefinition(rolled, definition, tier)
+                    assertModifiersMatchDefinition(rolled, definition)
                 }
             }
         }
@@ -103,7 +134,6 @@ class TConAffixRewardsTest {
     @Test
     fun sixAffixRollsCanBeGeneratedWithoutViolatingPrefixSuffixCaps() {
         val seed = findSeedForAffixCount(6)
-
         val affixes = TConAffixRewards.rollAffixes(
             sourcePart = "tconstruct:pick_head",
             family = TConAffixRewards.PartFamily.TOOL_HEAD,
@@ -132,6 +162,7 @@ class TConAffixRewardsTest {
         assertEquals("tconstruct:attack_damage", rolled.getString("stat"))
         assertTrue(rolled.contains("percent", Tag.TAG_DOUBLE.toInt()))
         assertRollsMatchDefinition(rolled, definition, tier)
+        assertModifiersMatchDefinition(rolled, definition)
     }
 
     @Test
@@ -144,6 +175,18 @@ class TConAffixRewardsTest {
         assertFalse(rolled.contains("percent"))
         assertEquals(2, TConAffixRewards.rolls(rolled).size)
         assertRollsMatchDefinition(rolled, definition, tier)
+        assertModifiersMatchDefinition(rolled, definition)
+    }
+
+    @Test
+    fun modifierOnlyAffixesSerializeGrantedEffects() {
+        val definition = assertNotNull(TConAffixRewards.definition("gravehook"))
+        val tier = definition.tiers.first { it.rank == 3 }
+        val rolled = TConAffixRewards.createAffix(definition, tier, "tconstruct:pick_head", RandomSource.create(9L))
+
+        assertTrue(TConAffixRewards.rolls(rolled).isEmpty())
+        assertEquals(listOf("tconstruct:magnetic"), TConAffixRewards.grantedModifiers(rolled).map { it.id })
+        assertEquals(listOf(1), TConAffixRewards.grantedModifiers(rolled).map { it.level })
     }
 
     @Test
@@ -154,20 +197,15 @@ class TConAffixRewardsTest {
 
         val merged = TConAffixRewards.mergeAffixes(listOf(oldHead, oldHandle), listOf(newHead))
 
-        assertEquals(
-            listOf("tconstruct:tool_handle", "tconstruct:pick_head"),
-            merged.map { it.getString("source_part") }
-        )
+        assertEquals(listOf("tconstruct:tool_handle", "tconstruct:pick_head"), merged.map { it.getString("source_part") })
         assertEquals(listOf("tconstruct:durability", "tconstruct:mining_speed"), merged.map { it.getString("stat") })
     }
 
     @Test
     fun mergeCopiesAffixTags() {
         val input = affix("tconstruct:attack_speed", 0.07, "tconstruct:small_blade")
-
         val merged = TConAffixRewards.mergeAffixes(emptyList(), listOf(input))
         input.putDouble("percent", 0.99)
-
         assertEquals(0.07, merged.single().getDouble("percent"))
     }
 
@@ -179,7 +217,6 @@ class TConAffixRewardsTest {
         )
 
         val merged = TConAffixRewards.mergeAffixes(existing, emptyList())
-
         assertEquals(existing.map { it.getString("stat") }, merged.map { it.getString("stat") })
         assertEquals(existing.map { it.getString("source_part") }, merged.map { it.getString("source_part") })
     }
@@ -190,7 +227,6 @@ class TConAffixRewardsTest {
         val input = affix("tconstruct:mining_speed", 0.12, "")
 
         val merged = TConAffixRewards.mergeAffixes(listOf(existing), listOf(input))
-
         assertEquals(listOf("tconstruct:durability", "tconstruct:mining_speed"), merged.map { it.getString("stat") })
     }
 
@@ -225,6 +261,26 @@ class TConAffixRewardsTest {
         assertEquals(expectedDamage, multipliers.getFloat("tconstruct:attack_damage").toDouble(), 0.00001)
         assertEquals(expectedAttackSpeed, multipliers.getFloat("tconstruct:attack_speed").toDouble(), 0.00001)
         assertEquals(expectedDurability, multipliers.getFloat("tconstruct:durability").toDouble(), 0.00001)
+    }
+
+    @Test
+    fun aggregateGrantedModifiersSumsAcrossAffixes() {
+        val first = assertNotNull(TConAffixRewards.definition("gravehook"))
+        val second = assertNotNull(TConAffixRewards.definition("of_the_bone_rack"))
+        val affixes = listOf(
+            TConAffixRewards.createAffix(first, first.tiers.first { it.rank == 5 }, "tconstruct:pick_head", RandomSource.create(1L)),
+            TConAffixRewards.createAffix(second, second.tiers.first { it.rank == 4 }, "tconstruct:tool_handle", RandomSource.create(2L))
+        )
+
+        val aggregated = TConAffixRewards.aggregateGrantedModifierLevels(affixes)
+        assertEquals(2, aggregated["tconstruct:magnetic"])
+    }
+
+    @Test
+    fun multiplierTagIgnoresModifierOnlyAffixes() {
+        val definition = assertNotNull(TConAffixRewards.definition("gravehook"))
+        val affix = TConAffixRewards.createAffix(definition, definition.tiers.first { it.rank == 2 }, "tconstruct:pick_head", RandomSource.create(1L))
+        assertTrue(TConAffixRewards.multiplierTag(listOf(affix)).isEmpty)
     }
 
     @Test
@@ -265,7 +321,6 @@ class TConAffixRewardsTest {
         tier: TConAffixRewards.Tier
     ) {
         val rolls = TConAffixRewards.rolls(affix)
-
         assertEquals(definition.stats.size, rolls.size, definition.id)
         definition.stats.forEachIndexed { index, line ->
             val (stat, percent) = rolls[index]
@@ -273,6 +328,11 @@ class TConAffixRewardsTest {
             assertTrue(percent >= tier.minPercent * line.scale, "${definition.id} $stat $percent")
             assertTrue(percent <= tier.maxPercent * line.scale, "${definition.id} $stat $percent")
         }
+    }
+
+    private fun assertModifiersMatchDefinition(affix: CompoundTag, definition: TConAffixRewards.AffixDefinition) {
+        val grants = TConAffixRewards.grantedModifiers(affix)
+        assertEquals(definition.modifiers, grants, definition.id)
     }
 
     private fun expectedMultiplier(affixes: List<CompoundTag>, stat: String): Double {

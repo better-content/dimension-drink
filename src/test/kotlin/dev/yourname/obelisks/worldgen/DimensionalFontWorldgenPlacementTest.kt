@@ -19,7 +19,7 @@ class DimensionalFontWorldgenPlacementTest {
         )
         assertTrue(
             Regex(""""chance"\s*:\s*1\b""").containsMatchIn(json),
-            "Chunk-sliced dimensional font graveyards must run every chunk; the feature applies deterministic 1/64 site rarity internally"
+            "Dimensional font graveyards are chunk-sliced structures, so the placed feature must execute every chunk"
         )
         assertFalse(
             Regex(""""type"\s*:\s*"minecraft:heightmap"""").containsMatchIn(json),

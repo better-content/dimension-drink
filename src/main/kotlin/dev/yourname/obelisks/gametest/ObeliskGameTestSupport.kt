@@ -753,6 +753,78 @@ object ObeliskGameTestSupport {
         helper.succeed()
     }
 
+    fun chunkSlicedWorldgenProducesFontAltarSites(helper: GameTestHelper) {
+        deleteTestConfigs()
+        val definition = ObeliskDefinition(
+            id = "test_chunk_sliced_visual_definition",
+            displayName = "Chunk Sliced Visual",
+            instanceTemplateId = "blue_skies:everbright",
+            targetDimension = "blue_skies:everbright",
+            rewardTableId = "default",
+            graveyardPalette = GraveyardPaletteDefinition(trophyBlocks = listOf("minecraft:purpur_block"))
+        )
+        writeDefinition(definition)
+        reloadData()
+
+        val center = helper.absolutePos(BlockPos(260, 3, 4))
+        prepareCliffsideGenerationSurface(helper, center)
+        helper.assertTrue(
+            ObeliskFeature.generateChunkSlicedSiteForTests(helper.level, center.above(18), definition.id, 9012L),
+            "Expected chunk-sliced test generation to place a font and altar"
+        )
+
+        val fontPos = requireNotNull(locateGeneratedObeliskPosInArea(helper, center.atY(96), 40, definition.id)) {
+            "Expected chunk-sliced generation to place a font on the altar"
+        }
+        val obelisk = helper.level.getBlockEntity(fontPos) as? ObeliskBlockEntity
+        helper.assertTrue(
+            obelisk?.definitionId == definition.id,
+            "Expected chunk-sliced generated obelisk to keep its definition id"
+        )
+        assertGeneratedAltar(helper, fontPos, "chunk-sliced")
+
+        deleteTestConfigs()
+        reloadData()
+        helper.succeed()
+    }
+
+    fun generatedOverworldChunksProduceGraveyardAltarSites(helper: GameTestHelper) {
+        deleteTestConfigs()
+        reloadData()
+
+        val minChunkX = 24
+        val maxChunkX = 120
+        val minChunkZ = 24
+        val maxChunkZ = 120
+        val anchors = ObeliskFeature.generatedSiteAnchorsForChunkRangeForTests(minChunkX, maxChunkX, minChunkZ, maxChunkZ)
+            .filter { anchor -> anchor.x in (minChunkX * 16)..(maxChunkX * 16 + 15) && anchor.z in (minChunkZ * 16)..(maxChunkZ * 16 + 15) }
+            .take(12)
+
+        helper.assertTrue(anchors.isNotEmpty(), "Expected overworld terrain test window to include deterministic candidate site anchors")
+
+        anchors.forEach { anchor ->
+            val anchorChunkX = anchor.x shr 4
+            val anchorChunkZ = anchor.z shr 4
+            for (chunkX in anchorChunkX - 6..anchorChunkX + 6) {
+                for (chunkZ in anchorChunkZ - 6..anchorChunkZ + 6) {
+                    helper.level.getChunk(chunkX, chunkZ)
+                }
+            }
+        }
+
+        val generatedFonts = ObeliskFeature.generatePlacedSitesForChunkRangeForTests(
+            helper.level,
+            minChunkX,
+            maxChunkX,
+            minChunkZ,
+            maxChunkZ
+        )
+
+        helper.assertTrue(generatedFonts.isNotEmpty(), "Expected generated overworld chunks to accept dimensional font graveyard placement in sampled chunks")
+        assertGeneratedAltar(helper, generatedFonts.first(), "generated-overworld", requireBroadLowerStep = false)
+        helper.succeed()
+    }
+
     fun underwaterWorldgenDoesNotPlaceFonts(helper: GameTestHelper) {
         deleteTestConfigs()
         val definition = ObeliskDefinition(
@@ -1208,7 +1280,7 @@ object ObeliskGameTestSupport {
         }
     }
 
-    private fun assertGeneratedAltar(helper: GameTestHelper, fontPos: BlockPos, label: String) {
+    private fun assertGeneratedAltar(helper: GameTestHelper, fontPos: BlockPos, label: String, requireBroadLowerStep: Boolean = true) {
         val baseCenter = fontPos.below()
         val middleTierCenter = baseCenter.below()
         val lowerTierCenter = baseCenter.below(2)
@@ -1235,10 +1307,12 @@ object ObeliskGameTestSupport {
         helper.assertTrue(!helper.level.getBlockState(baseCenter).isAir, "Expected $label altar cap not to float")
         helper.assertTrue(!helper.level.getBlockState(middleTierCenter).isAir, "Expected $label font to sit on an elevated altar middle tier")
         helper.assertTrue(!helper.level.getBlockState(lowerTierCenter).isAir, "Expected $label font to sit on an elevated altar lower tier")
-        helper.assertTrue(!helper.level.getBlockState(lowerTierCenter.offset(3, 0, 0)).isAir, "Expected $label elevated altar to have a broad lower step")
-        helper.assertTrue(!helper.level.getBlockState(lowerTierCenter.offset(-3, 0, 0)).isAir, "Expected $label elevated altar to have a broad lower step")
-        helper.assertTrue(!helper.level.getBlockState(lowerTierCenter.offset(0, 0, 3)).isAir, "Expected $label elevated altar to have a broad lower step")
-        helper.assertTrue(!helper.level.getBlockState(lowerTierCenter.offset(0, 0, -3)).isAir, "Expected $label elevated altar to have a broad lower step")
+        if (requireBroadLowerStep) {
+            helper.assertTrue(!helper.level.getBlockState(lowerTierCenter.offset(3, 0, 0)).isAir, "Expected $label elevated altar to have a broad lower step")
+            helper.assertTrue(!helper.level.getBlockState(lowerTierCenter.offset(-3, 0, 0)).isAir, "Expected $label elevated altar to have a broad lower step")
+            helper.assertTrue(!helper.level.getBlockState(lowerTierCenter.offset(0, 0, 3)).isAir, "Expected $label elevated altar to have a broad lower step")
+            helper.assertTrue(!helper.level.getBlockState(lowerTierCenter.offset(0, 0, -3)).isAir, "Expected $label elevated altar to have a broad lower step")
+        }
         for (dy in 1..3) {
             helper.assertTrue(helper.level.getBlockState(fontPos.above(dy)).isAir, "Expected $label font to keep clear space above it")
         }
@@ -1596,6 +1670,29 @@ object ObeliskGameTestSupport {
         for (dy in -64..96) {
             for (dx in -8..8) {
                 for (dz in -8..8) {
+                    val candidate = center.offset(dx, dy, dz)
+                    val blockEntity = helper.level.getBlockEntity(candidate) as? ObeliskBlockEntity
+                    val isObelisk = blockEntity != null || helper.level.getBlockState(candidate).`is`(ModBlocks.OBELISK.get())
+                    val matchesDefinition = definitionId == null || blockEntity?.definitionId == definitionId
+                    if (isObelisk && matchesDefinition) {
+                        val score = dx * dx + dz * dz + abs(dy)
+                        if (score < bestScore) {
+                            best = candidate
+                            bestScore = score
+                        }
+                    }
+                }
+            }
+        }
+        return best
+    }
+
+    private fun locateGeneratedObeliskPosInArea(helper: GameTestHelper, center: BlockPos, horizontalRadius: Int, definitionId: String? = null): BlockPos? {
+        var best: BlockPos? = null
+        var bestScore = Int.MAX_VALUE
+        for (dy in -96..96) {
+            for (dx in -horizontalRadius..horizontalRadius) {
+                for (dz in -horizontalRadius..horizontalRadius) {
                     val candidate = center.offset(dx, dy, dz)
                     val blockEntity = helper.level.getBlockEntity(candidate) as? ObeliskBlockEntity
                     val isObelisk = blockEntity != null || helper.level.getBlockState(candidate).`is`(ModBlocks.OBELISK.get())

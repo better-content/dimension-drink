@@ -1,5 +1,6 @@
 package dev.yourname.obelisks.runtime.combat
 
+import dev.yourname.obelisks.ObeliskConstants
 import dev.yourname.obelisks.runtime.backend.SiteBounds
 import dev.yourname.obelisks.runtime.run.RunRecord
 import dev.yourname.obelisks.runtime.run.RunState
@@ -20,6 +21,8 @@ import net.minecraftforge.event.ForgeEventFactory
 
 object RunMonsterSpawner {
     private const val TARGET_MONSTERS_PER_PLAYER = 20
+    private const val RAMP_TO_FULL_CAP_TICKS = 10L * ObeliskConstants.TICKS_PER_SECOND.toLong()
+    private const val SPAWN_INTERVAL_TICKS = 2L
     private const val MAX_SPAWNS_PER_TICK = 96
     private const val POSITION_ATTEMPTS_PER_MOB = 24
     private const val MIN_PLAYER_DISTANCE = 4
@@ -47,7 +50,14 @@ object RunMonsterSpawner {
             return
         }
 
-        val targetCap = TARGET_MONSTERS_PER_PLAYER * activePlayerCount
+        if (record.ticksElapsed % SPAWN_INTERVAL_TICKS != 0L) {
+            pulsePlayerAggro(level, players)
+            return
+        }
+
+        val fullTargetCap = TARGET_MONSTERS_PER_PLAYER * activePlayerCount
+        val rampProgress = ((record.ticksElapsed + 1L).coerceAtMost(RAMP_TO_FULL_CAP_TICKS)).toDouble() / RAMP_TO_FULL_CAP_TICKS.toDouble()
+        val targetCap = Mth.ceil(fullTargetCap * rampProgress).coerceAtMost(fullTargetCap)
         val existing = countRunMonsters(level, bounds)
         val missing = (targetCap - existing).coerceAtMost(MAX_SPAWNS_PER_TICK)
         if (missing <= 0) {

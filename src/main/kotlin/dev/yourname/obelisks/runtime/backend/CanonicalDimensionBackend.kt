@@ -121,11 +121,12 @@ object CanonicalDimensionBackend : RunWorldBackend {
         val level = player.server.getLevel(record.backendLevelKey)
             ?: return EnterRunResult.Rejected("target dimension ${record.backendLevelKey.location()} is not loaded")
         val spawn = resolveArrival(level, record, configFor(record.templateId))
+        val landing = normalizedArrivalTeleportPos(level, spawn)
         if (record.touchedChunks.add(ChunkPos(spawn))) {
             markSiteDirty(player.server)
         }
         record.updatedGameTime = gameTime(player.server)
-        player.teleportTo(level, spawn.x + 0.5, spawn.y.toDouble(), spawn.z + 0.5, player.yRot, player.xRot)
+        player.teleportTo(level, landing.x + 0.5, landing.y.toDouble(), landing.z + 0.5, player.yRot, player.xRot)
         playEntrySounds(level, spawn)
         playerBindings[player.uuid] = record.siteId
         return EnterRunResult.Entered
@@ -256,6 +257,15 @@ object CanonicalDimensionBackend : RunWorldBackend {
             }
         }
         level.setBlock(floor, ModBlocks.RETURN_PAD.get().defaultBlockState(), 3)
+    }
+
+    private fun normalizedArrivalTeleportPos(level: ServerLevel, spawn: BlockPos): BlockPos {
+        val spawnState = level.getBlockState(spawn)
+        return when {
+            spawnState.isAir -> spawn
+            level.getBlockState(spawn.above()).isAir -> spawn.above()
+            else -> spawn
+        }
     }
 
     private fun resolveSupportBlock(): net.minecraft.world.level.block.Block {

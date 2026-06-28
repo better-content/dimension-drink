@@ -11,10 +11,10 @@
   "worldgenWeight": 1.0,
   "worldgenFamilyId": "altar",
   "graveyardPalette": {
-    "pathBlocks": ["minecraft:gravel", "minecraft:coarse_dirt", "minecraft:mossy_cobblestone", "minecraft:cracked_stone_bricks"],
+    "pathBlocks": ["minecraft:coarse_dirt", "minecraft:tuff", "minecraft:cobbled_deepslate", "minecraft:blackstone"],
     "graveBlocks": ["minecraft:stone_bricks", "minecraft:mossy_cobblestone", "minecraft:cracked_stone_bricks"],
     "structureBlocks": ["minecraft:polished_andesite", "minecraft:mossy_stone_bricks", "minecraft:stone_bricks"],
-    "trophyBlocks": ["minecraft:sculk", "deeperdarker:echo_soil", "deeperdarker:sculk_stone", "deeperdarker:sculk_stone_bricks", "deeperdarker:sculk_stone_tiles", "deeperdarker:polished_sculk_stone"],
+    "trophyBlocks": ["minecraft:sculk_sensor", "minecraft:sculk_shrieker", "minecraft:soul_lantern", "minecraft:skeleton_skull"],
     "decorations": ["minecraft:red_candle", "minecraft:soul_lantern", "minecraft:dead_bush"]
   },
   "rewardTableId": "default",
