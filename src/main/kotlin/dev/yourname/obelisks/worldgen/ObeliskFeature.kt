@@ -50,7 +50,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private const val SITE_GRID_CHUNKS = 6
         private const val SITE_GRID_BLOCKS = SITE_GRID_CHUNKS * 16
         private const val SITE_GRID_SCAN_RADIUS = 1
-        private const val TARGET_RARITY_CHUNKS = 64
+        private const val TARGET_RARITY_CHUNKS = 512
         fun generateDefinitionSiteForTests(
             level: ServerLevel,
             center: BlockPos,
@@ -287,6 +287,19 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     else -> TileZone.GRAVE_FIELD
                 }
                 planned[coord] = TilePlan(coord, ground, typeForZone(zone, coord, paths, random), zone, exitsForTile)
+            }
+            if (center.x in chunk.minBlockX..chunk.maxBlockX && center.z in chunk.minBlockZ..chunk.maxBlockZ && TileCoord(0, 0) !in planned) {
+                tileGround(level, center, TileCoord(0, 0))?.let { ground ->
+                    if (isSupportedGround(level, ground, level.getBlockState(ground))) {
+                        planned[TileCoord(0, 0)] = TilePlan(
+                            TileCoord(0, 0),
+                            ground,
+                            TileType.FONT_PEDESTAL,
+                            TileZone.APPROACH_PATH,
+                            Direction.Plane.HORIZONTAL.filter { direction -> TileCoord(0, 0).relative(direction) in paths }.toSet()
+                        )
+                    }
+                }
             }
             return ChunkSitePlan(planned, radius, occupied.size)
         }
@@ -1126,7 +1139,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private fun canPlaceElevatedAltarAndFont(level: LevelAccessor, center: BlockPos, surfaceByOffset: Map<Pair<Int, Int>, Int>): Boolean {
             val fontPos = center.above(ALTAR_HEIGHT + 1)
             for (dy in 0..FONT_CLEARANCE) {
-                if (!canReplaceSiteAirspace(level.getBlockState(fontPos.above(dy)))) return false
+                if (!canClearAltarAirspace(level.getBlockState(fontPos.above(dy)))) return false
             }
             return surfaceByOffset.isNotEmpty()
         }
@@ -1146,11 +1159,11 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                         else -> 1
                     }
                     for (y in surfaceY + 1..topY) {
-                        if (!canReplaceSiteAirspace(level.getBlockState(BlockPos(x, y, z)))) return null
+                        if (!canClearAltarAirspace(level.getBlockState(BlockPos(x, y, z)))) return null
                     }
                     altarWelcomeDetailYOffset(dx, dz)?.let { detailYOffset ->
                         val detailY = center.y + detailYOffset
-                        if (detailY > topY && !canReplaceSiteAirspace(level.getBlockState(BlockPos(x, detailY, z)))) return null
+                        if (detailY > topY && !canClearAltarAirspace(level.getBlockState(BlockPos(x, detailY, z)))) return null
                     }
                     surfaces[dx to dz] = surfaceY
                 }
@@ -1200,6 +1213,9 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             !state.`is`(ModBlocks.OBELISK.get()) &&
                 state.fluidState.isEmpty &&
                 (state.canBeReplaced() || isLeafLike(state) || isFoliageLikeAirspace(state))
+
+        private fun canClearAltarAirspace(state: BlockState): Boolean =
+            !state.`is`(ModBlocks.OBELISK.get()) && state.fluidState.isEmpty
 
         private fun isFoliageLikeAirspace(state: BlockState): Boolean {
             if (state.block is BushBlock) return true
