@@ -47,6 +47,9 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private const val ALTAR_RADIUS = 3
         private const val ALTAR_MAX_FOUNDATION_DROP = 7
         private const val TERRAIN_SCAN_UP = 28
+        private const val SITE_GRID_CHUNKS = 6
+        private const val SITE_GRID_BLOCKS = SITE_GRID_CHUNKS * 16
+        private const val SITE_GRID_SCAN_RADIUS = 1
         fun generateDefinitionSiteForTests(
             level: ServerLevel,
             center: BlockPos,
@@ -74,6 +77,25 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val cellX = Math.floorDiv(origin.x, TILE_SIZE)
             val cellZ = Math.floorDiv(origin.z, TILE_SIZE)
             return BlockPos(cellX * TILE_SIZE + TILE_SIZE / 2, origin.y, cellZ * TILE_SIZE + TILE_SIZE / 2)
+        }
+
+        private fun siteAnchorForCell(cellX: Int, cellZ: Int): BlockPos {
+            val random = RandomSource.create(siteSeed(cellX, cellZ))
+            val offsetRange = SITE_GRID_CHUNKS
+            val offsetX = (random.nextInt(offsetRange * 2 + 1) - offsetRange) * TILE_SIZE
+            val offsetZ = (random.nextInt(offsetRange * 2 + 1) - offsetRange) * TILE_SIZE
+            val x = cellX * SITE_GRID_BLOCKS + SITE_GRID_BLOCKS / 2 + offsetX
+            val z = cellZ * SITE_GRID_BLOCKS + SITE_GRID_BLOCKS / 2 + offsetZ
+            return snapToUniversalGrid(BlockPos(x, 0, z))
+        }
+
+        private fun siteSeed(cellX: Int, cellZ: Int): Long {
+            var value = 0x6A09E667F3BCC909L
+            value = value xor (cellX.toLong() * -7046029254386353131L)
+            value = value xor (cellZ.toLong() * -4658895280553007687L)
+            value = value xor (cellX.toLong() shl 32)
+            value = value xor cellZ.toLong()
+            return value
         }
 
         private fun normalizeAltarCenter(level: LevelAccessor, center: BlockPos): BlockPos? {
@@ -117,10 +139,14 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         }
 
         private fun generatedCapacityForSite(definition: ObeliskDefinition, tiles: Map<TileCoord, TilePlan>): Double {
-            val base = definition.maxBlood ?: ObeliskConstants.MAX_BLOOD_STORAGE
             val tileRadius = tiles.keys.maxOfOrNull { maxOf(abs(it.x), abs(it.z)) } ?: MIN_TILE_RADIUS
+            return generatedCapacityForSite(definition, tileRadius, tiles.size)
+        }
+
+        private fun generatedCapacityForSite(definition: ObeliskDefinition, tileRadius: Int, footprintSize: Int): Double {
+            val base = definition.maxBlood ?: ObeliskConstants.MAX_BLOOD_STORAGE
             val radiusProgress = ((tileRadius - MIN_TILE_RADIUS).toDouble() / (MAX_TILE_RADIUS - MIN_TILE_RADIUS).toDouble()).coerceIn(0.0, 1.0)
-            val footprintProgress = ((tiles.size - 180).toDouble() / 520.0).coerceIn(0.0, 1.25)
+            val footprintProgress = ((footprintSize - 180).toDouble() / 520.0).coerceIn(0.0, 1.25)
             val multiplier = 1.15 + maxOf(radiusProgress * 0.8, footprintProgress)
             return (base * multiplier).coerceIn(base, 1_000_000.0).roundToInt().toDouble()
         }
@@ -196,6 +222,69 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 planned[coord] = tile.copy(type = typeForZone(zone, coord, paths, random), zone = zone, pathExits = exitsForTile)
             }
             return planned
+        }
+
+        private fun planChunkTiles(level: LevelAccessor, center: BlockPos, chunk: ChunkPos, random: RandomSource): ChunkSitePlan {
+            val radius = MIN_TILE_RADIUS + random.nextInt(MAX_TILE_RADIUS - MIN_TILE_RADIUS + 1)
+            val shapeCoords = linkedSetOf<TileCoord>()
+            for (x in -radius..radius) {
+                for (z in -radius..radius) {
+                    val coord = TileCoord(x, z)
+                    if (insideOrganicShape(coord, radius)) shapeCoords += coord
+                }
+            }
+            val dummyCandidates = shapeCoords.associateWith { coord ->
+                TilePlan(coord, BlockPos.ZERO, TileType.DECOR, TileZone.GRAVE_FIELD, emptySet())
+            }
+            val paths = linkedSetOf(TileCoord(0, 0))
+            terrainTargets(dummyCandidates, TileCoord(0, 0), random).take(5).forEach { target ->
+                carvePath(paths, dummyCandidates, TileCoord(0, 0), target, radius, random)
+            }
+            carveBranchingMaze(paths, dummyCandidates, radius, random)
+            carveLoopConnectors(paths, dummyCandidates, radius, random)
+            widenJunctionCourts(paths, dummyCandidates, radius, random)
+
+            val occupied = organicallyExpandedFootprint(dummyCandidates, paths, radius, random)
+            val denseCenters = occupied
+                .filter { it !in paths && manhattan(it) in 5 until radius && it != TileCoord(0, 0) }
+                .shuffled(random)
+                .take(8 + random.nextInt(6))
+            val quietCenters = occupied
+                .filter { it !in paths && manhattan(it) >= radius - 3 }
+                .shuffled(random)
+                .take(3)
+            val focalTiles = (pathJunctions(paths) + occupied
+                .filter { it !in paths && manhattan(it) in 3..10 }
+                .shuffled(random)
+                .take(5 + random.nextInt(4)))
+                .toSet()
+            val trophyTiles = occupied
+                .filter { it !in paths && it !in focalTiles && manhattan(it) > 4 && paths.any { path -> chebyshevDistance(it, path) <= 2 } }
+                .shuffled(random)
+                .take(5 + random.nextInt(3))
+                .toSet()
+
+            val planned = linkedMapOf<TileCoord, TilePlan>()
+            occupied.forEach { coord ->
+                val blockX = center.x + coord.x * TILE_SIZE
+                val blockZ = center.z + coord.z * TILE_SIZE
+                if (blockX < chunk.minBlockX || blockX > chunk.maxBlockX || blockZ < chunk.minBlockZ || blockZ > chunk.maxBlockZ) return@forEach
+                val ground = tileGround(level, center, coord) ?: return@forEach
+                if (!canUseTileGround(level, ground, clearance = 2)) return@forEach
+                val exitsForTile = Direction.Plane.HORIZONTAL.filter { direction -> coord.relative(direction) in paths }.toSet()
+                val zone = when {
+                    coord == TileCoord(0, 0) -> TileZone.APPROACH_PATH
+                    coord in paths -> TileZone.APPROACH_PATH
+                    coord in focalTiles -> TileZone.FOCAL_RUIN
+                    coord in trophyTiles -> TileZone.TROPHY_DISPLAY
+                    nearestDistance(coord, denseCenters) <= 2 -> TileZone.DENSE_CLUSTER
+                    nearestDistance(coord, quietCenters) <= 2 -> TileZone.QUIET_EDGE
+                    manhattan(coord) > radius - 4 && random.nextInt(100) < 22 -> TileZone.TREE_BREAK
+                    else -> TileZone.GRAVE_FIELD
+                }
+                planned[coord] = TilePlan(coord, ground, typeForZone(zone, coord, paths, random), zone, exitsForTile)
+            }
+            return ChunkSitePlan(planned, radius, occupied.size)
         }
 
         private fun carveBranchingMaze(
@@ -1371,9 +1460,16 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val pathExits: Set<Direction>
         )
 
+        private data class ChunkSitePlan(
+            val tiles: Map<TileCoord, TilePlan>,
+            val radius: Int,
+            val footprintSize: Int
+        )
+
         private data class BuiltSite(
             val fontPos: BlockPos,
-            val maxBlood: Double
+            val maxBlood: Double,
+            val placedInChunk: Boolean = false
         )
     }
 
@@ -1381,19 +1477,68 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         val level = context.level()
         if (level.level.dimension() != Level.OVERWORLD) return false
 
-        val definition = ObeliskDataManager.pickRandomObelisk() ?: return false
-        val center = findPlacementCenter(level, context.origin()) ?: return false
         val chunk = ChunkPos(context.origin())
-        val site = buildSite(level, center, definition, context.random(), chunk) ?: return false
-        if (!isInsideChunk(site.fontPos, chunk)) return false
-        return placeGeneratedFont(level, site, definition)
+        var placedAny = false
+        val chunkCellX = Math.floorDiv(chunk.minBlockX, SITE_GRID_BLOCKS)
+        val chunkCellZ = Math.floorDiv(chunk.minBlockZ, SITE_GRID_BLOCKS)
+        for (cellX in chunkCellX - SITE_GRID_SCAN_RADIUS..chunkCellX + SITE_GRID_SCAN_RADIUS) {
+            for (cellZ in chunkCellZ - SITE_GRID_SCAN_RADIUS..chunkCellZ + SITE_GRID_SCAN_RADIUS) {
+                val siteRandom = RandomSource.create(siteSeed(cellX, cellZ))
+                val definition = pickDeterministicObelisk(siteRandom) ?: return false
+                val center = siteAnchorForCell(cellX, cellZ).atY(level.maxBuildHeight - TERRAIN_SCAN_UP - 2)
+                val site = buildSite(level, center, definition, siteRandom, chunk) ?: continue
+                placedAny = placedAny || site.placedInChunk
+                if (isInsideChunk(site.fontPos, chunk)) {
+                    placedAny = placeGeneratedFont(level, site, definition) || placedAny
+                }
+            }
+        }
+        return placedAny
     }
 
     private fun buildSite(level: WorldGenLevel, center: BlockPos, definition: ObeliskDefinition, random: RandomSource, chunk: ChunkPos): BuiltSite? {
+        var placedInChunk = false
         val chunkLocalSetBlock = { pos: BlockPos, state: BlockState, flags: Int ->
-            if (isInsideChunk(pos, chunk)) level.setBlock(pos, state, flags) else false
+            if (isInsideChunk(pos, chunk)) {
+                val placed = level.setBlock(pos, state, flags)
+                placedInChunk = placedInChunk || placed
+                placed
+            } else {
+                false
+            }
         }
-        return buildSiteBlocks(level, chunkLocalSetBlock, center, definition, random)
+        val palette = GraveyardPalette.from(definition, center)
+        val plan = planChunkTiles(level, center, chunk, random)
+        val tiles = plan.tiles
+        if (tiles.isEmpty()) return null
+        val graveStyle = palette.graveStyle(center, definition.id)
+        val graveFootprints = mutableSetOf<BlockPos>()
+        val graveRecords = mutableListOf<GravePlacement>()
+        tiles.values.sortedWith(compareBy<TilePlan> { abs(it.coord.x) + abs(it.coord.z) }.thenBy { it.coord.x }.thenBy { it.coord.z }).forEach { tile ->
+            placeTile(level, chunkLocalSetBlock, tile, tiles, palette, graveStyle, graveFootprints, graveRecords, random)
+        }
+        placeBoundaryAccents(level, chunkLocalSetBlock, tiles, palette, random)
+        graveRecords.forEach { enforceGraveLine(level, chunkLocalSetBlock, it) }
+
+        val fontPos = tiles[TileCoord(0, 0)]?.let { fontTile ->
+            val altarCenter = normalizeAltarCenter(level, fontTile.groundPos) ?: return@let null
+            val altarSurface = altarSurfaceMap(level, altarCenter) ?: return@let null
+            if (!canPlaceElevatedAltarAndFont(level, altarCenter, altarSurface)) return@let null
+            placeElevatedAltar(chunkLocalSetBlock, altarCenter, altarSurface, palette, random)
+        } ?: BlockPos(center.x, level.minBuildHeight, center.z)
+        return BuiltSite(fontPos, generatedCapacityForSite(definition, plan.radius, plan.footprintSize), placedInChunk)
+    }
+
+    private fun pickDeterministicObelisk(random: RandomSource): ObeliskDefinition? {
+        val enabled = ObeliskDataManager.enabledObelisks().filter { it.worldgenWeight > 0.0 }
+        if (enabled.isEmpty()) return null
+        val total = enabled.sumOf { it.worldgenWeight }
+        var cursor = random.nextDouble() * total
+        for (definition in enabled) {
+            cursor -= definition.worldgenWeight
+            if (cursor <= 0.0) return definition
+        }
+        return enabled.last()
     }
 
     private fun isInsideChunk(pos: BlockPos, chunk: ChunkPos): Boolean =
