@@ -343,7 +343,11 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private fun buildDecor(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
             if (!canUseTileGround(level, base, 1)) return
             placeGround(level, setBlock, base, if (random.nextInt(4) == 0) palette.grave(random) else palette.path(random))
-            placeSupportedAbove(level, setBlock, base.above(), palette.decoration(random))
+            if (random.nextInt(3) == 0) {
+                placeTrophyDisplay(level, setBlock, base, palette, random)
+            } else {
+                placeSupportedAbove(level, setBlock, base.above(), palette.decoration(random))
+            }
             scatterTileDetails(level, setBlock, base, palette, random, 3)
         }
 
@@ -352,7 +356,10 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 val pos = base.offset(random.nextInt(5) - 2, 0, random.nextInt(5) - 2)
                 if (canUseTileGround(level, pos, 1)) {
                     if (random.nextInt(4) == 0) placeGround(level, setBlock, pos, palette.path(random))
-                    if (random.nextInt(3) != 0) placeSupportedAbove(level, setBlock, pos.above(), palette.decoration(random))
+                    when (random.nextInt(6)) {
+                        0 -> placeTrophyDisplay(level, setBlock, pos, palette, random)
+                        1, 2, 3, 4 -> placeSupportedAbove(level, setBlock, pos.above(), palette.decoration(random))
+                    }
                 }
             }
         }
@@ -363,10 +370,21 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     if (tile.coord.relative(direction) in tiles || random.nextInt(100) >= 28) continue
                     val pos = tile.groundPos.relative(direction, TILE_SIZE / 2)
                     if (canUseTileGround(level, pos, 2)) {
-                        placeSupportedAbove(level, setBlock, pos.above(), if (random.nextInt(4) == 0) palette.headstone(random) else palette.wall(random))
+                        if (random.nextInt(4) == 0) {
+                            placeTrophyDisplay(level, setBlock, pos, palette, random)
+                        } else {
+                            placeSupportedAbove(level, setBlock, pos.above(), if (random.nextInt(4) == 0) palette.headstone(random) else palette.wall(random))
+                        }
                     }
                 }
             }
+        }
+
+        private fun placeTrophyDisplay(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource): Boolean {
+            val trophy = palette.trophy(random) ?: return false
+            if (!canUseTileGround(level, base, 2)) return false
+            placeGround(level, setBlock, base, palette.structure(random))
+            return placeSupportedAbove(level, setBlock, base.above(), trophy)
         }
 
         private fun lowGraveMarker(random: RandomSource): Block = when (random.nextInt(4)) {
@@ -460,6 +478,13 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private fun blocks(ids: List<String>?, fallback: List<Block>): List<Block> =
             ids.orEmpty().mapIndexed { index, id -> block(id, fallback[index % fallback.size]) }.takeIf { it.isNotEmpty() } ?: fallback
 
+        private fun blocksOrEmpty(ids: List<String>?): List<Block> =
+            ids.orEmpty().mapNotNull { id ->
+                val location = ResourceLocation.tryParse(id) ?: return@mapNotNull null
+                val value = BuiltInRegistries.BLOCK.get(location)
+                if (value == Blocks.AIR && location.path != "air") null else value
+            }.distinct()
+
         private fun <T> List<T>.shuffled(random: RandomSource): List<T> {
             val copy = toMutableList()
             for (i in copy.lastIndex downTo 1) {
@@ -476,12 +501,14 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val path: List<Block>,
             val grave: List<Block>,
             val structure: List<Block>,
-            val decorations: List<Block>
+            val decorations: List<Block>,
+            val trophies: List<Block>
         ) {
             fun path(random: RandomSource): Block = path[random.nextInt(path.size)]
             fun grave(random: RandomSource): Block = grave[random.nextInt(grave.size)]
             fun structure(random: RandomSource): Block = structure[random.nextInt(structure.size)]
             fun decoration(random: RandomSource): Block = decorations[random.nextInt(decorations.size)]
+            fun trophy(random: RandomSource): Block? = trophies.takeIf { it.isNotEmpty() }?.let { it[random.nextInt(it.size)] }
             fun wall(random: RandomSource): Block = if (random.nextBoolean()) Blocks.COBBLESTONE_WALL else Blocks.MOSSY_COBBLESTONE_WALL
             fun headstone(random: RandomSource): Block = if (random.nextBoolean()) Blocks.CHISELED_STONE_BRICKS else wall(random)
 
@@ -489,18 +516,25 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 fun from(definition: ObeliskDefinition): GraveyardPalette {
                     val configured = definition.graveyardPalette
                     val legacyStone = listOfNotNull(definition.meteorCoreBlock, definition.meteorShellBlock, definition.pedestalBlock)
-                    val legacyGround = definition.craterFillBlocks
-                    val pathIds = configured?.pathBlocks ?: definition.pathBlocks ?: legacyGround
-                    val graveIds = configured?.graveBlocks ?: definition.graveBlocks ?: legacyStone
-                    val structureIds = configured?.structureBlocks ?: definition.structureBlocks ?: legacyStone
+                    val trophyIds = configured?.trophyBlocks ?: definition.trophyBlocks ?: buildList {
+                        addAll(configured?.pathBlocks.orEmpty())
+                        addAll(definition.pathBlocks.orEmpty())
+                        addAll(configured?.graveBlocks.orEmpty())
+                        addAll(definition.graveBlocks.orEmpty())
+                        addAll(configured?.structureBlocks.orEmpty())
+                        addAll(definition.structureBlocks.orEmpty())
+                        configured?.pedestalBlock?.let(::add)
+                        definition.pedestalBlock?.let(::add)
+                        addAll(legacyStone)
+                    }.distinct().takeIf { it.isNotEmpty() }
                     val decorationIds = configured?.decorations ?: definition.decorations
-                    val pedestalId = configured?.pedestalBlock ?: definition.pedestalBlock ?: definition.meteorCoreBlock
                     return GraveyardPalette(
-                        pedestal = block(pedestalId, Blocks.POLISHED_ANDESITE),
-                        path = blocks(pathIds, listOf(Blocks.GRAVEL, Blocks.COARSE_DIRT, Blocks.MOSSY_COBBLESTONE, Blocks.CRACKED_STONE_BRICKS)),
-                        grave = blocks(graveIds, listOf(Blocks.STONE_BRICKS, Blocks.MOSSY_COBBLESTONE, Blocks.CRACKED_STONE_BRICKS)),
-                        structure = blocks(structureIds, listOf(Blocks.POLISHED_ANDESITE, Blocks.MOSSY_STONE_BRICKS, Blocks.STONE_BRICKS)),
-                        decorations = blocks(decorationIds, listOf(Blocks.RED_CANDLE, Blocks.SOUL_LANTERN, Blocks.DEAD_BUSH, Blocks.BONE_BLOCK))
+                        pedestal = Blocks.POLISHED_ANDESITE,
+                        path = listOf(Blocks.GRAVEL, Blocks.COARSE_DIRT, Blocks.MOSSY_COBBLESTONE, Blocks.CRACKED_STONE_BRICKS),
+                        grave = listOf(Blocks.STONE_BRICKS, Blocks.MOSSY_COBBLESTONE, Blocks.CRACKED_STONE_BRICKS),
+                        structure = listOf(Blocks.POLISHED_ANDESITE, Blocks.MOSSY_STONE_BRICKS, Blocks.STONE_BRICKS),
+                        decorations = blocks(decorationIds, listOf(Blocks.RED_CANDLE, Blocks.SOUL_LANTERN, Blocks.DEAD_BUSH, Blocks.BONE_BLOCK)),
+                        trophies = blocksOrEmpty(trophyIds)
                     )
                 }
             }

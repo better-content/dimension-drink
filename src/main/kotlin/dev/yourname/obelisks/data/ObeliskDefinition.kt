@@ -24,6 +24,7 @@ data class ObeliskDefinition(
     val graveBlocks: List<String>? = null,
     val structureBlocks: List<String>? = null,
     val decorations: List<String>? = null,
+    val trophyBlocks: List<String>? = null,
     val pedestalBlock: String? = null,
     val meteorCoreBlock: String? = null,
     val meteorShellBlock: String? = null,
@@ -35,5 +36,6 @@ data class GraveyardPaletteDefinition(
     val graveBlocks: List<String>? = null,
     val structureBlocks: List<String>? = null,
     val decorations: List<String>? = null,
+    val trophyBlocks: List<String>? = null,
     val pedestalBlock: String? = null
 )

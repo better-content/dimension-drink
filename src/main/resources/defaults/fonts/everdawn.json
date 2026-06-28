@@ -11,10 +11,10 @@
   "worldgenWeight": 1.0,
   "worldgenFamilyId": "altar",
   "graveyardPalette": {
-    "pedestalBlock": "blue_skies:polished_cinderstone",
-    "pathBlocks": ["blue_skies:lunar_stonebrick", "blue_skies:midnight_sandstone", "minecraft:gravel"],
-    "graveBlocks": ["blue_skies:lunar_stonebrick", "blue_skies:chiseled_lunar_stonebrick", "blue_skies:polished_cinderstone"],
-    "structureBlocks": ["blue_skies:lunar_stonebrick", "blue_skies:chiseled_lunar_stonebrick", "blue_skies:polished_umber"],
+    "pathBlocks": ["minecraft:gravel", "minecraft:coarse_dirt", "minecraft:mossy_cobblestone", "minecraft:cracked_stone_bricks"],
+    "graveBlocks": ["minecraft:stone_bricks", "minecraft:mossy_cobblestone", "minecraft:cracked_stone_bricks"],
+    "structureBlocks": ["minecraft:polished_andesite", "minecraft:mossy_stone_bricks", "minecraft:stone_bricks"],
+    "trophyBlocks": ["blue_skies:lunar_stonebrick", "blue_skies:midnight_sandstone", "blue_skies:chiseled_lunar_stonebrick", "blue_skies:polished_cinderstone", "blue_skies:polished_umber"],
     "decorations": ["minecraft:red_candle", "minecraft:soul_lantern", "minecraft:dead_bush"]
   },
   "rewardTableId": "default",

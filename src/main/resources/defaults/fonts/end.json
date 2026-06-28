@@ -11,10 +11,10 @@
   "worldgenWeight": 0.5,
   "worldgenFamilyId": "altar",
   "graveyardPalette": {
-    "pedestalBlock": "minecraft:end_stone_bricks",
-    "pathBlocks": ["minecraft:end_stone", "minecraft:gravel"],
-    "graveBlocks": ["minecraft:end_stone_bricks", "minecraft:purpur_block", "minecraft:chiseled_stone_bricks"],
-    "structureBlocks": ["minecraft:end_stone_bricks", "minecraft:purpur_pillar", "minecraft:purpur_block"],
+    "pathBlocks": ["minecraft:gravel", "minecraft:coarse_dirt", "minecraft:mossy_cobblestone", "minecraft:cracked_stone_bricks"],
+    "graveBlocks": ["minecraft:stone_bricks", "minecraft:mossy_cobblestone", "minecraft:cracked_stone_bricks"],
+    "structureBlocks": ["minecraft:polished_andesite", "minecraft:mossy_stone_bricks", "minecraft:stone_bricks"],
+    "trophyBlocks": ["minecraft:end_stone", "minecraft:end_stone_bricks", "minecraft:purpur_block", "minecraft:purpur_pillar"],
     "decorations": ["minecraft:red_candle", "minecraft:soul_lantern", "minecraft:dead_bush"]
   },
   "rewardTableId": "end",

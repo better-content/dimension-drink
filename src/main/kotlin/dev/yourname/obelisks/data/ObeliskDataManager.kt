@@ -136,6 +136,7 @@ object ObeliskDataManager {
                     graveBlocks = sanitizeIdList(palette.graveBlocks),
                     structureBlocks = sanitizeIdList(palette.structureBlocks),
                     decorations = sanitizeIdList(palette.decorations),
+                    trophyBlocks = sanitizeIdList(palette.trophyBlocks),
                     pedestalBlock = stringOrNull(palette.pedestalBlock)
                 )
             },
@@ -143,6 +144,7 @@ object ObeliskDataManager {
             graveBlocks = sanitizeIdList(definition.graveBlocks),
             structureBlocks = sanitizeIdList(definition.structureBlocks),
             decorations = sanitizeIdList(definition.decorations),
+            trophyBlocks = sanitizeIdList(definition.trophyBlocks),
             pedestalBlock = stringOrNull(definition.pedestalBlock),
             meteorCoreBlock = stringOrNull(definition.meteorCoreBlock),
             meteorShellBlock = stringOrNull(definition.meteorShellBlock),

@@ -11,10 +11,10 @@
   "worldgenWeight": 2.0,
   "worldgenFamilyId": "altar",
   "graveyardPalette": {
-    "pedestalBlock": "minecraft:polished_blackstone",
-    "pathBlocks": ["minecraft:gravel", "minecraft:blackstone", "minecraft:soul_soil"],
-    "graveBlocks": ["minecraft:blackstone", "minecraft:polished_blackstone_bricks", "minecraft:cracked_polished_blackstone_bricks"],
-    "structureBlocks": ["minecraft:polished_blackstone", "minecraft:polished_blackstone_bricks", "minecraft:chiseled_polished_blackstone"],
+    "pathBlocks": ["minecraft:gravel", "minecraft:coarse_dirt", "minecraft:mossy_cobblestone", "minecraft:cracked_stone_bricks"],
+    "graveBlocks": ["minecraft:stone_bricks", "minecraft:mossy_cobblestone", "minecraft:cracked_stone_bricks"],
+    "structureBlocks": ["minecraft:polished_andesite", "minecraft:mossy_stone_bricks", "minecraft:stone_bricks"],
+    "trophyBlocks": ["minecraft:blackstone", "minecraft:soul_soil", "minecraft:polished_blackstone", "minecraft:polished_blackstone_bricks", "minecraft:cracked_polished_blackstone_bricks", "minecraft:chiseled_polished_blackstone"],
     "decorations": ["minecraft:red_candle", "minecraft:soul_lantern", "minecraft:dead_bush"]
   },
   "rewardTableId": "nether",
