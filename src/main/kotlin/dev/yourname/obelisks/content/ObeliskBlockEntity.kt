@@ -72,6 +72,8 @@ class ObeliskBlockEntity(
     var bloodStored: Double = getMaxBlood()
         private set
 
+    private var generatedMaxBlood: Double? = null
+
     var heartStack: ItemStack = ItemStack.EMPTY
         private set
 
@@ -151,6 +153,13 @@ class ObeliskBlockEntity(
         syncToClients()
     }
 
+    fun setGeneratedMaxBlood(maxBlood: Double?) {
+        generatedMaxBlood = maxBlood?.coerceAtLeast(getDefinitionMaxBlood())
+        bloodStored = bloodStored.coerceIn(0.0, getMaxBlood())
+        setChanged()
+        syncToClients()
+    }
+
     fun fillToCapacity() {
         setEnergyStoredForDebug(getModifiedMaxStorage())
     }
@@ -175,7 +184,10 @@ class ObeliskBlockEntity(
         return max
     }
 
-    fun getMaxBlood(): Double = ObeliskDataManager.getObelisk(definitionId)?.maxBlood ?: ObeliskConstants.MAX_BLOOD_STORAGE
+    fun getMaxBlood(): Double = maxOf(getDefinitionMaxBlood(), generatedMaxBlood ?: 0.0)
+
+    private fun getDefinitionMaxBlood(): Double =
+        ObeliskDataManager.getObelisk(definitionId)?.maxBlood ?: ObeliskConstants.MAX_BLOOD_STORAGE
 
     fun getBloodStartCost(): Double =
         ObeliskDataManager.getObelisk(definitionId)?.bloodStartCost ?: ObeliskConstants.BLOOD_START_COST
@@ -354,6 +366,7 @@ class ObeliskBlockEntity(
     override fun saveAdditional(tag: CompoundTag) {
         super.saveAdditional(tag)
         tag.putDouble("blood_stored", bloodStored)
+        generatedMaxBlood?.let { tag.putDouble("generated_max_blood", it) }
         tag.putUUID("obelisk_id", obeliskId)
         tag.putString("definition_id", definitionId)
         tag.putString("target_template_id", targetTemplateId)
@@ -382,6 +395,11 @@ class ObeliskBlockEntity(
             tag.contains("definition_id") -> tag.getString("definition_id")
             tag.contains("target_template_id") -> tag.getString("target_template_id")
             else -> ObeliskConstants.DEFAULT_TEMPLATES.first()
+        }
+        generatedMaxBlood = if (tag.contains("generated_max_blood", Tag.TAG_DOUBLE.toInt())) {
+            tag.getDouble("generated_max_blood").coerceAtLeast(getDefinitionMaxBlood())
+        } else {
+            null
         }
         bloodStored = when {
             tag.contains("blood_stored", Tag.TAG_DOUBLE.toInt()) -> tag.getDouble("blood_stored")

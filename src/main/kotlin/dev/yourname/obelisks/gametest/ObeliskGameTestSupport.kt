@@ -1209,7 +1209,17 @@ object ObeliskGameTestSupport {
 
     private fun assertGeneratedAltar(helper: GameTestHelper, fontPos: BlockPos, label: String) {
         val baseCenter = fontPos.below()
+        val obelisk = helper.level.getBlockEntity(fontPos) as? ObeliskBlockEntity
         helper.assertTrue(helper.level.getBlockState(fontPos).`is`(ModBlocks.OBELISK.get()), "Expected $label graveyard to place a dimensional font")
+        val definitionBaseCapacity = obelisk?.definitionId?.let { ObeliskDataManager.getObelisk(it)?.maxBlood } ?: 15_000.0
+        helper.assertTrue(
+            (obelisk?.getMaxBlood() ?: 0.0) > definitionBaseCapacity,
+            "Expected $label generated graveyard font capacity to exceed definition base capacity"
+        )
+        helper.assertTrue(
+            obelisk?.bloodStored == obelisk?.getMaxBlood(),
+            "Expected $label generated graveyard font to be filled to its generated capacity"
+        )
         helper.assertTrue(
             helper.level.getBlockState(baseCenter).`is`(Blocks.POLISHED_ANDESITE) ||
                 helper.level.getBlockState(baseCenter).`is`(Blocks.STONE_BRICKS) ||

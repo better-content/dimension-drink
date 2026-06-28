@@ -1,6 +1,7 @@
 package dev.yourname.obelisks.worldgen
 
 import com.mojang.serialization.Codec
+import dev.yourname.obelisks.ObeliskConstants
 import dev.yourname.obelisks.content.ObeliskBlockEntity
 import dev.yourname.obelisks.data.ObeliskDataManager
 import dev.yourname.obelisks.data.ObeliskDefinition
@@ -42,13 +43,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         ): Boolean {
             val definition = ObeliskDataManager.getObelisk(definitionId) ?: return false
             val placementCenter = findPlacementCenter(level, center) ?: return false
-            val fontPos = buildSiteBlocks(level, level::setBlock, placementCenter, definition, random) ?: return false
-            if (!level.setBlock(fontPos, ModBlocks.OBELISK.get().defaultBlockState(), 3)) return false
-            val font = level.getBlockEntity(fontPos) as? ObeliskBlockEntity ?: return false
-            font.setDefinition(definition.id)
-            font.fillToCapacity()
-            font.syncToClients()
-            return true
+            val site = buildSiteBlocks(level, level::setBlock, placementCenter, definition, random) ?: return false
+            return placeGeneratedFont(level, site, definition)
         }
 
         private fun findPlacementCenter(level: LevelAccessor, origin: BlockPos): BlockPos? {
@@ -74,7 +70,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             center: BlockPos,
             definition: ObeliskDefinition,
             random: RandomSource
-        ): BlockPos? {
+        ): BuiltSite? {
             val palette = GraveyardPalette.from(definition)
             val tiles = planTiles(level, center, random)
             val fontTile = tiles[TileCoord(0, 0)] ?: return null
@@ -89,7 +85,26 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             for (dy in 1..FONT_CLEARANCE) {
                 setBlock(fontTile.groundPos.above(dy), Blocks.AIR.defaultBlockState(), 3)
             }
-            return fontTile.groundPos.above()
+            return BuiltSite(fontTile.groundPos.above(), generatedCapacityForSite(definition, tiles))
+        }
+
+        private fun generatedCapacityForSite(definition: ObeliskDefinition, tiles: Map<TileCoord, TilePlan>): Double {
+            val base = definition.maxBlood ?: ObeliskConstants.MAX_BLOOD_STORAGE
+            val tileRadius = tiles.keys.maxOfOrNull { maxOf(abs(it.x), abs(it.z)) } ?: MIN_TILE_RADIUS
+            val radiusProgress = ((tileRadius - MIN_TILE_RADIUS).toDouble() / (MAX_TILE_RADIUS - MIN_TILE_RADIUS).toDouble()).coerceIn(0.0, 1.0)
+            val footprintProgress = ((tiles.size - 180).toDouble() / 520.0).coerceIn(0.0, 1.25)
+            val multiplier = 1.0 + maxOf(radiusProgress * 0.8, footprintProgress)
+            return (base * multiplier).coerceIn(base, 1_000_000.0)
+        }
+
+        private fun placeGeneratedFont(level: LevelAccessor, site: BuiltSite, definition: ObeliskDefinition): Boolean {
+            if (!level.setBlock(site.fontPos, ModBlocks.OBELISK.get().defaultBlockState(), 3)) return false
+            val font = level.getBlockEntity(site.fontPos) as? ObeliskBlockEntity ?: return false
+            font.setDefinition(definition.id)
+            font.setGeneratedMaxBlood(site.maxBlood)
+            font.fillToCapacity()
+            font.syncToClients()
+            return true
         }
 
         private fun planTiles(level: LevelAccessor, center: BlockPos, random: RandomSource): Map<TileCoord, TilePlan> {
@@ -690,6 +705,11 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val zone: TileZone,
             val pathExits: Set<Direction>
         )
+
+        private data class BuiltSite(
+            val fontPos: BlockPos,
+            val maxBlood: Double
+        )
     }
 
     override fun place(context: FeaturePlaceContext<NoneFeatureConfiguration>): Boolean {
@@ -698,15 +718,10 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
         val definition = ObeliskDataManager.pickRandomObelisk() ?: return false
         val center = findPlacementCenter(level, context.origin()) ?: return false
-        val fontPos = buildSite(level, center, definition, context.random()) ?: return false
-        if (!level.setBlock(fontPos, ModBlocks.OBELISK.get().defaultBlockState(), 3)) return false
-        val font = level.getBlockEntity(fontPos) as? ObeliskBlockEntity ?: return false
-        font.setDefinition(definition.id)
-        font.fillToCapacity()
-        font.syncToClients()
-        return true
+        val site = buildSite(level, center, definition, context.random()) ?: return false
+        return placeGeneratedFont(level, site, definition)
     }
 
-    private fun buildSite(level: WorldGenLevel, center: BlockPos, definition: ObeliskDefinition, random: RandomSource): BlockPos? =
+    private fun buildSite(level: WorldGenLevel, center: BlockPos, definition: ObeliskDefinition, random: RandomSource): BuiltSite? =
         buildSiteBlocks(level, level::setBlock, center, definition, random)
 }
