@@ -75,9 +75,9 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             definition: ObeliskDefinition,
             random: RandomSource
         ): BuiltSite? {
-            val palette = GraveyardPalette.from(definition)
+            val palette = GraveyardPalette.from(definition, center)
             val tiles = planTiles(level, center, random)
-            val graveStyle = GraveStyle.choose(center, definition.id)
+            val graveStyle = palette.graveStyle(center, definition.id)
             val fontTile = tiles[TileCoord(0, 0)] ?: return null
             val altarSurface = altarSurfaceMap(level, fontTile.groundPos) ?: return null
             if (!canPlaceElevatedAltarAndFont(level, fontTile.groundPos, altarSurface)) return null
@@ -725,18 +725,100 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val grave: List<Block>,
             val structure: List<Block>,
             val decorations: List<Block>,
-            val trophies: List<Block>
+            val trophies: List<Block>,
+            val walls: List<Block>,
+            val headstones: List<Block>,
+            val graveStyles: List<GraveStyle>
         ) {
             fun path(random: RandomSource): Block = path[random.nextInt(path.size)]
             fun grave(random: RandomSource): Block = grave[random.nextInt(grave.size)]
             fun structure(random: RandomSource): Block = structure[random.nextInt(structure.size)]
             fun decoration(random: RandomSource): Block = decorations[random.nextInt(decorations.size)]
             fun trophy(random: RandomSource): Block? = trophies.takeIf { it.isNotEmpty() }?.let { it[random.nextInt(it.size)] }
-            fun wall(random: RandomSource): Block = if (random.nextBoolean()) Blocks.COBBLESTONE_WALL else Blocks.MOSSY_COBBLESTONE_WALL
-            fun headstone(random: RandomSource): Block = if (random.nextBoolean()) Blocks.CHISELED_STONE_BRICKS else wall(random)
+            fun wall(random: RandomSource): Block = walls[random.nextInt(walls.size)]
+            fun headstone(random: RandomSource): Block = headstones[random.nextInt(headstones.size)]
+            fun graveStyle(center: BlockPos, definitionId: String): GraveStyle {
+                val hash = center.x * 19349663 xor center.y * 83492791 xor center.z * 297121507 xor definitionId.hashCode()
+                return graveStyles[Math.floorMod(hash, graveStyles.size)]
+            }
 
             companion object {
-                fun from(definition: ObeliskDefinition): GraveyardPalette {
+                private val THEMES = listOf(
+                    GraveyardTheme(
+                        path = listOf(Blocks.GRAVEL, Blocks.COARSE_DIRT, Blocks.PODZOL, Blocks.COBBLESTONE),
+                        grave = listOf(Blocks.STONE_BRICKS, Blocks.CRACKED_STONE_BRICKS, Blocks.CHISELED_STONE_BRICKS),
+                        structure = listOf(Blocks.POLISHED_ANDESITE, Blocks.ANDESITE, Blocks.COBBLESTONE),
+                        decorations = listOf(Blocks.RED_CANDLE, Blocks.SOUL_LANTERN, Blocks.DEAD_BUSH, Blocks.COBWEB),
+                        walls = listOf(Blocks.COBBLESTONE_WALL, Blocks.ANDESITE_WALL),
+                        headstones = listOf(Blocks.CHISELED_STONE_BRICKS, Blocks.COBBLESTONE_WALL),
+                        graveStyles = listOf(
+                            GraveStyle(Blocks.STONE_BRICKS, Blocks.CHISELED_STONE_BRICKS, Blocks.SMOOTH_STONE_SLAB),
+                            GraveStyle(Blocks.CRACKED_STONE_BRICKS, Blocks.COBBLESTONE_WALL, Blocks.RED_CANDLE)
+                        )
+                    ),
+                    GraveyardTheme(
+                        path = listOf(Blocks.COARSE_DIRT, Blocks.ROOTED_DIRT, Blocks.GRAVEL, Blocks.MOSSY_COBBLESTONE),
+                        grave = listOf(Blocks.MOSSY_COBBLESTONE, Blocks.COBBLESTONE, Blocks.ANDESITE),
+                        structure = listOf(Blocks.MOSSY_COBBLESTONE, Blocks.COBBLESTONE, Blocks.ANDESITE),
+                        decorations = listOf(Blocks.FERN, Blocks.DEAD_BUSH, Blocks.RED_CANDLE, Blocks.LANTERN),
+                        walls = listOf(Blocks.MOSSY_COBBLESTONE_WALL, Blocks.COBBLESTONE_WALL),
+                        headstones = listOf(Blocks.MOSSY_COBBLESTONE_WALL, Blocks.COBBLESTONE_WALL),
+                        graveStyles = listOf(
+                            GraveStyle(Blocks.MOSSY_COBBLESTONE, Blocks.MOSSY_COBBLESTONE_WALL, Blocks.SMOOTH_STONE_SLAB),
+                            GraveStyle(Blocks.COBBLESTONE, Blocks.COBBLESTONE_WALL, Blocks.LANTERN)
+                        )
+                    ),
+                    GraveyardTheme(
+                        path = listOf(Blocks.COBBLED_DEEPSLATE, Blocks.GRAVEL, Blocks.COARSE_DIRT, Blocks.TUFF),
+                        grave = listOf(Blocks.POLISHED_DEEPSLATE, Blocks.DEEPSLATE_TILES, Blocks.COBBLED_DEEPSLATE),
+                        structure = listOf(Blocks.POLISHED_DEEPSLATE, Blocks.DEEPSLATE_TILES, Blocks.DEEPSLATE_BRICKS),
+                        decorations = listOf(Blocks.SOUL_LANTERN, Blocks.BLUE_CANDLE, Blocks.COBWEB, Blocks.SCULK),
+                        walls = listOf(Blocks.COBBLED_DEEPSLATE_WALL, Blocks.POLISHED_DEEPSLATE_WALL, Blocks.DEEPSLATE_TILE_WALL),
+                        headstones = listOf(Blocks.CHISELED_DEEPSLATE, Blocks.POLISHED_DEEPSLATE_WALL),
+                        graveStyles = listOf(
+                            GraveStyle(Blocks.DEEPSLATE_TILES, Blocks.CHISELED_DEEPSLATE, Blocks.BLUE_CANDLE),
+                            GraveStyle(Blocks.POLISHED_DEEPSLATE, Blocks.COBBLED_DEEPSLATE_WALL, Blocks.SOUL_LANTERN)
+                        )
+                    ),
+                    GraveyardTheme(
+                        path = listOf(Blocks.BLACKSTONE, Blocks.BASALT, Blocks.GRAVEL, Blocks.SOUL_SOIL),
+                        grave = listOf(Blocks.POLISHED_BLACKSTONE_BRICKS, Blocks.POLISHED_BLACKSTONE, Blocks.BLACKSTONE),
+                        structure = listOf(Blocks.POLISHED_BLACKSTONE_BRICKS, Blocks.POLISHED_BLACKSTONE, Blocks.BASALT),
+                        decorations = listOf(Blocks.SOUL_LANTERN, Blocks.RED_CANDLE, Blocks.SOUL_TORCH, Blocks.CRYING_OBSIDIAN),
+                        walls = listOf(Blocks.BLACKSTONE_WALL, Blocks.POLISHED_BLACKSTONE_BRICK_WALL, Blocks.POLISHED_BLACKSTONE_WALL),
+                        headstones = listOf(Blocks.CHISELED_POLISHED_BLACKSTONE, Blocks.POLISHED_BLACKSTONE_BRICK_WALL),
+                        graveStyles = listOf(
+                            GraveStyle(Blocks.POLISHED_BLACKSTONE_BRICKS, Blocks.CHISELED_POLISHED_BLACKSTONE, Blocks.SOUL_LANTERN),
+                            GraveStyle(Blocks.BLACKSTONE, Blocks.BLACKSTONE_WALL, Blocks.RED_CANDLE)
+                        )
+                    ),
+                    GraveyardTheme(
+                        path = listOf(Blocks.SAND, Blocks.RED_SAND, Blocks.GRAVEL, Blocks.SMOOTH_SANDSTONE),
+                        grave = listOf(Blocks.CUT_SANDSTONE, Blocks.SANDSTONE, Blocks.SMOOTH_SANDSTONE),
+                        structure = listOf(Blocks.SANDSTONE, Blocks.CUT_SANDSTONE, Blocks.SMOOTH_SANDSTONE),
+                        decorations = listOf(Blocks.DEAD_BUSH, Blocks.FLOWER_POT, Blocks.YELLOW_CANDLE, Blocks.LANTERN),
+                        walls = listOf(Blocks.SANDSTONE_WALL),
+                        headstones = listOf(Blocks.CHISELED_SANDSTONE, Blocks.SANDSTONE_WALL),
+                        graveStyles = listOf(
+                            GraveStyle(Blocks.CUT_SANDSTONE, Blocks.CHISELED_SANDSTONE, Blocks.YELLOW_CANDLE),
+                            GraveStyle(Blocks.SMOOTH_SANDSTONE, Blocks.SANDSTONE_WALL, Blocks.FLOWER_POT)
+                        )
+                    ),
+                    GraveyardTheme(
+                        path = listOf(Blocks.PACKED_MUD, Blocks.MUD_BRICKS, Blocks.COARSE_DIRT, Blocks.BONE_BLOCK),
+                        grave = listOf(Blocks.MUD_BRICKS, Blocks.PACKED_MUD, Blocks.BONE_BLOCK),
+                        structure = listOf(Blocks.MUD_BRICKS, Blocks.PACKED_MUD, Blocks.CALCITE),
+                        decorations = listOf(Blocks.BONE_BLOCK, Blocks.SKELETON_SKULL, Blocks.WHITE_CANDLE, Blocks.DEAD_BUSH),
+                        walls = listOf(Blocks.MUD_BRICK_WALL),
+                        headstones = listOf(Blocks.BONE_BLOCK, Blocks.MUD_BRICK_WALL),
+                        graveStyles = listOf(
+                            GraveStyle(Blocks.MUD_BRICKS, Blocks.MUD_BRICK_WALL, Blocks.WHITE_CANDLE),
+                            GraveStyle(Blocks.PACKED_MUD, Blocks.BONE_BLOCK, Blocks.SKELETON_SKULL)
+                        )
+                    )
+                )
+
+                fun from(definition: ObeliskDefinition, center: BlockPos): GraveyardPalette {
                     val configured = definition.graveyardPalette
                     val legacyStone = listOfNotNull(definition.meteorCoreBlock, definition.meteorShellBlock, definition.pedestalBlock)
                     val trophyIds = configured?.trophyBlocks ?: definition.trophyBlocks ?: buildList {
@@ -750,38 +832,38 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                         definition.pedestalBlock?.let(::add)
                         addAll(legacyStone)
                     }.distinct().takeIf { it.isNotEmpty() }
-                    val decorationIds = configured?.decorations ?: definition.decorations
+                    val hash = center.x * 73428767 xor center.y * 912271 xor center.z * 4235437 xor definition.id.hashCode()
+                    val theme = THEMES[Math.floorMod(hash, THEMES.size)]
                     return GraveyardPalette(
                         pedestal = Blocks.POLISHED_ANDESITE,
-                        path = pathBlocks(configured?.pathBlocks ?: definition.pathBlocks, listOf(Blocks.GRAVEL, Blocks.COARSE_DIRT, Blocks.MOSSY_COBBLESTONE, Blocks.PODZOL)),
-                        grave = listOf(Blocks.STONE_BRICKS, Blocks.MOSSY_COBBLESTONE, Blocks.CRACKED_STONE_BRICKS),
-                        structure = listOf(Blocks.POLISHED_ANDESITE, Blocks.MOSSY_STONE_BRICKS, Blocks.STONE_BRICKS),
-                        decorations = blocks(decorationIds, listOf(Blocks.RED_CANDLE, Blocks.SOUL_LANTERN, Blocks.DEAD_BUSH, Blocks.BONE_BLOCK)),
-                        trophies = blocksOrEmpty(trophyIds)
+                        path = theme.path.filterNot(::isStoneBrickPathBlock),
+                        grave = theme.grave,
+                        structure = theme.structure,
+                        decorations = theme.decorations,
+                        trophies = blocksOrEmpty(trophyIds),
+                        walls = theme.walls,
+                        headstones = theme.headstones,
+                        graveStyles = theme.graveStyles
                     )
                 }
             }
         }
 
+        private data class GraveyardTheme(
+            val path: List<Block>,
+            val grave: List<Block>,
+            val structure: List<Block>,
+            val decorations: List<Block>,
+            val walls: List<Block>,
+            val headstones: List<Block>,
+            val graveStyles: List<GraveStyle>
+        )
+
         private data class GraveStyle(
             val ground: Block,
             val headstone: Block,
             val lowMarker: Block
-        ) {
-            companion object {
-                private val STYLES = listOf(
-                    GraveStyle(Blocks.STONE_BRICKS, Blocks.CHISELED_STONE_BRICKS, Blocks.SMOOTH_STONE_SLAB),
-                    GraveStyle(Blocks.MOSSY_COBBLESTONE, Blocks.MOSSY_COBBLESTONE_WALL, Blocks.SMOOTH_STONE_SLAB),
-                    GraveStyle(Blocks.CRACKED_STONE_BRICKS, Blocks.COBBLESTONE_WALL, Blocks.RED_CANDLE),
-                    GraveStyle(Blocks.MOSSY_COBBLESTONE, Blocks.BONE_BLOCK, Blocks.SKELETON_SKULL)
-                )
-
-                fun choose(center: BlockPos, definitionId: String): GraveStyle {
-                    val hash = center.x * 73428767 xor center.y * 912271 xor center.z * 4235437 xor definitionId.hashCode()
-                    return STYLES[Math.floorMod(hash, STYLES.size)]
-                }
-            }
-        }
+        )
 
         private enum class TileType {
             FONT_PEDESTAL,

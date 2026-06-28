@@ -1252,10 +1252,46 @@ object ObeliskGameTestSupport {
             "modded" -> Blocks.PURPUR_BLOCK
             else -> null
         }
+        fun isGeneratedGraveMarker(state: net.minecraft.world.level.block.state.BlockState): Boolean =
+            state.`is`(Blocks.CHISELED_STONE_BRICKS) ||
+                state.`is`(Blocks.COBBLESTONE_WALL) ||
+                state.`is`(Blocks.MOSSY_COBBLESTONE_WALL) ||
+                state.`is`(Blocks.ANDESITE_WALL) ||
+                state.`is`(Blocks.CHISELED_DEEPSLATE) ||
+                state.`is`(Blocks.COBBLED_DEEPSLATE_WALL) ||
+                state.`is`(Blocks.POLISHED_DEEPSLATE_WALL) ||
+                state.`is`(Blocks.DEEPSLATE_TILE_WALL) ||
+                state.`is`(Blocks.CHISELED_POLISHED_BLACKSTONE) ||
+                state.`is`(Blocks.BLACKSTONE_WALL) ||
+                state.`is`(Blocks.POLISHED_BLACKSTONE_WALL) ||
+                state.`is`(Blocks.POLISHED_BLACKSTONE_BRICK_WALL) ||
+                state.`is`(Blocks.CHISELED_SANDSTONE) ||
+                state.`is`(Blocks.SANDSTONE_WALL) ||
+                state.`is`(Blocks.MUD_BRICK_WALL) ||
+                state.`is`(Blocks.BONE_BLOCK) ||
+                state.`is`(Blocks.SKELETON_SKULL)
+        fun isGeneratedPathOrFloor(state: net.minecraft.world.level.block.state.BlockState): Boolean =
+            state.`is`(Blocks.GRAVEL) ||
+                state.`is`(Blocks.COARSE_DIRT) ||
+                state.`is`(Blocks.MOSSY_COBBLESTONE) ||
+                state.`is`(Blocks.PODZOL) ||
+                state.`is`(Blocks.ROOTED_DIRT) ||
+                state.`is`(Blocks.COBBLESTONE) ||
+                state.`is`(Blocks.COBBLED_DEEPSLATE) ||
+                state.`is`(Blocks.TUFF) ||
+                state.`is`(Blocks.BLACKSTONE) ||
+                state.`is`(Blocks.BASALT) ||
+                state.`is`(Blocks.SOUL_SOIL) ||
+                state.`is`(Blocks.SAND) ||
+                state.`is`(Blocks.RED_SAND) ||
+                state.`is`(Blocks.SMOOTH_SANDSTONE) ||
+                state.`is`(Blocks.PACKED_MUD) ||
+                state.`is`(Blocks.MUD_BRICKS) ||
+                state.`is`(Blocks.BONE_BLOCK)
         fun detailWeight(pos: BlockPos): Int {
             val state = helper.level.getBlockState(pos)
             var weight = 0
-            if (state.`is`(Blocks.CHISELED_STONE_BRICKS) || state.`is`(Blocks.COBBLESTONE_WALL) || state.`is`(Blocks.MOSSY_COBBLESTONE_WALL)) weight++
+            if (isGeneratedGraveMarker(state)) weight++
             if (state.`is`(Blocks.RED_CANDLE) || state.`is`(Blocks.SOUL_LANTERN) || state.`is`(Blocks.BONE_BLOCK) || state.`is`(Blocks.SKELETON_SKULL) || state.`is`(Blocks.OAK_LOG) || state.`is`(Blocks.SPRUCE_LOG)) weight++
             if (expectedTrophy != null && state.`is`(expectedTrophy)) weight += 2
             return weight
@@ -1263,14 +1299,14 @@ object ObeliskGameTestSupport {
         for (dx in -20..20) {
             for (dz in -20..20) {
                 for (dy in -1..3) {
-                    val pos = graveyardFloorCenter.offset(dx, dy, dz)
-                    val state = helper.level.getBlockState(pos)
-                    if (state.`is`(Blocks.CHISELED_STONE_BRICKS) || state.`is`(Blocks.COBBLESTONE_WALL) || state.`is`(Blocks.MOSSY_COBBLESTONE_WALL)) {
-                        graveSignals++
-                    }
-                    if (state.`is`(Blocks.GRAVEL) || state.`is`(Blocks.COARSE_DIRT) || state.`is`(Blocks.MOSSY_COBBLESTONE) || state.`is`(Blocks.PODZOL)) {
-                        pathSignals++
-                        if (abs(dx) > abs(dz)) {
+	                    val pos = graveyardFloorCenter.offset(dx, dy, dz)
+	                    val state = helper.level.getBlockState(pos)
+	                    if (isGeneratedGraveMarker(state)) {
+	                        graveSignals++
+	                    }
+	                    if (isGeneratedPathOrFloor(state)) {
+	                        pathSignals++
+	                        if (abs(dx) > abs(dz)) {
                             pathDirections += if (dx > 0) Direction.EAST else Direction.WEST
                         } else if (dz != 0) {
                             pathDirections += if (dz > 0) Direction.SOUTH else Direction.NORTH
