@@ -1541,12 +1541,15 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         placeBoundaryAccents(level, chunkLocalSetBlock, tiles, palette, random)
         graveRecords.forEach { enforceGraveLine(level, chunkLocalSetBlock, it) }
 
-        val fontPos = tiles[TileCoord(0, 0)]?.let { fontTile ->
-            val altarCenter = normalizeAltarCenter(level, fontTile.groundPos) ?: return@let null
-            val altarSurface = altarSurfaceMap(level, altarCenter) ?: return@let null
-            if (!canPlaceElevatedAltarAndFont(level, altarCenter, altarSurface)) return@let null
+        val fontTile = tiles[TileCoord(0, 0)]
+        val fontPos = if (fontTile != null) {
+            val altarCenter = normalizeAltarCenter(level, fontTile.groundPos) ?: return null
+            val altarSurface = altarSurfaceMap(level, altarCenter) ?: return null
+            if (!canPlaceElevatedAltarAndFont(level, altarCenter, altarSurface)) return null
             placeElevatedAltar(chunkLocalSetBlock, altarCenter, altarSurface, palette, random)
-        } ?: BlockPos(center.x, level.minBuildHeight, center.z)
+        } else {
+            BlockPos(center.x, level.minBuildHeight, center.z)
+        }
         return BuiltSite(fontPos, generatedCapacityForSite(definition, plan.radius, plan.footprintSize), placedInChunk)
     }
 
