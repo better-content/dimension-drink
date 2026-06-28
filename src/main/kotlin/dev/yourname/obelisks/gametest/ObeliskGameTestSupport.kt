@@ -8,6 +8,7 @@ import dev.yourname.obelisks.api.ObeliskApi
 import dev.yourname.obelisks.api.RunBeginResult
 import dev.yourname.obelisks.content.ObeliskBlockEntity
 import dev.yourname.obelisks.data.CanonicalTargetResolver
+import dev.yourname.obelisks.data.GraveyardPaletteDefinition
 import dev.yourname.obelisks.data.ObeliskDataManager
 import dev.yourname.obelisks.data.ObeliskDefinition
 import dev.yourname.obelisks.data.RewardEntryDefinition
@@ -62,6 +63,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.locks.LockSupport
+import kotlin.math.abs
 
 private enum class InstanceState {
     PREPARED,
@@ -656,20 +658,23 @@ object ObeliskGameTestSupport {
             id = "test_end_visual_definition",
             displayName = "Test End Visual",
             instanceTemplateId = "end",
-            rewardTableId = "end"
+            rewardTableId = "end",
+            graveyardPalette = GraveyardPaletteDefinition(trophyBlocks = listOf("minecraft:end_stone"))
         )
         val netherDefinition = ObeliskDefinition(
             id = "test_nether_visual_definition",
             displayName = "Test Nether Visual",
             instanceTemplateId = "nether",
-            rewardTableId = "nether"
+            rewardTableId = "nether",
+            graveyardPalette = GraveyardPaletteDefinition(trophyBlocks = listOf("minecraft:blackstone"))
         )
         val moddedDefinition = ObeliskDefinition(
             id = "test_modded_visual_definition",
             displayName = "Test Modded Visual",
             instanceTemplateId = "blue_skies:everbright",
             targetDimension = "blue_skies:everbright",
-            rewardTableId = "default"
+            rewardTableId = "default",
+            graveyardPalette = GraveyardPaletteDefinition(trophyBlocks = listOf("minecraft:purpur_block"))
         )
         writeDefinition(endDefinition)
         writeDefinition(netherDefinition)
@@ -678,10 +683,10 @@ object ObeliskGameTestSupport {
 
         val endSurfaceCenter = helper.absolutePos(BlockPos(20, 3, 4))
         val endCenter = endSurfaceCenter.above(12)
-        val netherCenter = helper.absolutePos(BlockPos(36, 3, 4))
-        val moddedCenter = helper.absolutePos(BlockPos(52, 3, 4))
-        val leafCanopyCenter = helper.absolutePos(BlockPos(68, 3, 4))
-        val foliageCenter = helper.absolutePos(BlockPos(84, 3, 4))
+        val netherCenter = helper.absolutePos(BlockPos(84, 3, 4))
+        val moddedCenter = helper.absolutePos(BlockPos(148, 3, 4))
+        val leafCanopyCenter = helper.absolutePos(BlockPos(212, 3, 4))
+        val foliageCenter = helper.absolutePos(BlockPos(276, 3, 4))
         prepareGenerationSurface(helper, endSurfaceCenter)
         prepareGenerationSurface(helper, netherCenter)
         prepareGenerationSurface(helper, moddedCenter)
@@ -1217,7 +1222,24 @@ object ObeliskGameTestSupport {
         }
         var graveSignals = 0
         var pathSignals = 0
+        var trophySignals = 0
+        var trophyGroundSignals = 0
         var forbiddenSignals = 0
+        val pathDirections = mutableSetOf<Direction>()
+        val expectedTrophy = when (label) {
+            "end" -> Blocks.END_STONE
+            "nether" -> Blocks.BLACKSTONE
+            "modded" -> Blocks.PURPUR_BLOCK
+            else -> null
+        }
+        fun detailWeight(pos: BlockPos): Int {
+            val state = helper.level.getBlockState(pos)
+            var weight = 0
+            if (state.`is`(Blocks.CHISELED_STONE_BRICKS) || state.`is`(Blocks.COBBLESTONE_WALL) || state.`is`(Blocks.MOSSY_COBBLESTONE_WALL)) weight++
+            if (state.`is`(Blocks.RED_CANDLE) || state.`is`(Blocks.SOUL_LANTERN) || state.`is`(Blocks.BONE_BLOCK) || state.`is`(Blocks.SKELETON_SKULL) || state.`is`(Blocks.OAK_LOG) || state.`is`(Blocks.SPRUCE_LOG)) weight++
+            if (expectedTrophy != null && state.`is`(expectedTrophy)) weight += 2
+            return weight
+        }
         for (dx in -20..20) {
             for (dz in -20..20) {
                 for (dy in -1..3) {
@@ -1228,6 +1250,15 @@ object ObeliskGameTestSupport {
                     }
                     if (state.`is`(Blocks.GRAVEL) || state.`is`(Blocks.COARSE_DIRT) || state.`is`(Blocks.CRACKED_STONE_BRICKS)) {
                         pathSignals++
+                        if (abs(dx) > abs(dz)) {
+                            pathDirections += if (dx > 0) Direction.EAST else Direction.WEST
+                        } else if (dz != 0) {
+                            pathDirections += if (dz > 0) Direction.SOUTH else Direction.NORTH
+                        }
+                    }
+                    if (expectedTrophy != null && state.`is`(expectedTrophy)) {
+                        trophySignals++
+                        if (dy <= 0) trophyGroundSignals++
                     }
                     if (state.`is`(Blocks.WITHER_ROSE) || state.`is`(Blocks.COPPER_BLOCK)) {
                         forbiddenSignals++
@@ -1235,8 +1266,29 @@ object ObeliskGameTestSupport {
                 }
             }
         }
-        helper.assertTrue(pathSignals >= 8, "Expected $label graveyard to include weathered path/floor tiles")
-        helper.assertTrue(graveSignals >= 4, "Expected $label graveyard to include generated grave markers")
+        val tileDetailCounts = mutableListOf<Int>()
+        for (sx in -20..20 step 4) {
+            for (sz in -20..20 step 4) {
+                var localDetails = 0
+                for (dx in sx - 2..sx + 2) {
+                    for (dz in sz - 2..sz + 2) {
+                        for (dy in -1..3) {
+                            localDetails += detailWeight(baseCenter.offset(dx, dy, dz))
+                        }
+                    }
+                }
+                tileDetailCounts += localDetails
+            }
+        }
+        helper.assertTrue(pathSignals >= 24, "Expected $label graveyard to include sustained weathered path/floor tiles")
+        helper.assertTrue(graveSignals >= 12, "Expected $label graveyard to include dense generated grave markers")
+        helper.assertTrue(tileDetailCounts.maxOrNull() ?: 0 >= 5, "Expected $label graveyard to include at least one dense detail cluster")
+        helper.assertTrue(tileDetailCounts.any { it <= 1 }, "Expected $label graveyard to retain at least one quiet pocket")
+        helper.assertTrue(pathDirections.size >= 2, "Expected $label graveyard paths to reach multiple directions")
+        if (expectedTrophy != null) {
+            helper.assertTrue(trophySignals >= 1, "Expected $label graveyard to display dimensional trophy blocks")
+            helper.assertTrue(trophyGroundSignals == 0, "Expected $label dimensional trophy blocks to be displayed above ground, not used as graveyard floor")
+        }
         helper.assertTrue(forbiddenSignals == 0, "Expected $label graveyard to avoid copper blocks and wither roses")
     }
 
