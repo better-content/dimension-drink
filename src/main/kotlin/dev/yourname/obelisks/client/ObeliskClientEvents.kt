@@ -10,6 +10,7 @@ import net.minecraftforge.fml.common.Mod
 @Mod.EventBusSubscriber(modid = MOD_ID, bus = Mod.EventBusSubscriber.Bus.MOD, value = [Dist.CLIENT])
 object ObeliskClientEvents {
     @SubscribeEvent
+    @JvmStatic
     fun registerRenderers(event: EntityRenderersEvent.RegisterRenderers) {
         event.registerBlockEntityRenderer(ModBlockEntities.OBELISK.get(), ::ObeliskBlockEntityRenderer)
     }

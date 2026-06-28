@@ -42,11 +42,12 @@ class ObeliskBlockEntityRenderer(
         val top = Mth.lerp(percent, LOWER_BLOOD_Y, UPPER_BLOOD_Y)
         val consumer = bufferSource.getBuffer(RenderType.translucent())
         val sprite = Minecraft.getInstance().getTextureAtlas(TextureAtlas.LOCATION_BLOCKS).apply(WATER_STILL)
-        renderFluidSurface(
+        renderFluidVolume(
             poseStack,
             consumer,
             sprite,
             4.15f / 16.0f,
+            LOWER_BLOOD_Y - 0.02f,
             top,
             4.15f / 16.0f,
             11.85f / 16.0f,
@@ -99,6 +100,27 @@ class ObeliskBlockEntityRenderer(
             0
         )
         poseStack.popPose()
+    }
+
+    private fun renderFluidVolume(
+        poseStack: PoseStack,
+        consumer: VertexConsumer,
+        sprite: net.minecraft.client.renderer.texture.TextureAtlasSprite,
+        minX: Float,
+        minY: Float,
+        y: Float,
+        minZ: Float,
+        maxX: Float,
+        maxZ: Float,
+        packedLight: Int,
+        alpha: Int
+    ) {
+        val pose = poseStack.last()
+        quad(consumer, pose, sprite, minX, y, minZ, minX, y, maxZ, maxX, y, maxZ, maxX, y, minZ, 0.0f, 1.0f, 0.0f, packedLight, alpha)
+        quad(consumer, pose, sprite, minX, minY, minZ, maxX, minY, minZ, maxX, y, minZ, minX, y, minZ, 0.0f, 0.0f, -1.0f, packedLight, alpha)
+        quad(consumer, pose, sprite, maxX, minY, maxZ, minX, minY, maxZ, minX, y, maxZ, maxX, y, maxZ, 0.0f, 0.0f, 1.0f, packedLight, alpha)
+        quad(consumer, pose, sprite, minX, minY, maxZ, minX, minY, minZ, minX, y, minZ, minX, y, maxZ, -1.0f, 0.0f, 0.0f, packedLight, alpha)
+        quad(consumer, pose, sprite, maxX, minY, minZ, maxX, minY, maxZ, maxX, y, maxZ, maxX, y, minZ, 1.0f, 0.0f, 0.0f, packedLight, alpha)
     }
 
     private fun renderFluidSurface(
@@ -171,7 +193,7 @@ class ObeliskBlockEntityRenderer(
 
     companion object {
         private val WATER_STILL = ResourceLocation("minecraft", "block/water_still")
-        private const val LOWER_BLOOD_Y = 3.14f / 16.0f
-        private const val UPPER_BLOOD_Y = 8.92f / 16.0f
+        private const val LOWER_BLOOD_Y = 4.28f / 16.0f
+        private const val UPPER_BLOOD_Y = 8.72f / 16.0f
     }
 }
