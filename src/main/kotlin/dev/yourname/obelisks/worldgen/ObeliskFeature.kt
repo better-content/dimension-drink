@@ -77,12 +77,13 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         ): BuiltSite? {
             val palette = GraveyardPalette.from(definition)
             val tiles = planTiles(level, center, random)
+            val graveStyle = GraveStyle.choose(center, definition.id)
             val fontTile = tiles[TileCoord(0, 0)] ?: return null
             val altarSurface = altarSurfaceMap(level, fontTile.groundPos) ?: return null
             if (!canPlaceElevatedAltarAndFont(level, fontTile.groundPos, altarSurface)) return null
 
             tiles.values.sortedWith(compareBy<TilePlan> { abs(it.coord.x) + abs(it.coord.z) }.thenBy { it.coord.x }.thenBy { it.coord.z }).forEach { tile ->
-                placeTile(level, setBlock, tile, tiles, palette, random)
+                placeTile(level, setBlock, tile, tiles, palette, graveStyle, random)
             }
             placeBoundaryAccents(level, setBlock, tiles, palette, random)
 
@@ -296,6 +297,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             tile: TilePlan,
             tiles: Map<TileCoord, TilePlan>,
             palette: GraveyardPalette,
+            graveStyle: GraveStyle,
             random: RandomSource
         ) {
             when (tile.type) {
@@ -310,8 +312,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     placeStepForRaisedNeighbors(level, setBlock, tile, tiles)
                     scatterTileDetails(level, setBlock, tile.groundPos, palette, random, 2)
                 }
-                TileType.GRAVE_SINGLE -> buildSingleGrave(level, setBlock, tile.groundPos, palette, random)
-                TileType.GRAVE_DOUBLE -> buildDoubleGrave(level, setBlock, tile.groundPos, palette, random)
+                TileType.GRAVE_SINGLE -> buildSingleGrave(level, setBlock, tile.groundPos, palette, graveStyle, random)
+                TileType.GRAVE_DOUBLE -> buildDoubleGrave(level, setBlock, tile.groundPos, palette, graveStyle, random)
                 TileType.MAUSOLEUM_SMALL -> buildMausoleum(level, setBlock, tile.groundPos, palette, random)
                 TileType.SHRINE -> buildShrine(level, setBlock, tile.groundPos, palette, random)
                 TileType.STATUE_RUIN -> buildRuin(level, setBlock, tile.groundPos, palette, random)
@@ -342,29 +344,29 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
         }
 
-        private fun buildSingleGrave(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
+        private fun buildSingleGrave(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, style: GraveStyle, random: RandomSource) {
             val direction = Direction.Plane.HORIZONTAL.toList().shuffled(random).first()
-            buildGraveLine(level, setBlock, base, direction, palette, random)
+            buildGraveLine(level, setBlock, base, direction, palette, style, random)
         }
 
-        private fun buildDoubleGrave(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
+        private fun buildDoubleGrave(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, style: GraveStyle, random: RandomSource) {
             val direction = Direction.Plane.HORIZONTAL.toList().shuffled(random).first()
             val side = if (direction.axis == Direction.Axis.X) Direction.NORTH else Direction.EAST
-            buildGraveLine(level, setBlock, base.relative(side), direction, palette, random)
-            buildGraveLine(level, setBlock, base.relative(side.opposite), direction, palette, random)
-            placeGround(level, setBlock, base, if (random.nextBoolean()) palette.path(random) else palette.grave(random))
+            buildGraveLine(level, setBlock, base.relative(side), direction, palette, style, random)
+            buildGraveLine(level, setBlock, base.relative(side.opposite), direction, palette, style, random)
+            placeGround(level, setBlock, base, if (random.nextBoolean()) palette.path(random) else style.ground)
             scatterTileDetails(level, setBlock, base, palette, random, 3)
         }
 
-        private fun buildGraveLine(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, head: BlockPos, direction: Direction, palette: GraveyardPalette, random: RandomSource) {
+        private fun buildGraveLine(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, head: BlockPos, direction: Direction, palette: GraveyardPalette, style: GraveStyle, random: RandomSource) {
             val body = head.relative(direction)
             val foot = head.relative(direction, 2)
             if (!canUseTileGround(level, head, 2) || !canUseTileGround(level, body, 1)) return
-            placeGround(level, setBlock, head, palette.grave(random))
-            placeGround(level, setBlock, body, palette.grave(random))
-            if (canUseTileGround(level, foot, 1)) placeGround(level, setBlock, foot, if (random.nextBoolean()) palette.path(random) else palette.grave(random))
-            placeSupportedAbove(level, setBlock, head.above(), palette.headstone(random))
-            if (random.nextInt(3) != 0) placeSupportedAbove(level, setBlock, body.above(), lowGraveMarker(random))
+            placeGround(level, setBlock, head, style.ground)
+            placeGround(level, setBlock, body, style.ground)
+            if (canUseTileGround(level, foot, 1)) placeGround(level, setBlock, foot, if (random.nextBoolean()) palette.path(random) else style.ground)
+            placeSupportedAbove(level, setBlock, head.above(), style.headstone)
+            if (random.nextInt(3) != 0) placeSupportedAbove(level, setBlock, body.above(), style.lowMarker)
             val side = if (direction.axis == Direction.Axis.X) Direction.NORTH else Direction.EAST
             listOf(head.relative(side), body.relative(side.opposite), foot.relative(side)).forEach { pos ->
                 if (random.nextInt(3) != 0 && canUseTileGround(level, pos, 1)) {
@@ -512,13 +514,6 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             if (!canUseTileGround(level, base, 2)) return false
             placeGround(level, setBlock, base, palette.structure(random))
             return placeSupportedAbove(level, setBlock, base.above(), trophy)
-        }
-
-        private fun lowGraveMarker(random: RandomSource): Block = when (random.nextInt(4)) {
-            0 -> Blocks.SMOOTH_STONE_SLAB
-            1 -> Blocks.BONE_BLOCK
-            2 -> Blocks.SKELETON_SKULL
-            else -> Blocks.RED_CANDLE
         }
 
         private fun placeGround(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, pos: BlockPos, block: Block): Boolean {
@@ -738,6 +733,26 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                         decorations = blocks(decorationIds, listOf(Blocks.RED_CANDLE, Blocks.SOUL_LANTERN, Blocks.DEAD_BUSH, Blocks.BONE_BLOCK)),
                         trophies = blocksOrEmpty(trophyIds)
                     )
+                }
+            }
+        }
+
+        private data class GraveStyle(
+            val ground: Block,
+            val headstone: Block,
+            val lowMarker: Block
+        ) {
+            companion object {
+                private val STYLES = listOf(
+                    GraveStyle(Blocks.STONE_BRICKS, Blocks.CHISELED_STONE_BRICKS, Blocks.SMOOTH_STONE_SLAB),
+                    GraveStyle(Blocks.MOSSY_COBBLESTONE, Blocks.MOSSY_COBBLESTONE_WALL, Blocks.SMOOTH_STONE_SLAB),
+                    GraveStyle(Blocks.CRACKED_STONE_BRICKS, Blocks.COBBLESTONE_WALL, Blocks.RED_CANDLE),
+                    GraveStyle(Blocks.MOSSY_COBBLESTONE, Blocks.BONE_BLOCK, Blocks.SKELETON_SKULL)
+                )
+
+                fun choose(center: BlockPos, definitionId: String): GraveStyle {
+                    val hash = center.x * 73428767 xor center.y * 912271 xor center.z * 4235437 xor definitionId.hashCode()
+                    return STYLES[Math.floorMod(hash, STYLES.size)]
                 }
             }
         }
