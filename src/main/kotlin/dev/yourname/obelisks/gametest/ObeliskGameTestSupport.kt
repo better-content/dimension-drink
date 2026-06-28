@@ -1246,6 +1246,7 @@ object ObeliskGameTestSupport {
         var forbiddenSignals = 0
         var unlitCandleSignals = 0
         val pathDirections = mutableSetOf<Direction>()
+        val generatedFootprint = mutableSetOf<Pair<Int, Int>>()
         val expectedTrophy = when (label) {
             "end" -> Blocks.END_STONE
             "nether" -> Blocks.BLACKSTONE
@@ -1301,10 +1302,16 @@ object ObeliskGameTestSupport {
                 for (dy in -1..3) {
 	                    val pos = graveyardFloorCenter.offset(dx, dy, dz)
 	                    val state = helper.level.getBlockState(pos)
-	                    if (isGeneratedGraveMarker(state)) {
+	                    val generatedMarker = isGeneratedGraveMarker(state)
+	                    val generatedFloor = isGeneratedPathOrFloor(state)
+	                    val generatedTrophy = expectedTrophy != null && state.`is`(expectedTrophy)
+	                    if (generatedMarker || generatedFloor || generatedTrophy) {
+	                        generatedFootprint += dx to dz
+	                    }
+	                    if (generatedMarker) {
 	                        graveSignals++
 	                    }
-	                    if (isGeneratedPathOrFloor(state)) {
+	                    if (generatedFloor) {
 	                        pathSignals++
 	                        if (abs(dx) > abs(dz)) {
                             pathDirections += if (dx > 0) Direction.EAST else Direction.WEST
@@ -1312,7 +1319,7 @@ object ObeliskGameTestSupport {
                             pathDirections += if (dz > 0) Direction.SOUTH else Direction.NORTH
                         }
                     }
-                    if (expectedTrophy != null && state.`is`(expectedTrophy)) {
+                    if (generatedTrophy) {
                         trophySignals++
                         if (dy <= 0) trophyGroundSignals++
                     }
@@ -1341,6 +1348,15 @@ object ObeliskGameTestSupport {
         }
         helper.assertTrue(pathSignals >= 24, "Expected $label graveyard to include sustained weathered path/floor tiles")
         helper.assertTrue(graveSignals >= 12, "Expected $label graveyard to include dense generated grave markers")
+        if (generatedFootprint.size >= 24) {
+            val minX = generatedFootprint.minOf { it.first }
+            val maxX = generatedFootprint.maxOf { it.first }
+            val minZ = generatedFootprint.minOf { it.second }
+            val maxZ = generatedFootprint.maxOf { it.second }
+            val boxArea = (maxX - minX + 1) * (maxZ - minZ + 1)
+            val fillRatio = generatedFootprint.size.toDouble() / boxArea.toDouble()
+            helper.assertTrue(fillRatio <= 0.62, "Expected $label graveyard footprint to be labyrinthine/organic, not a filled square mask")
+        }
         helper.assertTrue(tileDetailCounts.maxOrNull() ?: 0 >= 5, "Expected $label graveyard to include at least one dense detail cluster")
         helper.assertTrue(tileDetailCounts.any { it <= 1 }, "Expected $label graveyard to retain at least one quiet pocket")
         helper.assertTrue(pathDirections.size >= 2, "Expected $label graveyard paths to reach multiple directions")

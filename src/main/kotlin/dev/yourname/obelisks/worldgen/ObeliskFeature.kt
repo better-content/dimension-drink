@@ -140,40 +140,31 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
             val font = candidates[TileCoord(0, 0)] ?: return emptyMap()
             val paths = linkedSetOf(font.coord)
-            edgeTargets(candidates.keys, random).take(3 + random.nextInt(2)).forEach { target ->
+            edgeTargets(candidates.keys, random).take(4).forEach { target ->
                 carvePath(paths, candidates, font.coord, target, radius, random)
             }
-            paths.filter { manhattan(it) in 3 until radius * 2 }
-                .shuffled(random)
-                .take(4 + random.nextInt(3))
-                .forEach { start ->
-                    val branch = candidates.keys.asSequence()
-                        .filter { it !in paths && chebyshevDistance(it, start) in 4..8 && manhattan(it) <= radius + radius / 2 }
-                        .filter { directionSpread(start, it) >= 2 }
-                        .toList()
-                        .shuffled(random)
-                        .firstOrNull()
-                    if (branch != null) carvePath(paths, candidates, start, branch, radius, random)
-                }
+            carveBranchingMaze(paths, candidates, radius, random)
+            carveLoopConnectors(paths, candidates, radius, random)
+            widenJunctionCourts(paths, candidates, radius, random)
 
             val occupied = organicallyExpandedFootprint(candidates, paths, radius, random)
             val denseCenters = occupied
                 .filter { it !in paths && manhattan(it) in 5 until radius && it != font.coord }
                 .shuffled(random)
-                .take(5 + random.nextInt(4))
+                .take(8 + random.nextInt(6))
             val quietCenters = occupied
                 .filter { it !in paths && manhattan(it) >= radius - 3 }
                 .shuffled(random)
                 .take(3)
             val focalTiles = occupied
-                .filter { it !in paths && manhattan(it) in 3..7 }
+                .filter { it !in paths && manhattan(it) in 3..10 }
                 .shuffled(random)
-                .take(3)
+                .take(4 + random.nextInt(3))
                 .toSet()
             val trophyTiles = occupied
                 .filter { it !in paths && it !in focalTiles && manhattan(it) > 4 && paths.any { path -> chebyshevDistance(it, path) <= 2 } }
                 .shuffled(random)
-                .take(4)
+                .take(5 + random.nextInt(3))
                 .toSet()
 
             val planned = linkedMapOf<TileCoord, TilePlan>()
@@ -197,6 +188,77 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             return planned
         }
 
+        private fun carveBranchingMaze(
+            paths: MutableSet<TileCoord>,
+            candidates: Map<TileCoord, TilePlan>,
+            radius: Int,
+            random: RandomSource
+        ) {
+            repeat(8 + random.nextInt(6)) {
+                val starts = paths
+                    .filter { manhattan(it) in 3 until radius * 2 }
+                    .shuffled(random)
+                val start = starts.firstOrNull() ?: return
+                val branch = candidates.keys.asSequence()
+                    .filter { it !in paths && chebyshevDistance(it, start) in 5..11 }
+                    .filter { manhattan(it) <= radius + radius / 2 && directionSpread(start, it) >= 2 }
+                    .toList()
+                    .shuffled(random)
+                    .firstOrNull() ?: return@repeat
+                carvePath(paths, candidates, start, branch, radius, random)
+
+                if (random.nextInt(100) < 68) {
+                    val loopBack = paths
+                        .filter { it != start && chebyshevDistance(it, branch) in 5..14 && directionSpread(it, branch) >= 2 }
+                        .shuffled(random)
+                        .firstOrNull()
+                    if (loopBack != null) carvePath(paths, candidates, branch, loopBack, radius, random)
+                }
+            }
+        }
+
+        private fun carveLoopConnectors(
+            paths: MutableSet<TileCoord>,
+            candidates: Map<TileCoord, TilePlan>,
+            radius: Int,
+            random: RandomSource
+        ) {
+            repeat(5 + random.nextInt(4)) {
+                val start = paths.toList().shuffled(random).firstOrNull() ?: return
+                val target = paths
+                    .filter { it != start && chebyshevDistance(it, start) in 8..18 && directionSpread(it, start) >= 3 }
+                    .shuffled(random)
+                    .firstOrNull() ?: return@repeat
+                val connector = findWindingPathThroughTerrain(candidates, start, target, radius, random) ?: return@repeat
+                val newTiles = connector.count { it !in paths }
+                if (newTiles in 3..28) paths += connector
+            }
+        }
+
+        private fun widenJunctionCourts(
+            paths: MutableSet<TileCoord>,
+            candidates: Map<TileCoord, TilePlan>,
+            radius: Int,
+            random: RandomSource
+        ) {
+            val seeds = paths
+                .filter { coord -> pathNeighborCount(coord, paths) >= 2 || random.nextInt(100) < 18 }
+                .filter { manhattan(it) <= radius + radius / 2 }
+                .shuffled(random)
+                .take(8 + random.nextInt(6))
+            seeds.forEach { seed ->
+                val courtRadius = if (random.nextInt(4) == 0) 2 else 1
+                for (dx in -courtRadius..courtRadius) {
+                    for (dz in -courtRadius..courtRadius) {
+                        if (abs(dx) + abs(dz) > courtRadius + 1) continue
+                        val coord = seed.offset(dx, dz)
+                        if (coord !in candidates) continue
+                        if (hasPathableNeighbor(coord, paths, candidates)) paths += coord
+                    }
+                }
+            }
+        }
+
         private fun organicallyExpandedFootprint(
             candidates: Map<TileCoord, TilePlan>,
             paths: Set<TileCoord>,
@@ -204,27 +266,28 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             random: RandomSource
         ): Set<TileCoord> {
             val occupied = linkedSetOf<TileCoord>()
+            val pathList = paths.toList()
             occupied += paths
             occupied += paths.flatMap { path ->
                 Direction.Plane.HORIZONTAL
                     .map { path.relative(it) }
-                    .filter { it in candidates && isPathable(candidates[path], candidates[it]) && random.nextInt(100) < 72 }
+                    .filter { it in candidates && isPathable(candidates[path], candidates[it]) && random.nextInt(100) < 88 }
             }
 
             val lobeSeeds = paths
                 .filter { manhattan(it) in 3..(radius + radius / 2) }
                 .shuffled(random)
-                .take(10 + random.nextInt(7))
+                .take(18 + random.nextInt(11))
             lobeSeeds.forEach { seed ->
-                val lobeRadius = 1 + random.nextInt(3)
+                val lobeRadius = 2 + random.nextInt(3)
                 for (dx in -lobeRadius..lobeRadius) {
                     for (dz in -lobeRadius..lobeRadius) {
                         val coord = seed.offset(dx, dz)
                         if (coord !in candidates) continue
                         if (chebyshevDistance(coord, seed) > lobeRadius) continue
-                        if (nearestDistance(coord, paths.toList()) > 3) continue
+                        if (nearestDistance(coord, pathList) > 4) continue
                         val edgeNoise = abs((coord.x * 37 + coord.z * 19 + seed.x * 11 + seed.z * 23) % 100)
-                        val keepChance = 82 - chebyshevDistance(coord, seed) * 18 - maxOf(0, nearestDistance(coord, paths.toList()) - 1) * 10
+                        val keepChance = 92 - chebyshevDistance(coord, seed) * 13 - maxOf(0, nearestDistance(coord, pathList) - 1) * 8
                         if (edgeNoise < keepChance && hasPathableNeighbor(coord, occupied, candidates)) occupied += coord
                     }
                 }
@@ -233,20 +296,30 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val sideYards = paths
                 .filter { manhattan(it) in 2..radius }
                 .shuffled(random)
-                .take(12 + random.nextInt(10))
+                .take(28 + random.nextInt(18))
             sideYards.forEach { seed ->
-                Direction.Plane.HORIZONTAL.toList().shuffled(random).take(2).forEach { direction ->
+                Direction.Plane.HORIZONTAL.toList().shuffled(random).take(3).forEach { direction ->
                     val first = seed.relative(direction)
                     val second = first.relative(direction)
                     if (first in candidates && isPathable(candidates[seed], candidates[first])) occupied += first
-                    if (random.nextInt(100) < 45 && second in candidates && isPathable(candidates[first], candidates[second])) occupied += second
+                    if (random.nextInt(100) < 62 && second in candidates && isPathable(candidates[first], candidates[second])) occupied += second
+                    val third = second.relative(direction)
+                    if (random.nextInt(100) < 20 && third in candidates && isPathable(candidates[second], candidates[third])) occupied += third
                 }
             }
+
+            candidates.keys
+                .filter { it !in occupied && nearestDistance(it, pathList) <= 2 && random.nextInt(100) < 42 }
+                .filter { hasPathableNeighbor(it, occupied, candidates) }
+                .forEach { occupied += it }
 
             return occupied
                 .filter { it == TileCoord(0, 0) || it in paths || hasPathableNeighbor(it, occupied, candidates) }
                 .toSet()
         }
+
+        private fun pathNeighborCount(coord: TileCoord, paths: Set<TileCoord>): Int =
+            Direction.Plane.HORIZONTAL.count { coord.relative(it) in paths }
 
         private fun hasPathableNeighbor(coord: TileCoord, occupied: Set<TileCoord>, candidates: Map<TileCoord, TilePlan>): Boolean =
             Direction.Plane.HORIZONTAL.any { direction ->
