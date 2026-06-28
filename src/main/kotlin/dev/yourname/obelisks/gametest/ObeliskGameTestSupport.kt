@@ -683,13 +683,13 @@ object ObeliskGameTestSupport {
 
         val endSurfaceCenter = helper.absolutePos(BlockPos(20, 3, 4))
         val endCenter = endSurfaceCenter.above(12)
-        val netherCenter = helper.absolutePos(BlockPos(84, 3, 4))
-        val moddedCenter = helper.absolutePos(BlockPos(148, 3, 4))
-        val leafCanopyCenter = helper.absolutePos(BlockPos(212, 3, 4))
-        val foliageCenter = helper.absolutePos(BlockPos(276, 3, 4))
+        val netherCenter = helper.absolutePos(BlockPos(140, 3, 4))
+        val moddedCenter = helper.absolutePos(BlockPos(260, 3, 4))
+        val leafCanopyCenter = helper.absolutePos(BlockPos(380, 3, 4))
+        val foliageCenter = helper.absolutePos(BlockPos(500, 3, 4))
         prepareGenerationSurface(helper, endSurfaceCenter)
         prepareGenerationSurface(helper, netherCenter)
-        prepareGenerationSurface(helper, moddedCenter)
+        prepareCliffsideGenerationSurface(helper, moddedCenter)
         prepareGenerationSurface(helper, leafCanopyCenter)
         prepareGenerationSurface(helper, foliageCenter)
         placeLeafPlacementNoise(helper, leafCanopyCenter)
@@ -703,8 +703,9 @@ object ObeliskGameTestSupport {
             ObeliskFeature.generateDefinitionSiteForTests(helper.level, netherCenter, netherDefinition.id, RandomSource.create(5678L)),
             "Expected nether definition test generation to succeed"
         )
+        val moddedGenerated = ObeliskFeature.generateDefinitionSiteForTests(helper.level, moddedCenter.above(18), moddedDefinition.id, RandomSource.create(9012L))
         helper.assertTrue(
-            ObeliskFeature.generateDefinitionSiteForTests(helper.level, moddedCenter, moddedDefinition.id, RandomSource.create(9012L)),
+            moddedGenerated,
             "Expected modded definition test generation to succeed"
         )
         helper.assertTrue(
@@ -716,19 +717,19 @@ object ObeliskGameTestSupport {
             "Expected foliage test generation to treat tall grass and bushes as replaceable airspace"
         )
 
-        val endPos = requireNotNull(locateGeneratedObeliskPos(helper, endCenter)) {
+        val endPos = requireNotNull(locateGeneratedObeliskPos(helper, endCenter, endDefinition.id)) {
             "Expected end definition site to place a font on the altar"
         }
-        val netherPos = requireNotNull(locateGeneratedObeliskPos(helper, netherCenter)) {
+        val netherPos = requireNotNull(locateGeneratedObeliskPos(helper, netherCenter, netherDefinition.id)) {
             "Expected nether definition site to place a font on the altar"
         }
-        val moddedPos = requireNotNull(locateGeneratedObeliskPos(helper, moddedCenter)) {
+        val moddedPos = requireNotNull(locateGeneratedObeliskPos(helper, moddedCenter, moddedDefinition.id)) {
             "Expected modded definition site to place a font on the altar"
         }
-        val leafCanopyPos = requireNotNull(locateGeneratedObeliskPos(helper, leafCanopyCenter)) {
+        val leafCanopyPos = requireNotNull(locateGeneratedObeliskPos(helper, leafCanopyCenter, endDefinition.id)) {
             "Expected leaf-canopy definition site to place a font on the altar"
         }
-        val foliagePos = requireNotNull(locateGeneratedObeliskPos(helper, foliageCenter)) {
+        val foliagePos = requireNotNull(locateGeneratedObeliskPos(helper, foliageCenter, endDefinition.id)) {
             "Expected foliage definition site to place a font on the altar"
         }
         val endObelisk = helper.level.getBlockEntity(endPos) as? ObeliskBlockEntity
@@ -1245,8 +1246,11 @@ object ObeliskGameTestSupport {
         var trophyGroundSignals = 0
         var forbiddenSignals = 0
         var unlitCandleSignals = 0
+        var structureSignals = 0
+        var slabStepSignals = 0
         val pathDirections = mutableSetOf<Direction>()
         val generatedFootprint = mutableSetOf<Pair<Int, Int>>()
+        val generatedTerrainLevels = mutableSetOf<Int>()
         val expectedTrophy = when (label) {
             "end" -> Blocks.END_STONE
             "nether" -> Blocks.BLACKSTONE
@@ -1271,6 +1275,18 @@ object ObeliskGameTestSupport {
                 state.`is`(Blocks.MUD_BRICK_WALL) ||
                 state.`is`(Blocks.BONE_BLOCK) ||
                 state.`is`(Blocks.SKELETON_SKULL)
+        fun isGeneratedStructureSignal(state: net.minecraft.world.level.block.state.BlockState): Boolean =
+            isGeneratedGraveMarker(state) ||
+                state.`is`(Blocks.POLISHED_ANDESITE) ||
+                state.`is`(Blocks.ANDESITE) ||
+                state.`is`(Blocks.POLISHED_DEEPSLATE) ||
+                state.`is`(Blocks.DEEPSLATE_TILES) ||
+                state.`is`(Blocks.POLISHED_BLACKSTONE_BRICKS) ||
+                state.`is`(Blocks.POLISHED_BLACKSTONE) ||
+                state.`is`(Blocks.CUT_SANDSTONE) ||
+                state.`is`(Blocks.MUD_BRICKS) ||
+                state.`is`(Blocks.SOUL_LANTERN) ||
+                state.`is`(Blocks.LANTERN)
         fun isGeneratedPathOrFloor(state: net.minecraft.world.level.block.state.BlockState): Boolean =
             state.`is`(Blocks.GRAVEL) ||
                 state.`is`(Blocks.COARSE_DIRT) ||
@@ -1299,7 +1315,7 @@ object ObeliskGameTestSupport {
         }
         for (dx in -20..20) {
             for (dz in -20..20) {
-                for (dy in -1..3) {
+                for (dy in -12..16) {
 	                    val pos = graveyardFloorCenter.offset(dx, dy, dz)
 	                    val state = helper.level.getBlockState(pos)
 	                    val generatedMarker = isGeneratedGraveMarker(state)
@@ -1307,7 +1323,10 @@ object ObeliskGameTestSupport {
 	                    val generatedTrophy = expectedTrophy != null && state.`is`(expectedTrophy)
 	                    if (generatedMarker || generatedFloor || generatedTrophy) {
 	                        generatedFootprint += dx to dz
+	                        generatedTerrainLevels += pos.y
 	                    }
+	                    if (isGeneratedStructureSignal(state)) structureSignals++
+	                    if (state.`is`(Blocks.SMOOTH_STONE_SLAB)) slabStepSignals++
 	                    if (generatedMarker) {
 	                        graveSignals++
 	                    }
@@ -1347,7 +1366,12 @@ object ObeliskGameTestSupport {
             }
         }
         helper.assertTrue(pathSignals >= 24, "Expected $label graveyard to include sustained weathered path/floor tiles")
-        helper.assertTrue(graveSignals >= 12, "Expected $label graveyard to include dense generated grave markers")
+        helper.assertTrue(graveSignals >= 28, "Expected $label graveyard to include dense generated grave markers")
+        helper.assertTrue(structureSignals >= 18, "Expected $label graveyard to include strong crypt/ruin/shrine structure signals")
+        if (label == "modded") {
+            helper.assertTrue(generatedTerrainLevels.size >= 3, "Expected cliffside graveyard to occupy at least three terrain levels")
+            helper.assertTrue(slabStepSignals >= 1, "Expected cliffside graveyard paths to include slab step transitions")
+        }
         if (generatedFootprint.size >= 24) {
             val minX = generatedFootprint.minOf { it.first }
             val maxX = generatedFootprint.maxOf { it.first }
@@ -1464,6 +1488,32 @@ object ObeliskGameTestSupport {
         }
     }
 
+    private fun prepareCliffsideGenerationSurface(helper: GameTestHelper, center: BlockPos) {
+        for (dx in -28..28) {
+            for (dz in -28..28) {
+                val ridge = Math.floorDiv(dx + 28, 8)
+                val contour = Math.floorDiv(dz + 16, 12)
+                val notch = if (Math.floorMod(dx + dz, 11) < 4) -1 else 0
+                val distanceFromCenter = maxOf(abs(dx), abs(dz))
+                val cliffSurfaceY = center.y - 1 + ridge + contour + notch
+                val surfaceY = when {
+                    distanceFromCenter <= 4 -> center.y - 1
+                    distanceFromCenter <= 7 -> center.y + Math.floorDiv(distanceFromCenter - 5, 2)
+                    else -> cliffSurfaceY
+                }
+                for (y in helper.level.minBuildHeight..(center.y + 24)) {
+                    val state = when {
+                        y < surfaceY - 2 -> Blocks.STONE.defaultBlockState()
+                        y < surfaceY -> Blocks.DIRT.defaultBlockState()
+                        y == surfaceY -> Blocks.GRASS_BLOCK.defaultBlockState()
+                        else -> Blocks.AIR.defaultBlockState()
+                    }
+                    helper.level.setBlock(BlockPos(center.x + dx, y, center.z + dz), state, 3)
+                }
+            }
+        }
+    }
+
     private fun placeLeafPlacementNoise(helper: GameTestHelper, center: BlockPos) {
         for (dx in -1..1) {
             for (dz in -1..1) {
@@ -1524,18 +1574,27 @@ object ObeliskGameTestSupport {
         return count
     }
 
-    private fun locateGeneratedObeliskPos(helper: GameTestHelper, center: BlockPos): BlockPos? {
+    private fun locateGeneratedObeliskPos(helper: GameTestHelper, center: BlockPos, definitionId: String? = null): BlockPos? {
+        var best: BlockPos? = null
+        var bestScore = Int.MAX_VALUE
         for (dy in -64..96) {
             for (dx in -8..8) {
                 for (dz in -8..8) {
                     val candidate = center.offset(dx, dy, dz)
-                    if (helper.level.getBlockEntity(candidate) is ObeliskBlockEntity || helper.level.getBlockState(candidate).`is`(ModBlocks.OBELISK.get())) {
-                        return candidate
+                    val blockEntity = helper.level.getBlockEntity(candidate) as? ObeliskBlockEntity
+                    val isObelisk = blockEntity != null || helper.level.getBlockState(candidate).`is`(ModBlocks.OBELISK.get())
+                    val matchesDefinition = definitionId == null || blockEntity?.definitionId == definitionId
+                    if (isObelisk && matchesDefinition) {
+                        val score = dx * dx + dz * dz + abs(dy)
+                        if (score < bestScore) {
+                            best = candidate
+                            bestScore = score
+                        }
                     }
                 }
             }
         }
-        return null
+        return best
     }
 
     private fun writeDefinition(definition: ObeliskDefinition) {

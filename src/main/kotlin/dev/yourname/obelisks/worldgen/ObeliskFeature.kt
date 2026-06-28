@@ -40,6 +40,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private const val ALTAR_HEIGHT = 3
         private const val ALTAR_RADIUS = 3
         private const val ALTAR_MAX_FOUNDATION_DROP = 7
+        private const val TERRAIN_SCAN_UP = 28
         fun generateDefinitionSiteForTests(
             level: ServerLevel,
             center: BlockPos,
@@ -93,8 +94,9 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val tiles = planTiles(level, center, random)
             val graveStyle = palette.graveStyle(center, definition.id)
             val fontTile = tiles[TileCoord(0, 0)] ?: return null
-            val altarSurface = altarSurfaceMap(level, fontTile.groundPos) ?: return null
-            if (!canPlaceElevatedAltarAndFont(level, fontTile.groundPos, altarSurface)) return null
+            val altarCenter = normalizeAltarCenter(level, fontTile.groundPos) ?: return null
+            val altarSurface = altarSurfaceMap(level, altarCenter) ?: return null
+            if (!canPlaceElevatedAltarAndFont(level, altarCenter, altarSurface)) return null
 
             val graveFootprints = mutableSetOf<BlockPos>()
             tiles.values.sortedWith(compareBy<TilePlan> { abs(it.coord.x) + abs(it.coord.z) }.thenBy { it.coord.x }.thenBy { it.coord.z }).forEach { tile ->
@@ -102,7 +104,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
             placeBoundaryAccents(level, setBlock, tiles, palette, random)
 
-            val fontPos = placeElevatedAltar(setBlock, fontTile.groundPos, altarSurface, palette, random)
+            val fontPos = placeElevatedAltar(setBlock, altarCenter, altarSurface, palette, random)
             return BuiltSite(fontPos, generatedCapacityForSite(definition, tiles))
         }
 
@@ -140,7 +142,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
             val font = candidates[TileCoord(0, 0)] ?: return emptyMap()
             val paths = linkedSetOf(font.coord)
-            edgeTargets(candidates.keys, random).take(4).forEach { target ->
+            terrainTargets(candidates, font.coord, random).take(5).forEach { target ->
                 carvePath(paths, candidates, font.coord, target, radius, random)
             }
             carveBranchingMaze(paths, candidates, radius, random)
@@ -156,10 +158,10 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 .filter { it !in paths && manhattan(it) >= radius - 3 }
                 .shuffled(random)
                 .take(3)
-            val focalTiles = occupied
+            val focalTiles = (pathJunctions(paths) + occupied
                 .filter { it !in paths && manhattan(it) in 3..10 }
                 .shuffled(random)
-                .take(4 + random.nextInt(3))
+                .take(5 + random.nextInt(4)))
                 .toSet()
             val trophyTiles = occupied
                 .filter { it !in paths && it !in focalTiles && manhattan(it) > 4 && paths.any { path -> chebyshevDistance(it, path) <= 2 } }
@@ -327,18 +329,34 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 neighbor in occupied && isPathable(candidates[coord], candidates[neighbor])
             }
 
-        private fun edgeTargets(coords: Set<TileCoord>, random: RandomSource): List<TileCoord> =
-            Direction.Plane.HORIZONTAL.mapNotNull { direction ->
-                coords.maxByOrNull { coord ->
-                    when (direction) {
-                        Direction.NORTH -> -coord.z
-                        Direction.SOUTH -> coord.z
-                        Direction.WEST -> -coord.x
-                        Direction.EAST -> coord.x
-                        else -> 0
-                    }
-                }
-            }.distinct().shuffled(random)
+        private fun pathJunctions(paths: Set<TileCoord>): List<TileCoord> =
+            paths.filter { pathNeighborCount(it, paths) >= 3 }
+
+        private fun terrainTargets(candidates: Map<TileCoord, TilePlan>, start: TileCoord, random: RandomSource): List<TileCoord> {
+            val startY = candidates[start]?.groundPos?.y ?: 0
+            val quadrants = listOf(
+                { coord: TileCoord -> coord.x >= 0 && coord.z >= 0 },
+                { coord: TileCoord -> coord.x >= 0 && coord.z <= 0 },
+                { coord: TileCoord -> coord.x <= 0 && coord.z >= 0 },
+                { coord: TileCoord -> coord.x <= 0 && coord.z <= 0 }
+            )
+            val targets = quadrants.mapNotNull { inQuadrant ->
+                candidates.values
+                    .filter { inQuadrant(it.coord) && manhattan(it.coord) >= MIN_TILE_RADIUS }
+                    .maxWithOrNull(
+                        compareBy<TilePlan> { manhattan(it.coord) + abs(it.groundPos.y - startY) * 2 }
+                            .thenBy { it.coord.x }
+                            .thenBy { it.coord.z }
+                    )
+                    ?.coord
+            }.toMutableList()
+            targets += candidates.values
+                .filter { abs(it.groundPos.y - startY) >= 3 }
+                .shuffled(random)
+                .take(4)
+                .map { it.coord }
+            return targets.distinct().shuffled(random)
+        }
 
         private fun carvePath(paths: MutableSet<TileCoord>, candidates: Map<TileCoord, TilePlan>, start: TileCoord, target: TileCoord, radius: Int, random: RandomSource) {
             val routed = findWindingPathThroughTerrain(candidates, start, target, radius, random)
@@ -432,7 +450,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 Direction.Plane.HORIZONTAL
                     .map { current.relative(it) }
                     .filter { next -> next in candidates && next !in cameFrom && isPathable(candidates[current], candidates[next]) }
-                    .sortedWith(compareBy<TileCoord> { manhattanTo(it, target) }.thenBy { it.x }.thenBy { it.z })
+                    .sortedWith(compareBy<TileCoord> { terrainRouteScore(candidates[current], candidates[it], it, target) }.thenBy { it.x }.thenBy { it.z })
                     .forEach { next ->
                         cameFrom[next] = current
                         frontier += next
@@ -446,6 +464,15 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 current = cameFrom[current]
             }
             return route.asReversed()
+        }
+
+        private fun terrainRouteScore(current: TilePlan?, next: TilePlan?, nextCoord: TileCoord, target: TileCoord): Int {
+            if (current == null || next == null) return Int.MAX_VALUE
+            val yDelta = abs(current.groundPos.y - next.groundPos.y)
+            val contourBonus = if (yDelta == 0) -2 else 0
+            val climbCost = yDelta * 5
+            val turnTowardTarget = manhattanTo(nextCoord, target)
+            return turnTowardTarget + climbCost + contourBonus
         }
 
         private fun typeForZone(zone: TileZone, coord: TileCoord, paths: Set<TileCoord>, random: RandomSource): TileType {
@@ -510,7 +537,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private fun tileGround(level: LevelAccessor, center: BlockPos, coord: TileCoord): BlockPos? {
             val x = center.x + coord.x * TILE_SIZE
             val z = center.z + coord.z * TILE_SIZE
-            val y = findSurfaceY(level, x, z, center.y + 8, 2) ?: return null
+            val y = findSurfaceY(level, x, z, center.y + TERRAIN_SCAN_UP, 2) ?: return null
             return BlockPos(x, y, z)
         }
 
@@ -554,8 +581,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     placeStepForRaisedNeighbors(level, setBlock, tile, tiles)
                     scatterTileDetails(level, setBlock, tile.groundPos, palette, random, 2)
                 }
-                TileType.GRAVE_SINGLE -> buildSingleGrave(level, setBlock, tile.groundPos, palette, graveStyle, graveFootprints, random)
-                TileType.GRAVE_DOUBLE -> buildDoubleGrave(level, setBlock, tile.groundPos, palette, graveStyle, graveFootprints, random)
+                TileType.GRAVE_SINGLE -> buildBurialPlot(level, setBlock, tile.groundPos, palette, graveStyle, graveFootprints, random, 4)
+                TileType.GRAVE_DOUBLE -> buildBurialPlot(level, setBlock, tile.groundPos, palette, graveStyle, graveFootprints, random, 6)
                 TileType.MAUSOLEUM_SMALL -> buildMausoleum(level, setBlock, tile.groundPos, palette, random)
                 TileType.SHRINE -> buildShrine(level, setBlock, tile.groundPos, palette, random)
                 TileType.STATUE_RUIN -> buildRuin(level, setBlock, tile.groundPos, palette, random)
@@ -566,7 +593,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         }
 
         private fun placePathArm(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, tile: TilePlan, neighbor: TilePlan?, direction: Direction, palette: GraveyardPalette, random: RandomSource) {
-            val maxScanY = maxOf(tile.groundPos.y, neighbor?.groundPos?.y ?: tile.groundPos.y) + 3
+            val maxScanY = maxOf(tile.groundPos.y, neighbor?.groundPos?.y ?: tile.groundPos.y) + 5
             var previous = tile.groundPos
             for (step in 1 until TILE_SIZE) {
                 val xz = tile.groundPos.relative(direction, step)
@@ -597,6 +624,46 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val slabPos = lower.above()
             if (canReplaceDecoration(level, slabPos) && isSupportedGround(level, lower, level.getBlockState(lower))) {
                 setBlock(slabPos, Blocks.SMOOTH_STONE_SLAB.defaultBlockState().setValue(SlabBlock.TYPE, SlabType.BOTTOM), 3)
+            }
+        }
+
+        private fun buildBurialPlot(
+            level: LevelAccessor,
+            setBlock: (BlockPos, BlockState, Int) -> Boolean,
+            base: BlockPos,
+            palette: GraveyardPalette,
+            style: GraveStyle,
+            graveFootprints: MutableSet<BlockPos>,
+            random: RandomSource,
+            targetGraves: Int
+        ) {
+            val direction = Direction.Plane.HORIZONTAL.toList().shuffled(random).first()
+            val side = if (direction.axis == Direction.Axis.X) Direction.NORTH else Direction.EAST
+            val starts = mutableListOf<BlockPos>()
+            for (row in -2..2) {
+                for (column in -1..2) {
+                    starts += base.relative(side, row).relative(direction, column)
+                }
+            }
+            var placed = 0
+            starts.shuffled(random).forEach { roughHead ->
+                if (placed >= targetGraves) return@forEach
+                val head = terrainGroundNear(level, roughHead, base.y + 5, 2) ?: return@forEach
+                val footprint = graveLineFootprint(head, direction)
+                if (canReserveGraveFootprint(level, footprint, graveFootprints)) {
+                    graveFootprints += footprint
+                    buildGraveLine(level, setBlock, head, direction, palette, style, random)
+                    placed++
+                }
+            }
+            if (placed < 3) {
+                buildSingleGrave(level, setBlock, base, palette, style, graveFootprints, random)
+            } else {
+                Direction.Plane.HORIZONTAL.toList().shuffled(random).take(3).forEach { edge ->
+                    val edgePos = terrainGroundNear(level, base.relative(edge, 2), base.y + 5, 1) ?: return@forEach
+                    placeGround(level, setBlock, edgePos, palette.path(random))
+                    placeSupportedAbove(level, setBlock, edgePos.above(), if (random.nextBoolean()) palette.wall(random) else palette.decoration(random))
+                }
             }
         }
 
@@ -657,6 +724,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 footprint.all { canUseTileGround(level, it, clearance = 1) }
 
         private fun buildMausoleum(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
+            if (buildLargeCrypt(level, setBlock, base, palette, random)) return
             val door = Direction.Plane.HORIZONTAL.toList().shuffled(random).first()
             for (dx in -1..1) {
                 for (dz in -1..1) {
@@ -683,6 +751,38 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             scatterTileDetails(level, setBlock, base, palette, random, 3)
         }
 
+        private fun buildLargeCrypt(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource): Boolean {
+            val door = Direction.Plane.HORIZONTAL.toList().shuffled(random).first()
+            val surfaces = linkedMapOf<Pair<Int, Int>, BlockPos>()
+            for (dx in -2..2) {
+                for (dz in -2..2) {
+                    val ground = terrainGroundNear(level, base.offset(dx, 0, dz), base.y + 5, 3) ?: return false
+                    if (abs(ground.y - base.y) > 2) return false
+                    surfaces[dx to dz] = ground
+                }
+            }
+            surfaces.forEach { (offset, pos) ->
+                val dx = offset.first
+                val dz = offset.second
+                val edge = abs(dx) == 2 || abs(dz) == 2
+                val isDoor = (door == Direction.NORTH && dz == -2 && abs(dx) <= 1) ||
+                    (door == Direction.SOUTH && dz == 2 && abs(dx) <= 1) ||
+                    (door == Direction.WEST && dx == -2 && abs(dz) <= 1) ||
+                    (door == Direction.EAST && dx == 2 && abs(dz) <= 1)
+                placeGround(level, setBlock, pos, if (edge) palette.structure(random) else palette.path(random))
+                if (edge && !isDoor) {
+                    placeSupportedAbove(level, setBlock, pos.above(), palette.structure(random))
+                    if (random.nextInt(100) < 65) placeSupportedAbove(level, setBlock, pos.above(2), if (random.nextBoolean()) palette.wall(random) else palette.structure(random))
+                }
+            }
+            surfaces[0 to 0]?.let { center ->
+                placeSupportedAbove(level, setBlock, center.above(), palette.headstone(random))
+                placeSupportedAbove(level, setBlock, center.above(2), if (random.nextBoolean()) Blocks.SOUL_LANTERN else Blocks.SKELETON_SKULL)
+            }
+            scatterTileDetails(level, setBlock, base, palette, random, 6)
+            return true
+        }
+
         private fun buildShrine(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
             for (dx in -1..1) {
                 for (dz in -1..1) {
@@ -705,13 +805,13 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private fun buildRuin(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
             if (!canUseTileGround(level, base, 2)) return
             placeGround(level, setBlock, base, palette.structure(random))
-            Direction.Plane.HORIZONTAL.toList().shuffled(random).forEach { direction ->
-                for (step in 1..2) {
-                    val pos = base.relative(direction, step)
+            Direction.Plane.HORIZONTAL.toList().shuffled(random).take(3).forEach { direction ->
+                for (step in 1..4) {
+                    val pos = terrainGroundNear(level, base.relative(direction, step), base.y + 5, 2) ?: continue
                     if (canUseTileGround(level, pos, 2)) {
                         if (random.nextBoolean()) placeGround(level, setBlock, pos, palette.structure(random))
                         placeSupportedAbove(level, setBlock, pos.above(), if (random.nextInt(4) == 0) palette.headstone(random) else palette.wall(random))
-                        if (random.nextInt(5) == 0) placeSupportedAbove(level, setBlock, pos.above(2), palette.wall(random))
+                        if (random.nextInt(3) == 0) placeSupportedAbove(level, setBlock, pos.above(2), palette.wall(random))
                     }
                 }
             }
@@ -762,7 +862,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
         private fun scatterTileDetails(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource, attempts: Int) {
             repeat(attempts) {
-                val pos = base.offset(random.nextInt(5) - 2, 0, random.nextInt(5) - 2)
+                val rough = base.offset(random.nextInt(5) - 2, 0, random.nextInt(5) - 2)
+                val pos = terrainGroundNear(level, rough, base.y + 4, 1) ?: return@repeat
                 if (canUseTileGround(level, pos, 1)) {
                     if (random.nextInt(4) == 0) placeGround(level, setBlock, pos, palette.path(random))
                     when (random.nextInt(6)) {
@@ -794,6 +895,11 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             if (!canUseTileGround(level, base, 2)) return false
             placeGround(level, setBlock, base, palette.structure(random))
             return placeSupportedAbove(level, setBlock, base.above(), trophy)
+        }
+
+        private fun terrainGroundNear(level: LevelAccessor, rough: BlockPos, maxY: Int, clearance: Int): BlockPos? {
+            val y = findSurfaceY(level, rough.x, rough.z, maxY, clearance) ?: return null
+            return BlockPos(rough.x, y, rough.z)
         }
 
         private fun placeGround(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, pos: BlockPos, block: Block): Boolean {
