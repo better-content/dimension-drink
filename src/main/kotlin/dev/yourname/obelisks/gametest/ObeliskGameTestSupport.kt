@@ -1340,7 +1340,8 @@ object ObeliskGameTestSupport {
                     }
                     if (generatedTrophy) {
                         trophySignals++
-                        if (dy <= 0) trophyGroundSignals++
+                        val below = helper.level.getBlockState(pos.below())
+                        if (!below.isFaceSturdy(helper.level, pos.below(), Direction.UP)) trophyGroundSignals++
                     }
                     if (state.`is`(Blocks.WITHER_ROSE) || state.`is`(Blocks.COPPER_BLOCK)) {
                         forbiddenSignals++

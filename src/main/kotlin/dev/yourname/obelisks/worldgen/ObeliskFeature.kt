@@ -29,6 +29,10 @@ import net.minecraft.world.level.levelgen.feature.configurations.NoneFeatureConf
 import net.minecraft.server.level.ServerLevel
 import java.util.ArrayDeque
 import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatureConfiguration>(codec) {
 
@@ -334,17 +338,12 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
         private fun terrainTargets(candidates: Map<TileCoord, TilePlan>, start: TileCoord, random: RandomSource): List<TileCoord> {
             val startY = candidates[start]?.groundPos?.y ?: 0
-            val quadrants = listOf(
-                { coord: TileCoord -> coord.x >= 0 && coord.z >= 0 },
-                { coord: TileCoord -> coord.x >= 0 && coord.z <= 0 },
-                { coord: TileCoord -> coord.x <= 0 && coord.z >= 0 },
-                { coord: TileCoord -> coord.x <= 0 && coord.z <= 0 }
-            )
-            val targets = quadrants.mapNotNull { inQuadrant ->
+            val sectors = (0 until 7).toList().shuffled(random).take(5)
+            val targets = sectors.mapNotNull { sector ->
                 candidates.values
-                    .filter { inQuadrant(it.coord) && manhattan(it.coord) >= MIN_TILE_RADIUS }
+                    .filter { angularSector(it.coord, sectors = 7) == sector && radialDistance(it.coord) >= MIN_TILE_RADIUS * 0.72 }
                     .maxWithOrNull(
-                        compareBy<TilePlan> { manhattan(it.coord) + abs(it.groundPos.y - startY) * 2 }
+                        compareBy<TilePlan> { radialDistance(it.coord) + abs(it.groundPos.y - startY) * 2.0 }
                             .thenBy { it.coord.x }
                             .thenBy { it.coord.z }
                     )
@@ -356,6 +355,14 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 .take(4)
                 .map { it.coord }
             return targets.distinct().shuffled(random)
+        }
+
+        private fun radialDistance(coord: TileCoord): Double =
+            sqrt((coord.x * coord.x + coord.z * coord.z).toDouble())
+
+        private fun angularSector(coord: TileCoord, sectors: Int): Int {
+            val normalized = (atan2(coord.z.toDouble(), coord.x.toDouble()) + Math.PI) / (Math.PI * 2.0)
+            return Math.floor(normalized * sectors).toInt().coerceIn(0, sectors - 1)
         }
 
         private fun carvePath(paths: MutableSet<TileCoord>, candidates: Map<TileCoord, TilePlan>, start: TileCoord, target: TileCoord, radius: Int, random: RandomSource) {
@@ -528,10 +535,21 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             abs(a.x - b.x) + abs(a.z - b.z)
 
         private fun insideOrganicShape(coord: TileCoord, radius: Int): Boolean {
-            val manhattan = abs(coord.x) + abs(coord.z)
-            val chebyshev = maxOf(abs(coord.x), abs(coord.z))
-            val noise = Math.floorDiv(coord.x * 31 + coord.z * 17 + coord.x * coord.z * 7, 11).let { abs(it % 5) - 2 }
-            return chebyshev <= radius && manhattan <= radius + (radius / 2) + noise
+            if (coord == TileCoord(0, 0)) return true
+            val distance = sqrt((coord.x * coord.x + coord.z * coord.z).toDouble())
+            val angle = atan2(coord.z.toDouble(), coord.x.toDouble())
+            val wave = sin(angle * 3.0 + radius * 0.71) * 0.16 +
+                cos(angle * 5.0 - radius * 0.37) * 0.11 +
+                sin(angle * 9.0 + coord.x * 0.19 - coord.z * 0.23) * 0.07
+            val sectorNoise = signedNoise(coord.x / 2, coord.z / 2, radius) * 0.09
+            val localRadius = (radius * (0.78 + wave + sectorNoise)).coerceIn(radius * 0.48, radius.toDouble())
+            return distance <= localRadius
+        }
+
+        private fun signedNoise(x: Int, z: Int, salt: Int): Double {
+            val mixed = x * 73428767 xor z * 912931 xor salt * 42349
+            val value = Math.floorMod(mixed, 2001) / 1000.0
+            return value - 1.0
         }
 
         private fun tileGround(level: LevelAccessor, center: BlockPos, coord: TileCoord): BlockPos? {
