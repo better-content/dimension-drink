@@ -83,6 +83,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             tiles.values.sortedWith(compareBy<TilePlan> { abs(it.coord.x) + abs(it.coord.z) }.thenBy { it.coord.x }.thenBy { it.coord.z }).forEach { tile ->
                 placeTile(level, setBlock, tile, tiles, palette, random)
             }
+            placeBoundaryAccents(level, setBlock, tiles, palette, random)
 
             setBlock(fontTile.groundPos, palette.pedestal.defaultBlockState(), 3)
             for (dy in 1..FONT_CLEARANCE) {
@@ -135,12 +136,18 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 val type = when {
                     coord == TileCoord(0, 0) -> TileType.FONT_PEDESTAL
                     coord in paths -> TileType.PATH
-                    abs(coord.x) + abs(coord.z) <= 4 && random.nextInt(3) == 0 -> TileType.SHRINE
-                    random.nextInt(100) < 52 -> if (random.nextInt(5) == 0) TileType.GRAVE_DOUBLE else TileType.GRAVE_SINGLE
-                    random.nextInt(100) < 9 -> TileType.MAUSOLEUM_SMALL
-                    random.nextInt(100) < 10 -> TileType.STATUE_RUIN
-                    random.nextInt(100) < 12 -> TileType.TREE_STUMP
-                    else -> TileType.DECOR
+                    abs(coord.x) + abs(coord.z) <= 5 && random.nextInt(100) < 28 -> TileType.SHRINE
+                    else -> {
+                        val roll = random.nextInt(100)
+                        when {
+                            roll < 46 -> TileType.GRAVE_SINGLE
+                            roll < 69 -> TileType.GRAVE_DOUBLE
+                            roll < 80 -> TileType.MAUSOLEUM_SMALL
+                            roll < 91 -> TileType.STATUE_RUIN
+                            roll < 97 -> TileType.TREE_STUMP
+                            else -> TileType.DECOR
+                        }
+                    }
                 }
                 planned[coord] = tile.copy(type = type, pathExits = exitsForTile)
             }
@@ -191,11 +198,13 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 TileType.FONT_PEDESTAL -> {
                     placeGround(level, setBlock, tile.groundPos, palette.path(random))
                     tile.pathExits.forEach { direction -> placePathArm(level, setBlock, tile, direction, palette, random) }
+                    scatterTileDetails(level, setBlock, tile.groundPos, palette, random, 3)
                 }
                 TileType.PATH -> {
                     placeGround(level, setBlock, tile.groundPos, palette.path(random))
                     tile.pathExits.forEach { direction -> placePathArm(level, setBlock, tile, direction, palette, random) }
-                    placeStepForRaisedNeighbors(level, setBlock, tile, tiles, palette)
+                    placeStepForRaisedNeighbors(level, setBlock, tile, tiles)
+                    scatterTileDetails(level, setBlock, tile.groundPos, palette, random, 2)
                 }
                 TileType.GRAVE_SINGLE -> buildSingleGrave(level, setBlock, tile.groundPos, palette, random)
                 TileType.GRAVE_DOUBLE -> buildDoubleGrave(level, setBlock, tile.groundPos, palette, random)
@@ -216,7 +225,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
         }
 
-        private fun placeStepForRaisedNeighbors(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, tile: TilePlan, tiles: Map<TileCoord, TilePlan>, palette: GraveyardPalette) {
+        private fun placeStepForRaisedNeighbors(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, tile: TilePlan, tiles: Map<TileCoord, TilePlan>) {
             Direction.Plane.HORIZONTAL.forEach { direction ->
                 val neighbor = tiles[tile.coord.relative(direction)] ?: return@forEach
                 if (abs(neighbor.groundPos.y - tile.groundPos.y) != 1) return@forEach
@@ -230,20 +239,37 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
         private fun buildSingleGrave(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
             val direction = Direction.Plane.HORIZONTAL.toList().shuffled(random).first()
-            val foot = base.relative(direction)
-            if (!canUseTileGround(level, base, 2) || !canUseTileGround(level, foot, 1)) return
-            placeGround(level, setBlock, foot, palette.path(random))
-            placeGround(level, setBlock, base, palette.grave(random))
-            placeSupportedAbove(level, setBlock, base.above(), palette.headstone(random))
-            if (random.nextInt(4) == 0) placeSupportedAbove(level, setBlock, foot.above(), palette.decoration(random))
+            buildGraveLine(level, setBlock, base, direction, palette, random)
         }
 
         private fun buildDoubleGrave(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
-            buildSingleGrave(level, setBlock, base.west(), palette, random)
-            buildSingleGrave(level, setBlock, base.east(), palette, random)
+            val direction = Direction.Plane.HORIZONTAL.toList().shuffled(random).first()
+            val side = if (direction.axis == Direction.Axis.X) Direction.NORTH else Direction.EAST
+            buildGraveLine(level, setBlock, base.relative(side), direction, palette, random)
+            buildGraveLine(level, setBlock, base.relative(side.opposite), direction, palette, random)
+            scatterTileDetails(level, setBlock, base, palette, random, 2)
+        }
+
+        private fun buildGraveLine(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, head: BlockPos, direction: Direction, palette: GraveyardPalette, random: RandomSource) {
+            val body = head.relative(direction)
+            val foot = head.relative(direction, 2)
+            if (!canUseTileGround(level, head, 2) || !canUseTileGround(level, body, 1)) return
+            placeGround(level, setBlock, head, palette.grave(random))
+            placeGround(level, setBlock, body, palette.grave(random))
+            if (canUseTileGround(level, foot, 1)) placeGround(level, setBlock, foot, if (random.nextBoolean()) palette.path(random) else palette.grave(random))
+            placeSupportedAbove(level, setBlock, head.above(), palette.headstone(random))
+            if (random.nextInt(3) != 0) placeSupportedAbove(level, setBlock, body.above(), lowGraveMarker(random))
+            val side = if (direction.axis == Direction.Axis.X) Direction.NORTH else Direction.EAST
+            listOf(head.relative(side), body.relative(side.opposite), foot.relative(side)).forEach { pos ->
+                if (random.nextInt(3) != 0 && canUseTileGround(level, pos, 1)) {
+                    if (random.nextBoolean()) placeGround(level, setBlock, pos, palette.path(random))
+                    placeSupportedAbove(level, setBlock, pos.above(), palette.decoration(random))
+                }
+            }
         }
 
         private fun buildMausoleum(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
+            val door = Direction.Plane.HORIZONTAL.toList().shuffled(random).first()
             for (dx in -1..1) {
                 for (dz in -1..1) {
                     val pos = base.offset(dx, 0, dz)
@@ -254,42 +280,100 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 for (dz in -1..1) {
                     val pos = base.offset(dx, 0, dz)
                     placeGround(level, setBlock, pos, palette.structure(random))
-                    if (abs(dx) == 1 || abs(dz) == 1) {
+                    val isDoor = (door == Direction.NORTH && dz == -1 && dx == 0) ||
+                        (door == Direction.SOUTH && dz == 1 && dx == 0) ||
+                        (door == Direction.WEST && dx == -1 && dz == 0) ||
+                        (door == Direction.EAST && dx == 1 && dz == 0)
+                    if ((abs(dx) == 1 || abs(dz) == 1) && !isDoor) {
                         placeSupportedAbove(level, setBlock, pos.above(), palette.structure(random))
+                        if (random.nextInt(3) != 0) placeSupportedAbove(level, setBlock, pos.above(2), palette.structure(random))
                     }
                 }
             }
-            placeSupportedAbove(level, setBlock, base.above(2), palette.headstone(random))
+            placeSupportedAbove(level, setBlock, base.above(), palette.headstone(random))
+            placeSupportedAbove(level, setBlock, base.above(2), if (random.nextBoolean()) Blocks.SMOOTH_STONE_SLAB else palette.structure(random))
+            scatterTileDetails(level, setBlock, base, palette, random, 3)
         }
 
         private fun buildShrine(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
+            for (dx in -1..1) {
+                for (dz in -1..1) {
+                    val pos = base.offset(dx, 0, dz)
+                    if (canUseTileGround(level, pos, 2)) {
+                        placeGround(level, setBlock, pos, if (abs(dx) + abs(dz) == 0) palette.structure(random) else palette.path(random))
+                    }
+                }
+            }
             if (!canUseTileGround(level, base, 3)) return
-            placeGround(level, setBlock, base, palette.structure(random))
+            Direction.Plane.HORIZONTAL.forEach { direction ->
+                val corner = base.relative(direction).relative(if (direction.axis == Direction.Axis.X) Direction.NORTH else Direction.EAST)
+                if (canUseTileGround(level, corner, 2)) placeSupportedAbove(level, setBlock, corner.above(), palette.wall(random))
+            }
             placeSupportedAbove(level, setBlock, base.above(), palette.headstone(random))
             placeSupportedAbove(level, setBlock, base.above(2), if (random.nextBoolean()) Blocks.SOUL_LANTERN else Blocks.SKELETON_SKULL)
+            scatterTileDetails(level, setBlock, base, palette, random, 4)
         }
 
         private fun buildRuin(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
             if (!canUseTileGround(level, base, 2)) return
             placeGround(level, setBlock, base, palette.structure(random))
-            Direction.Plane.HORIZONTAL.toList().shuffled(random).take(2).forEach { direction ->
-                val pos = base.relative(direction)
-                if (canUseTileGround(level, pos, 2)) {
-                    placeSupportedAbove(level, setBlock, pos.above(), palette.wall(random))
+            Direction.Plane.HORIZONTAL.toList().shuffled(random).forEach { direction ->
+                for (step in 1..2) {
+                    val pos = base.relative(direction, step)
+                    if (canUseTileGround(level, pos, 2)) {
+                        if (random.nextBoolean()) placeGround(level, setBlock, pos, palette.structure(random))
+                        placeSupportedAbove(level, setBlock, pos.above(), if (random.nextInt(4) == 0) palette.headstone(random) else palette.wall(random))
+                        if (random.nextInt(5) == 0) placeSupportedAbove(level, setBlock, pos.above(2), palette.wall(random))
+                    }
                 }
             }
+            scatterTileDetails(level, setBlock, base, palette, random, 3)
         }
 
         private fun buildStump(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, random: RandomSource) {
             if (!canUseTileGround(level, base, 2)) return
             placeGround(level, setBlock, base, if (random.nextBoolean()) Blocks.COARSE_DIRT else Blocks.ROOTED_DIRT)
             placeSupportedAbove(level, setBlock, base.above(), if (random.nextBoolean()) Blocks.OAK_LOG else Blocks.SPRUCE_LOG)
+            Direction.Plane.HORIZONTAL.toList().shuffled(random).take(3).forEach { direction ->
+                val root = base.relative(direction)
+                if (canUseTileGround(level, root, 1)) placeGround(level, setBlock, root, if (random.nextBoolean()) Blocks.ROOTED_DIRT else Blocks.COARSE_DIRT)
+            }
         }
 
         private fun buildDecor(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
             if (!canUseTileGround(level, base, 1)) return
-            if (random.nextInt(3) == 0) placeGround(level, setBlock, base, palette.path(random))
-            if (random.nextInt(5) == 0) placeSupportedAbove(level, setBlock, base.above(), palette.decoration(random))
+            placeGround(level, setBlock, base, if (random.nextInt(4) == 0) palette.grave(random) else palette.path(random))
+            placeSupportedAbove(level, setBlock, base.above(), palette.decoration(random))
+            scatterTileDetails(level, setBlock, base, palette, random, 3)
+        }
+
+        private fun scatterTileDetails(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource, attempts: Int) {
+            repeat(attempts) {
+                val pos = base.offset(random.nextInt(5) - 2, 0, random.nextInt(5) - 2)
+                if (canUseTileGround(level, pos, 1)) {
+                    if (random.nextInt(4) == 0) placeGround(level, setBlock, pos, palette.path(random))
+                    if (random.nextInt(3) != 0) placeSupportedAbove(level, setBlock, pos.above(), palette.decoration(random))
+                }
+            }
+        }
+
+        private fun placeBoundaryAccents(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, tiles: Map<TileCoord, TilePlan>, palette: GraveyardPalette, random: RandomSource) {
+            tiles.values.forEach { tile ->
+                for (direction in Direction.Plane.HORIZONTAL) {
+                    if (tile.coord.relative(direction) in tiles || random.nextInt(100) >= 28) continue
+                    val pos = tile.groundPos.relative(direction, TILE_SIZE / 2)
+                    if (canUseTileGround(level, pos, 2)) {
+                        placeSupportedAbove(level, setBlock, pos.above(), if (random.nextInt(4) == 0) palette.headstone(random) else palette.wall(random))
+                    }
+                }
+            }
+        }
+
+        private fun lowGraveMarker(random: RandomSource): Block = when (random.nextInt(4)) {
+            0 -> Blocks.SMOOTH_STONE_SLAB
+            1 -> Blocks.BONE_BLOCK
+            2 -> Blocks.SKELETON_SKULL
+            else -> Blocks.RED_CANDLE
         }
 
         private fun placeGround(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, pos: BlockPos, block: Block): Boolean {

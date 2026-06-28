@@ -42,32 +42,31 @@ class ObeliskBlockEntityRenderer(
         val top = Mth.lerp(percent, LOWER_BLOOD_Y, UPPER_BLOOD_Y)
         val consumer = bufferSource.getBuffer(RenderType.translucent())
         val sprite = Minecraft.getInstance().getTextureAtlas(TextureAtlas.LOCATION_BLOCKS).apply(WATER_STILL)
-        renderFluidBox(
+        renderFluidSurface(
             poseStack,
             consumer,
             sprite,
-            4.0f / 16.0f,
-            LOWER_BLOOD_Y,
-            4.0f / 16.0f,
-            12.0f / 16.0f,
+            4.15f / 16.0f,
             top,
-            12.0f / 16.0f,
-            packedLight
+            4.15f / 16.0f,
+            11.85f / 16.0f,
+            11.85f / 16.0f,
+            packedLight,
+            238
         )
 
-        val meniscus = 0.02f + percent * 0.025f
-        renderFluidBox(
+        val meniscusY = (top + 0.006f).coerceAtMost(UPPER_BLOOD_Y + 0.012f)
+        renderFluidSurface(
             poseStack,
             consumer,
             sprite,
-            3.7f / 16.0f,
-            top,
-            3.7f / 16.0f,
-            12.3f / 16.0f,
-            (top + meniscus).coerceAtMost(UPPER_BLOOD_Y + 0.035f),
-            12.3f / 16.0f,
+            3.95f / 16.0f,
+            meniscusY,
+            3.95f / 16.0f,
+            12.05f / 16.0f,
+            12.05f / 16.0f,
             packedLight,
-            (72 + percent * 72.0f).toInt().coerceIn(72, 144)
+            (130 + percent * 70.0f).toInt().coerceIn(130, 200)
         )
     }
 
@@ -102,41 +101,20 @@ class ObeliskBlockEntityRenderer(
         poseStack.popPose()
     }
 
-    private fun renderFluidBox(
+    private fun renderFluidSurface(
         poseStack: PoseStack,
         consumer: VertexConsumer,
         sprite: net.minecraft.client.renderer.texture.TextureAtlasSprite,
         minX: Float,
-        minY: Float,
+        y: Float,
         minZ: Float,
         maxX: Float,
-        maxY: Float,
-        maxZ: Float,
-        packedLight: Int
-    ) {
-        renderFluidBox(poseStack, consumer, sprite, minX, minY, minZ, maxX, maxY, maxZ, packedLight, 210)
-    }
-
-    private fun renderFluidBox(
-        poseStack: PoseStack,
-        consumer: VertexConsumer,
-        sprite: net.minecraft.client.renderer.texture.TextureAtlasSprite,
-        minX: Float,
-        minY: Float,
-        minZ: Float,
-        maxX: Float,
-        maxY: Float,
         maxZ: Float,
         packedLight: Int,
         alpha: Int
     ) {
         val pose = poseStack.last()
-        quad(consumer, pose, sprite, minX, maxY, minZ, minX, maxY, maxZ, maxX, maxY, maxZ, maxX, maxY, minZ, 0.0f, 1.0f, 0.0f, packedLight, alpha)
-        quad(consumer, pose, sprite, minX, minY, minZ, maxX, minY, minZ, maxX, minY, maxZ, minX, minY, maxZ, 0.0f, -1.0f, 0.0f, packedLight, alpha)
-        quad(consumer, pose, sprite, minX, minY, minZ, minX, maxY, minZ, maxX, maxY, minZ, maxX, minY, minZ, 0.0f, 0.0f, -1.0f, packedLight, alpha)
-        quad(consumer, pose, sprite, maxX, minY, minZ, maxX, maxY, minZ, maxX, maxY, maxZ, maxX, minY, maxZ, 1.0f, 0.0f, 0.0f, packedLight, alpha)
-        quad(consumer, pose, sprite, maxX, minY, maxZ, maxX, maxY, maxZ, minX, maxY, maxZ, minX, minY, maxZ, 0.0f, 0.0f, 1.0f, packedLight, alpha)
-        quad(consumer, pose, sprite, minX, minY, maxZ, minX, maxY, maxZ, minX, maxY, minZ, minX, minY, minZ, -1.0f, 0.0f, 0.0f, packedLight, alpha)
+        quad(consumer, pose, sprite, minX, y, minZ, minX, y, maxZ, maxX, y, maxZ, maxX, y, minZ, 0.0f, 1.0f, 0.0f, packedLight, alpha)
     }
 
     private fun quad(
@@ -183,7 +161,7 @@ class ObeliskBlockEntityRenderer(
         normalZ: Float
     ) {
         consumer.vertex(pose.pose(), x, y, z)
-            .color(126, 0, 10, alpha)
+            .color(112, 0, 8, alpha)
             .uv(sprite.getU((u * 16.0f).toDouble()), sprite.getV((v * 16.0f).toDouble()))
             .overlayCoords(OverlayTexture.NO_OVERLAY)
             .uv2(packedLight)
