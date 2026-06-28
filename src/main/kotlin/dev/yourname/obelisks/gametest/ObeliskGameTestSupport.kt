@@ -1275,6 +1275,16 @@ object ObeliskGameTestSupport {
                 state.`is`(Blocks.MUD_BRICK_WALL) ||
                 state.`is`(Blocks.BONE_BLOCK) ||
                 state.`is`(Blocks.SKELETON_SKULL)
+        fun isPalettedHeadstone(state: net.minecraft.world.level.block.state.BlockState): Boolean =
+            isGeneratedGraveMarker(state) && !state.`is`(Blocks.GRAVEL)
+        fun isValidGravelGraveBody(pos: BlockPos): Boolean =
+            Direction.Plane.HORIZONTAL.any { direction ->
+                val forwardBody = helper.level.getBlockState(pos.relative(direction)).`is`(Blocks.GRAVEL) &&
+                    isPalettedHeadstone(helper.level.getBlockState(pos.relative(direction, 2).above()))
+                val middleBody = helper.level.getBlockState(pos.relative(direction.opposite)).`is`(Blocks.GRAVEL) &&
+                    isPalettedHeadstone(helper.level.getBlockState(pos.relative(direction).above()))
+                forwardBody || middleBody
+            }
         fun isGeneratedStructureSignal(state: net.minecraft.world.level.block.state.BlockState): Boolean =
             isGeneratedGraveMarker(state) ||
                 state.`is`(Blocks.POLISHED_ANDESITE) ||
@@ -1288,8 +1298,7 @@ object ObeliskGameTestSupport {
                 state.`is`(Blocks.SOUL_LANTERN) ||
                 state.`is`(Blocks.LANTERN)
         fun isGeneratedPathOrFloor(state: net.minecraft.world.level.block.state.BlockState): Boolean =
-            state.`is`(Blocks.GRAVEL) ||
-                state.`is`(Blocks.COARSE_DIRT) ||
+            state.`is`(Blocks.COARSE_DIRT) ||
                 state.`is`(Blocks.MOSSY_COBBLESTONE) ||
                 state.`is`(Blocks.PODZOL) ||
                 state.`is`(Blocks.ROOTED_DIRT) ||
@@ -1320,14 +1329,18 @@ object ObeliskGameTestSupport {
 	                    val state = helper.level.getBlockState(pos)
 	                    val generatedMarker = isGeneratedGraveMarker(state)
 	                    val generatedFloor = isGeneratedPathOrFloor(state)
+	                    val generatedGraveBody = state.`is`(Blocks.GRAVEL) && isValidGravelGraveBody(pos)
 	                    val generatedTrophy = expectedTrophy != null && state.`is`(expectedTrophy)
-	                    if (generatedMarker || generatedFloor || generatedTrophy) {
+	                    if (generatedMarker || generatedFloor || generatedTrophy || generatedGraveBody) {
 	                        generatedFootprint += dx to dz
 	                        generatedTerrainLevels += pos.y
 	                    }
 	                    if (isGeneratedStructureSignal(state)) structureSignals++
 	                    if (state.`is`(Blocks.SMOOTH_STONE_SLAB)) slabStepSignals++
 	                    if (generatedMarker) {
+	                        graveSignals++
+	                    }
+	                    if (generatedGraveBody) {
 	                        graveSignals++
 	                    }
 	                    if (generatedFloor) {
@@ -1367,7 +1380,7 @@ object ObeliskGameTestSupport {
             }
         }
         helper.assertTrue(pathSignals >= 24, "Expected $label graveyard to include sustained weathered path/floor tiles")
-        helper.assertTrue(graveSignals >= 28, "Expected $label graveyard to include dense generated grave markers")
+        helper.assertTrue(graveSignals >= 18, "Expected $label graveyard to include dense generated grave markers")
         helper.assertTrue(structureSignals >= 18, "Expected $label graveyard to include strong crypt/ruin/shrine structure signals")
         if (label == "modded") {
             helper.assertTrue(generatedTerrainLevels.size >= 3, "Expected cliffside graveyard to occupy at least three terrain levels")

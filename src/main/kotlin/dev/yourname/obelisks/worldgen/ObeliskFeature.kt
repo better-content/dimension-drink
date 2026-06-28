@@ -31,6 +31,7 @@ import java.util.ArrayDeque
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -103,10 +104,12 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             if (!canPlaceElevatedAltarAndFont(level, altarCenter, altarSurface)) return null
 
             val graveFootprints = mutableSetOf<BlockPos>()
+            val graveRecords = mutableListOf<GravePlacement>()
             tiles.values.sortedWith(compareBy<TilePlan> { abs(it.coord.x) + abs(it.coord.z) }.thenBy { it.coord.x }.thenBy { it.coord.z }).forEach { tile ->
-                placeTile(level, setBlock, tile, tiles, palette, graveStyle, graveFootprints, random)
+                placeTile(level, setBlock, tile, tiles, palette, graveStyle, graveFootprints, graveRecords, random)
             }
             placeBoundaryAccents(level, setBlock, tiles, palette, random)
+            graveRecords.forEach { enforceGraveLine(level, setBlock, it) }
 
             val fontPos = placeElevatedAltar(setBlock, altarCenter, altarSurface, palette, random)
             return BuiltSite(fontPos, generatedCapacityForSite(definition, tiles))
@@ -118,7 +121,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val radiusProgress = ((tileRadius - MIN_TILE_RADIUS).toDouble() / (MAX_TILE_RADIUS - MIN_TILE_RADIUS).toDouble()).coerceIn(0.0, 1.0)
             val footprintProgress = ((tiles.size - 180).toDouble() / 520.0).coerceIn(0.0, 1.25)
             val multiplier = 1.15 + maxOf(radiusProgress * 0.8, footprintProgress)
-            return (base * multiplier).coerceIn(base, 1_000_000.0)
+            return (base * multiplier).coerceIn(base, 1_000_000.0).roundToInt().toDouble()
         }
 
         private fun placeGeneratedFont(level: LevelAccessor, site: BuiltSite, definition: ObeliskDefinition): Boolean {
@@ -585,6 +588,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             palette: GraveyardPalette,
             graveStyle: GraveStyle,
             graveFootprints: MutableSet<BlockPos>,
+            graveRecords: MutableList<GravePlacement>,
             random: RandomSource
         ) {
             when (tile.type) {
@@ -599,8 +603,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     placeStepForRaisedNeighbors(level, setBlock, tile, tiles)
                     scatterTileDetails(level, setBlock, tile.groundPos, palette, random, 2)
                 }
-                TileType.GRAVE_SINGLE -> buildBurialPlot(level, setBlock, tile.groundPos, palette, graveStyle, graveFootprints, random, 4)
-                TileType.GRAVE_DOUBLE -> buildBurialPlot(level, setBlock, tile.groundPos, palette, graveStyle, graveFootprints, random, 6)
+                TileType.GRAVE_SINGLE -> buildBurialPlot(level, setBlock, tile.groundPos, palette, graveStyle, graveFootprints, graveRecords, random, 4)
+                TileType.GRAVE_DOUBLE -> buildBurialPlot(level, setBlock, tile.groundPos, palette, graveStyle, graveFootprints, graveRecords, random, 6)
                 TileType.MAUSOLEUM_SMALL -> buildMausoleum(level, setBlock, tile.groundPos, palette, random)
                 TileType.SHRINE -> buildShrine(level, setBlock, tile.groundPos, palette, random)
                 TileType.STATUE_RUIN -> buildRuin(level, setBlock, tile.groundPos, palette, random)
@@ -652,6 +656,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             palette: GraveyardPalette,
             style: GraveStyle,
             graveFootprints: MutableSet<BlockPos>,
+            graveRecords: MutableList<GravePlacement>,
             random: RandomSource,
             targetGraves: Int
         ) {
@@ -670,12 +675,14 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 val footprint = graveLineFootprint(head, direction)
                 if (canReserveGraveFootprint(level, footprint, graveFootprints)) {
                     graveFootprints += footprint
-                    buildGraveLine(level, setBlock, head, direction, palette, style, random)
-                    placed++
+                    if (buildGraveLine(level, setBlock, head, direction, palette, style, random)) {
+                        graveRecords += GravePlacement(head, direction, style.headstone)
+                        placed++
+                    }
                 }
             }
             if (placed < 3) {
-                buildSingleGrave(level, setBlock, base, palette, style, graveFootprints, random)
+                buildSingleGrave(level, setBlock, base, palette, style, graveFootprints, graveRecords, random)
             } else {
                 Direction.Plane.HORIZONTAL.toList().shuffled(random).take(3).forEach { edge ->
                     val edgePos = terrainGroundNear(level, base.relative(edge, 2), base.y + 5, 1) ?: return@forEach
@@ -685,19 +692,21 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
         }
 
-        private fun buildSingleGrave(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, style: GraveStyle, graveFootprints: MutableSet<BlockPos>, random: RandomSource) {
+        private fun buildSingleGrave(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, style: GraveStyle, graveFootprints: MutableSet<BlockPos>, graveRecords: MutableList<GravePlacement>, random: RandomSource) {
             Direction.Plane.HORIZONTAL.toList().shuffled(random).forEach { direction ->
                 val footprint = graveLineFootprint(base, direction)
                 if (canReserveGraveFootprint(level, footprint, graveFootprints)) {
                     graveFootprints += footprint
-                    buildGraveLine(level, setBlock, base, direction, palette, style, random)
+                    if (buildGraveLine(level, setBlock, base, direction, palette, style, random)) {
+                        graveRecords += GravePlacement(base, direction, style.headstone)
+                    }
                     return
                 }
             }
             buildDecor(level, setBlock, base, palette, random)
         }
 
-        private fun buildDoubleGrave(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, style: GraveStyle, graveFootprints: MutableSet<BlockPos>, random: RandomSource) {
+        private fun buildDoubleGrave(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, style: GraveStyle, graveFootprints: MutableSet<BlockPos>, graveRecords: MutableList<GravePlacement>, random: RandomSource) {
             Direction.Plane.HORIZONTAL.toList().shuffled(random).forEach { direction ->
                 val side = if (direction.axis == Direction.Axis.X) Direction.NORTH else Direction.EAST
                 val first = graveLineFootprint(base.relative(side), direction)
@@ -705,32 +714,53 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 val footprint = first + second + base
                 if (canReserveGraveFootprint(level, footprint, graveFootprints)) {
                     graveFootprints += footprint
-                    buildGraveLine(level, setBlock, base.relative(side), direction, palette, style, random)
-                    buildGraveLine(level, setBlock, base.relative(side.opposite), direction, palette, style, random)
-                    placeGround(level, setBlock, base, if (random.nextBoolean()) palette.path(random) else style.ground)
+                    if (buildGraveLine(level, setBlock, base.relative(side), direction, palette, style, random)) {
+                        graveRecords += GravePlacement(base.relative(side), direction, style.headstone)
+                    }
+                    if (buildGraveLine(level, setBlock, base.relative(side.opposite), direction, palette, style, random)) {
+                        graveRecords += GravePlacement(base.relative(side.opposite), direction, style.headstone)
+                    }
+                    placeGround(level, setBlock, base, palette.path(random))
                     scatterTileDetails(level, setBlock, base, palette, random, 3)
                     return
                 }
             }
-            buildSingleGrave(level, setBlock, base, palette, style, graveFootprints, random)
+            buildSingleGrave(level, setBlock, base, palette, style, graveFootprints, graveRecords, random)
         }
 
-        private fun buildGraveLine(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, head: BlockPos, direction: Direction, palette: GraveyardPalette, style: GraveStyle, random: RandomSource) {
+        private fun buildGraveLine(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, head: BlockPos, direction: Direction, palette: GraveyardPalette, style: GraveStyle, random: RandomSource): Boolean {
             val body = head.relative(direction)
-            val foot = head.relative(direction, 2)
-            if (!canUseTileGround(level, head, 2) || !canUseTileGround(level, body, 1)) return
-            placeGround(level, setBlock, head, style.ground)
-            placeGround(level, setBlock, body, style.ground)
-            if (canUseTileGround(level, foot, 1)) placeGround(level, setBlock, foot, if (random.nextBoolean()) palette.path(random) else style.ground)
-            placeSupportedAbove(level, setBlock, head.above(), style.headstone)
-            if (random.nextInt(3) != 0) placeSupportedAbove(level, setBlock, body.above(), style.lowMarker)
+            val headstoneBase = head.relative(direction, 2)
+            if (!canUseTileGround(level, head, 1) || !canUseTileGround(level, body, 1) || !canUseTileGround(level, headstoneBase, 2)) return false
+            placeGround(level, setBlock, head, Blocks.GRAVEL)
+            placeGround(level, setBlock, body, Blocks.GRAVEL)
+            placeSupportedAbove(level, setBlock, headstoneBase.above(), style.headstone)
             val side = if (direction.axis == Direction.Axis.X) Direction.NORTH else Direction.EAST
-            listOf(head.relative(side), body.relative(side.opposite), foot.relative(side)).forEach { pos ->
+            listOf(head.relative(side), body.relative(side.opposite), headstoneBase.relative(side)).forEach { pos ->
                 if (random.nextInt(3) != 0 && canUseTileGround(level, pos, 1)) {
                     if (random.nextBoolean()) placeGround(level, setBlock, pos, palette.path(random))
                     placeSupportedAbove(level, setBlock, pos.above(), palette.decoration(random))
                 }
             }
+            return true
+        }
+
+        private fun enforceGraveLine(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, grave: GravePlacement) {
+            val head = grave.head
+            val body = head.relative(grave.direction)
+            val headstoneBase = head.relative(grave.direction, 2)
+            if (!isSupportedGround(level, head, level.getBlockState(head))) return
+            if (!isSupportedGround(level, body, level.getBlockState(body))) return
+            if (!isSupportedGround(level, headstoneBase, level.getBlockState(headstoneBase))) return
+            setBlock(head, generatedState(Blocks.GRAVEL), 3)
+            setBlock(body, generatedState(Blocks.GRAVEL), 3)
+            listOf(head.above(), body.above()).forEach { pos ->
+                val state = level.getBlockState(pos)
+                if (canReplaceSiteAirspace(state) || state.hasProperty(BlockStateProperties.LIT)) {
+                    setBlock(pos, Blocks.AIR.defaultBlockState(), 3)
+                }
+            }
+            setBlock(headstoneBase.above(), generatedState(grave.headstone), 3)
         }
 
         private fun graveLineFootprint(head: BlockPos, direction: Direction): List<BlockPos> =
@@ -739,7 +769,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private fun canReserveGraveFootprint(level: LevelAccessor, footprint: List<BlockPos>, reserved: Set<BlockPos>): Boolean =
             footprint.distinct().size == footprint.size &&
                 footprint.none { it in reserved } &&
-                footprint.all { canUseTileGround(level, it, clearance = 1) }
+                footprint.withIndex().all { (index, pos) -> canUseTileGround(level, pos, clearance = if (index == 2) 2 else 1) }
 
         private fun buildMausoleum(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
             if (buildLargeCrypt(level, setBlock, base, palette, random)) return
@@ -1077,8 +1107,18 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 if (value == Blocks.AIR && location.path != "air") null else value
             }.distinct()
 
-        private fun pathBlocks(ids: List<String>?, fallback: List<Block>): List<Block> =
-            blocks(ids, fallback).filterNot(::isStoneBrickPathBlock).takeIf { it.isNotEmpty() } ?: fallback
+        private fun pathBlocks(ids: List<String>?, fallback: List<Block>): List<Block> {
+            val safeFallback = fallback.filterNot(::isForbiddenPathBlock).takeIf { it.isNotEmpty() } ?: listOf(Blocks.COARSE_DIRT, Blocks.COBBLESTONE)
+            return blocks(ids, safeFallback).filterNot(::isForbiddenPathBlock).takeIf { it.isNotEmpty() } ?: safeFallback
+        }
+
+        private fun graveBlocks(ids: List<String>?, fallback: List<Block>): List<Block> {
+            val safeFallback = fallback.filterNot { it == Blocks.GRAVEL }.takeIf { it.isNotEmpty() } ?: listOf(Blocks.COBBLESTONE, Blocks.ANDESITE)
+            return blocks(ids, safeFallback).filterNot { it == Blocks.GRAVEL }.takeIf { it.isNotEmpty() } ?: safeFallback
+        }
+
+        private fun isForbiddenPathBlock(block: Block): Boolean =
+            block == Blocks.GRAVEL || isStoneBrickPathBlock(block)
 
         private fun isStoneBrickPathBlock(block: Block): Boolean =
             block == Blocks.STONE_BRICKS ||
@@ -1123,7 +1163,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             companion object {
                 private val THEMES = listOf(
                     GraveyardTheme(
-                        path = listOf(Blocks.GRAVEL, Blocks.COARSE_DIRT, Blocks.PODZOL, Blocks.COBBLESTONE),
+                        path = listOf(Blocks.COARSE_DIRT, Blocks.PODZOL, Blocks.COBBLESTONE),
                         grave = listOf(Blocks.STONE_BRICKS, Blocks.CRACKED_STONE_BRICKS, Blocks.CHISELED_STONE_BRICKS),
                         structure = listOf(Blocks.POLISHED_ANDESITE, Blocks.ANDESITE, Blocks.COBBLESTONE),
                         decorations = listOf(Blocks.RED_CANDLE, Blocks.SOUL_LANTERN, Blocks.DEAD_BUSH, Blocks.COBWEB),
@@ -1135,7 +1175,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                         )
                     ),
                     GraveyardTheme(
-                        path = listOf(Blocks.COARSE_DIRT, Blocks.ROOTED_DIRT, Blocks.GRAVEL, Blocks.MOSSY_COBBLESTONE),
+                        path = listOf(Blocks.COARSE_DIRT, Blocks.ROOTED_DIRT, Blocks.MOSSY_COBBLESTONE),
                         grave = listOf(Blocks.MOSSY_COBBLESTONE, Blocks.COBBLESTONE, Blocks.ANDESITE),
                         structure = listOf(Blocks.MOSSY_COBBLESTONE, Blocks.COBBLESTONE, Blocks.ANDESITE),
                         decorations = listOf(Blocks.FERN, Blocks.DEAD_BUSH, Blocks.RED_CANDLE, Blocks.LANTERN),
@@ -1147,7 +1187,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                         )
                     ),
                     GraveyardTheme(
-                        path = listOf(Blocks.COBBLED_DEEPSLATE, Blocks.GRAVEL, Blocks.COARSE_DIRT, Blocks.TUFF),
+                        path = listOf(Blocks.COBBLED_DEEPSLATE, Blocks.COARSE_DIRT, Blocks.TUFF),
                         grave = listOf(Blocks.POLISHED_DEEPSLATE, Blocks.DEEPSLATE_TILES, Blocks.COBBLED_DEEPSLATE),
                         structure = listOf(Blocks.POLISHED_DEEPSLATE, Blocks.DEEPSLATE_TILES, Blocks.DEEPSLATE_BRICKS),
                         decorations = listOf(Blocks.SOUL_LANTERN, Blocks.BLUE_CANDLE, Blocks.COBWEB, Blocks.SCULK),
@@ -1159,7 +1199,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                         )
                     ),
                     GraveyardTheme(
-                        path = listOf(Blocks.BLACKSTONE, Blocks.BASALT, Blocks.GRAVEL, Blocks.SOUL_SOIL),
+                        path = listOf(Blocks.BLACKSTONE, Blocks.BASALT, Blocks.SOUL_SOIL),
                         grave = listOf(Blocks.POLISHED_BLACKSTONE_BRICKS, Blocks.POLISHED_BLACKSTONE, Blocks.BLACKSTONE),
                         structure = listOf(Blocks.POLISHED_BLACKSTONE_BRICKS, Blocks.POLISHED_BLACKSTONE, Blocks.BASALT),
                         decorations = listOf(Blocks.SOUL_LANTERN, Blocks.RED_CANDLE, Blocks.SOUL_TORCH, Blocks.CRYING_OBSIDIAN),
@@ -1171,7 +1211,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                         )
                     ),
                     GraveyardTheme(
-                        path = listOf(Blocks.SAND, Blocks.RED_SAND, Blocks.GRAVEL, Blocks.SMOOTH_SANDSTONE),
+                        path = listOf(Blocks.SAND, Blocks.RED_SAND, Blocks.SMOOTH_SANDSTONE),
                         grave = listOf(Blocks.CUT_SANDSTONE, Blocks.SANDSTONE, Blocks.SMOOTH_SANDSTONE),
                         structure = listOf(Blocks.SANDSTONE, Blocks.CUT_SANDSTONE, Blocks.SMOOTH_SANDSTONE),
                         decorations = listOf(Blocks.DEAD_BUSH, Blocks.FLOWER_POT, Blocks.YELLOW_CANDLE, Blocks.LANTERN),
@@ -1214,8 +1254,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     val theme = THEMES[Math.floorMod(hash, THEMES.size)]
                     return GraveyardPalette(
                         pedestal = Blocks.POLISHED_ANDESITE,
-                        path = theme.path.filterNot(::isStoneBrickPathBlock),
-                        grave = theme.grave,
+                        path = pathBlocks(null, theme.path),
+                        grave = graveBlocks(null, theme.grave),
                         structure = theme.structure,
                         decorations = theme.decorations,
                         trophies = blocksOrEmpty(trophyIds),
@@ -1241,6 +1281,12 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val ground: Block,
             val headstone: Block,
             val lowMarker: Block
+        )
+
+        private data class GravePlacement(
+            val head: BlockPos,
+            val direction: Direction,
+            val headstone: Block
         )
 
         private enum class TileType {
