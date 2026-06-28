@@ -1227,7 +1227,9 @@ object ObeliskGameTestSupport {
         helper.assertTrue(
             helper.level.getBlockState(baseCenter).`is`(Blocks.POLISHED_ANDESITE) ||
                 helper.level.getBlockState(baseCenter).`is`(Blocks.STONE_BRICKS) ||
-                helper.level.getBlockState(baseCenter).`is`(Blocks.MOSSY_COBBLESTONE),
+                helper.level.getBlockState(baseCenter).`is`(Blocks.MOSSY_COBBLESTONE) ||
+                helper.level.getBlockState(baseCenter).`is`(Blocks.POLISHED_BLACKSTONE) ||
+                helper.level.getBlockState(baseCenter).`is`(Blocks.GILDED_BLACKSTONE),
             "Expected $label font to sit on a stone-family pedestal"
         )
         helper.assertTrue(!helper.level.getBlockState(baseCenter).isAir, "Expected $label altar cap not to float")
@@ -1359,7 +1361,7 @@ object ObeliskGameTestSupport {
                     if (state.`is`(Blocks.WITHER_ROSE) || state.`is`(Blocks.COPPER_BLOCK)) {
                         forbiddenSignals++
                     }
-                    if (state.`is`(Blocks.RED_CANDLE) && !state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.LIT)) {
+                    if ((state.`is`(Blocks.RED_CANDLE) || state.`is`(Blocks.YELLOW_CANDLE)) && !state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.LIT)) {
                         unlitCandleSignals++
                     }
                 }

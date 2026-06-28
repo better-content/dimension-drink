@@ -985,19 +985,43 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     else -> 1
                 }
                 val block = when {
-                    distance <= 1 -> palette.pedestal
-                    distance == 2 -> palette.structure(random)
-                    else -> if (random.nextInt(5) == 0) Blocks.MOSSY_STONE_BRICKS else palette.structure(random)
+                    distance == 0 -> Blocks.GILDED_BLACKSTONE
+                    distance <= 1 -> Blocks.POLISHED_BLACKSTONE
+                    distance == 2 -> if ((abs(dx) + abs(dz)) % 2 == 0) Blocks.POLISHED_BLACKSTONE_BRICKS else palette.structure(random)
+                    else -> if (random.nextInt(4) == 0) Blocks.CHISELED_POLISHED_BLACKSTONE else palette.structure(random)
                 }
                 for (y in surfaceY + 1..topY) {
                     setBlock(BlockPos(center.x + dx, y, center.z + dz), block.defaultBlockState(), 3)
                 }
             }
+            placeAltarWelcomeDetails(setBlock, center)
             val fontPos = center.above(ALTAR_HEIGHT + 1)
             for (dy in 1..FONT_CLEARANCE) {
                 setBlock(fontPos.above(dy), Blocks.AIR.defaultBlockState(), 3)
             }
             return fontPos
+        }
+
+        private fun placeAltarWelcomeDetails(setBlock: (BlockPos, BlockState, Int) -> Boolean, center: BlockPos) {
+            val baseY = center.y
+            val goldInlay = generatedState(Blocks.GILDED_BLACKSTONE)
+            Direction.Plane.HORIZONTAL.forEach { direction ->
+                val inner = center.relative(direction)
+                val mid = center.relative(direction, 2)
+                val outer = center.relative(direction, 3)
+                setBlock(BlockPos(inner.x, baseY + ALTAR_HEIGHT, inner.z), goldInlay, 3)
+                setBlock(BlockPos(mid.x, baseY + 3, mid.z), Blocks.POLISHED_BLACKSTONE_SLAB.defaultBlockState().setValue(SlabBlock.TYPE, SlabType.BOTTOM), 3)
+                setBlock(BlockPos(outer.x, baseY + 2, outer.z), Blocks.POLISHED_BLACKSTONE_SLAB.defaultBlockState().setValue(SlabBlock.TYPE, SlabType.BOTTOM), 3)
+            }
+            listOf(-1 to -1, -1 to 1, 1 to -1, 1 to 1).forEach { (dx, dz) ->
+                setBlock(center.offset(dx, ALTAR_HEIGHT + 1, dz), generatedState(Blocks.YELLOW_CANDLE), 3)
+            }
+            listOf(-2 to -2, -2 to 2, 2 to -2, 2 to 2).forEach { (dx, dz) ->
+                setBlock(center.offset(dx, 3, dz), generatedState(Blocks.LANTERN), 3)
+            }
+            listOf(-3 to -3, -3 to 3, 3 to -3, 3 to 3).forEach { (dx, dz) ->
+                setBlock(center.offset(dx, 2, dz), generatedState(Blocks.RED_CANDLE), 3)
+            }
         }
 
         private fun canPlaceElevatedAltarAndFont(level: LevelAccessor, center: BlockPos): Boolean {
@@ -1030,11 +1054,25 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     for (y in surfaceY + 1..topY) {
                         if (!canReplaceSiteAirspace(level.getBlockState(BlockPos(x, y, z)))) return null
                     }
+                    altarWelcomeDetailYOffset(dx, dz)?.let { detailYOffset ->
+                        val detailY = center.y + detailYOffset
+                        if (detailY > topY && !canReplaceSiteAirspace(level.getBlockState(BlockPos(x, detailY, z)))) return null
+                    }
                     surfaces[dx to dz] = surfaceY
                 }
             }
             return surfaces
         }
+
+        private fun altarWelcomeDetailYOffset(dx: Int, dz: Int): Int? =
+            when {
+                abs(dx) == 1 && abs(dz) == 1 -> ALTAR_HEIGHT + 1
+                abs(dx) == 2 && abs(dz) == 2 -> 3
+                abs(dx) == 3 && abs(dz) == 3 -> 2
+                (abs(dx) == 2 && dz == 0) || (dx == 0 && abs(dz) == 2) -> 3
+                (abs(dx) == 3 && dz == 0) || (dx == 0 && abs(dz) == 3) -> 2
+                else -> null
+            }
 
         private fun hasClearance(level: LevelAccessor, pos: BlockPos, clearance: Int): Boolean {
             for (dy in 1..clearance) {
