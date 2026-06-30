@@ -1229,6 +1229,13 @@ object ObeliskGameTestSupport {
         val drained = tank.drain(FluidStack(lifeEssence, 400), IFluidHandler.FluidAction.EXECUTE)
         helper.assertTrue(drained.fluid == lifeEssence && drained.amount == 400, "Expected executed drain to return life essence")
         helper.assertTrue(obelisk.bloodStored.toInt() == 600, "Expected drain to reduce font blood")
+        helper.assertTrue(tank.getFluidInTank(0).amount == 600, "Expected fluid tank amount to mirror drained font blood")
+        helper.assertTrue(obelisk.drainBlood(125.0), "Expected run blood drain to consume life essence tank")
+        helper.assertTrue(tank.getFluidInTank(0).amount == 475, "Expected run drain to reduce the same fluid tank")
+        helper.assertTrue(obelisk.drainBlood(0.5), "Expected fractional run drain to be accepted")
+        helper.assertTrue(tank.getFluidInTank(0).amount == 475, "Expected fractional run drain carry not to round up early")
+        helper.assertTrue(obelisk.drainBlood(0.5), "Expected accumulated fractional run drain to be accepted")
+        helper.assertTrue(tank.getFluidInTank(0).amount == 474, "Expected accumulated fractional run drain to reduce the fluid tank")
         helper.succeed()
     }
 
