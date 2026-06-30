@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "charging=false": {
+      "model": "dimensionalfonts:block/grave_soil"
+    },
+    "charging=true": {
+      "model": "dimensionalfonts:block/grave_soil"
+    }
+  }
+}

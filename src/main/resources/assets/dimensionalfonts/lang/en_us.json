@@ -3,6 +3,8 @@
   "item.dimensionalfonts.dimensional_font": "Dimensional Font",
   "block.dimensionalfonts.return_seal": "Return Seal",
   "item.dimensionalfonts.return_seal": "Return Seal",
+  "block.dimensionalfonts.grave_soil": "Grave Soil",
+  "item.dimensionalfonts.grave_soil": "Grave Soil",
   "item.dimensionalfonts.affix.durability": "+%s%% Durability",
   "item.dimensionalfonts.affix.attack_damage": "+%s%% Attack Damage",
   "item.dimensionalfonts.affix.attack_speed": "+%s%% Attack Speed",

@@ -11,11 +11,11 @@
   "worldgenWeight": 0.5,
   "worldgenFamilyId": "altar",
   "graveyardPalette": {
-    "pathBlocks": ["minecraft:coarse_dirt", "minecraft:end_stone_bricks", "minecraft:cobbled_deepslate", "minecraft:tuff"],
-    "graveBlocks": ["minecraft:stone_bricks", "minecraft:mossy_cobblestone", "minecraft:cracked_stone_bricks"],
-    "structureBlocks": ["minecraft:polished_andesite", "minecraft:mossy_stone_bricks", "minecraft:stone_bricks"],
-    "trophyBlocks": ["minecraft:dragon_head", "minecraft:end_rod", "minecraft:chorus_flower", "minecraft:purpur_pillar"],
-    "decorations": ["minecraft:red_candle", "minecraft:soul_lantern", "minecraft:dead_bush"]
+    "pathBlocks": ["minecraft:cut_copper", "minecraft:copper_block", "minecraft:raw_copper_block"],
+    "graveBlocks": ["minecraft:copper_block"],
+    "structureBlocks": ["minecraft:raw_copper_block", "minecraft:copper_block", "minecraft:cut_copper"],
+    "trophyBlocks": ["minecraft:end_rod", "minecraft:chorus_flower", "minecraft:magenta_candle", "minecraft:dead_bush"],
+    "decorations": ["minecraft:orange_candle", "minecraft:red_candle", "minecraft:soul_torch", "minecraft:potted_dead_bush"]
   },
   "rewardTableId": "end",
   "maxBlood": 15000,

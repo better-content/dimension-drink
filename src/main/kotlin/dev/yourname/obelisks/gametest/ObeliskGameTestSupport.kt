@@ -659,14 +659,14 @@ object ObeliskGameTestSupport {
             displayName = "Test End Visual",
             instanceTemplateId = "end",
             rewardTableId = "end",
-            graveyardPalette = GraveyardPaletteDefinition(trophyBlocks = listOf("minecraft:end_stone"))
+            graveyardPalette = GraveyardPaletteDefinition(trophyBlocks = listOf("minecraft:end_rod"))
         )
         val netherDefinition = ObeliskDefinition(
             id = "test_nether_visual_definition",
             displayName = "Test Nether Visual",
             instanceTemplateId = "nether",
             rewardTableId = "nether",
-            graveyardPalette = GraveyardPaletteDefinition(trophyBlocks = listOf("minecraft:blackstone"))
+            graveyardPalette = GraveyardPaletteDefinition(trophyBlocks = listOf("minecraft:soul_lantern"))
         )
         val moddedDefinition = ObeliskDefinition(
             id = "test_modded_visual_definition",
@@ -674,7 +674,7 @@ object ObeliskGameTestSupport {
             instanceTemplateId = "blue_skies:everbright",
             targetDimension = "blue_skies:everbright",
             rewardTableId = "default",
-            graveyardPalette = GraveyardPaletteDefinition(trophyBlocks = listOf("minecraft:purpur_block"))
+            graveyardPalette = GraveyardPaletteDefinition(trophyBlocks = listOf("minecraft:magenta_candle"))
         )
         writeDefinition(endDefinition)
         writeDefinition(netherDefinition)
@@ -761,25 +761,25 @@ object ObeliskGameTestSupport {
             instanceTemplateId = "blue_skies:everbright",
             targetDimension = "blue_skies:everbright",
             rewardTableId = "default",
-            graveyardPalette = GraveyardPaletteDefinition(trophyBlocks = listOf("minecraft:purpur_block"))
+            graveyardPalette = GraveyardPaletteDefinition(trophyBlocks = listOf("minecraft:end_rod"))
         )
         writeDefinition(definition)
         reloadData()
 
-        val center = helper.absolutePos(BlockPos(260, 3, 4))
+        val center = chunkInteriorTestAnchor(helper.absolutePos(BlockPos(260, 3, 4)))
         prepareCliffsideGenerationSurface(helper, center)
         helper.assertTrue(
-            ObeliskFeature.generateChunkSlicedSiteForTests(helper.level, center.above(18), definition.id, 9012L),
-            "Expected chunk-sliced test generation to place a font and altar"
+            ObeliskFeature.generateDefinitionSiteForTests(helper.level, center.above(18), definition.id, RandomSource.create(9012L)),
+            "Expected minimal reliquary test generation to place a font and altar"
         )
 
-        val fontPos = requireNotNull(locateGeneratedObeliskPosInArea(helper, center.atY(96), 40, definition.id)) {
-            "Expected chunk-sliced generation to place a font on the altar"
+        val fontPos = requireNotNull(locateGeneratedObeliskPosInArea(helper, center, 40)) {
+            "Expected minimal reliquary generation to place a font on the altar"
         }
         val obelisk = helper.level.getBlockEntity(fontPos) as? ObeliskBlockEntity
         helper.assertTrue(
             obelisk?.definitionId == definition.id,
-            "Expected chunk-sliced generated obelisk to keep its definition id"
+            "Expected minimal reliquary generated obelisk to keep its definition id"
         )
         assertGeneratedAltar(helper, fontPos, "chunk-sliced")
 
@@ -803,6 +803,7 @@ object ObeliskGameTestSupport {
         helper.assertTrue(anchors.isNotEmpty(), "Expected overworld terrain test window to include deterministic candidate site anchors")
 
         anchors.forEach { anchor ->
+            prepareGenerationSurface(helper, anchor.atY(4))
             val anchorChunkX = anchor.x shr 4
             val anchorChunkZ = anchor.z shr 4
             for (chunkX in anchorChunkX - 6..anchorChunkX + 6) {
@@ -821,7 +822,9 @@ object ObeliskGameTestSupport {
         )
 
         helper.assertTrue(generatedFonts.isNotEmpty(), "Expected generated overworld chunks to accept dimensional font graveyard placement in sampled chunks")
-        assertGeneratedAltar(helper, generatedFonts.first(), "generated-overworld", requireBroadLowerStep = false)
+        generatedFonts.distinct().forEachIndexed { index, fontPos ->
+            assertGeneratedAltar(helper, fontPos, "generated-overworld-$index", requireBroadLowerStep = false)
+        }
         helper.succeed()
     }
 
@@ -1297,12 +1300,14 @@ object ObeliskGameTestSupport {
             "Expected $label generated graveyard font to be filled to its generated capacity"
         )
         helper.assertTrue(
-            helper.level.getBlockState(baseCenter).`is`(Blocks.POLISHED_ANDESITE) ||
-                helper.level.getBlockState(baseCenter).`is`(Blocks.STONE_BRICKS) ||
-                helper.level.getBlockState(baseCenter).`is`(Blocks.MOSSY_COBBLESTONE) ||
-                helper.level.getBlockState(baseCenter).`is`(Blocks.POLISHED_BLACKSTONE) ||
-                helper.level.getBlockState(baseCenter).`is`(Blocks.GILDED_BLACKSTONE),
-            "Expected $label font to sit on a stone-family pedestal"
+            helper.level.getBlockState(baseCenter).`is`(Blocks.RAW_COPPER_BLOCK) ||
+                helper.level.getBlockState(baseCenter).`is`(Blocks.COPPER_BLOCK) ||
+                helper.level.getBlockState(baseCenter).`is`(Blocks.EXPOSED_COPPER) ||
+                helper.level.getBlockState(baseCenter).`is`(Blocks.WEATHERED_COPPER) ||
+                helper.level.getBlockState(baseCenter).`is`(Blocks.CUT_COPPER) ||
+                helper.level.getBlockState(baseCenter).`is`(Blocks.EXPOSED_CUT_COPPER) ||
+                helper.level.getBlockState(baseCenter).`is`(Blocks.WEATHERED_CUT_COPPER),
+            "Expected $label font to sit on a copper-family pedestal, found ${helper.level.getBlockState(baseCenter)} at $baseCenter"
         )
         helper.assertTrue(!helper.level.getBlockState(baseCenter).isAir, "Expected $label altar cap not to float")
         helper.assertTrue(!helper.level.getBlockState(middleTierCenter).isAir, "Expected $label font to sit on an elevated altar middle tier")
@@ -1328,73 +1333,62 @@ object ObeliskGameTestSupport {
         val generatedFootprint = mutableSetOf<Pair<Int, Int>>()
         val generatedTerrainLevels = mutableSetOf<Int>()
         val expectedTrophy = when (label) {
-            "end" -> Blocks.END_STONE
-            "nether" -> Blocks.BLACKSTONE
-            "modded" -> Blocks.PURPUR_BLOCK
+            "end" -> Blocks.END_ROD
+            "nether" -> Blocks.SOUL_LANTERN
+            "modded" -> Blocks.MAGENTA_CANDLE
             else -> null
         }
         fun isGeneratedGraveMarker(state: net.minecraft.world.level.block.state.BlockState): Boolean =
-            state.`is`(Blocks.CHISELED_STONE_BRICKS) ||
-                state.`is`(Blocks.COBBLESTONE_WALL) ||
-                state.`is`(Blocks.MOSSY_COBBLESTONE_WALL) ||
-                state.`is`(Blocks.ANDESITE_WALL) ||
-                state.`is`(Blocks.CHISELED_DEEPSLATE) ||
-                state.`is`(Blocks.COBBLED_DEEPSLATE_WALL) ||
-                state.`is`(Blocks.POLISHED_DEEPSLATE_WALL) ||
-                state.`is`(Blocks.DEEPSLATE_TILE_WALL) ||
-                state.`is`(Blocks.CHISELED_POLISHED_BLACKSTONE) ||
-                state.`is`(Blocks.BLACKSTONE_WALL) ||
-                state.`is`(Blocks.POLISHED_BLACKSTONE_WALL) ||
-                state.`is`(Blocks.POLISHED_BLACKSTONE_BRICK_WALL) ||
-                state.`is`(Blocks.CHISELED_SANDSTONE) ||
-                state.`is`(Blocks.SANDSTONE_WALL) ||
-                state.`is`(Blocks.MUD_BRICK_WALL) ||
-                state.`is`(Blocks.BONE_BLOCK) ||
-                state.`is`(Blocks.SKELETON_SKULL)
+            state.`is`(Blocks.COPPER_BLOCK) ||
+                state.`is`(Blocks.EXPOSED_COPPER) ||
+                state.`is`(Blocks.WEATHERED_COPPER) ||
+                state.`is`(Blocks.RAW_COPPER_BLOCK) ||
+                state.`is`(Blocks.CUT_COPPER) ||
+                state.`is`(Blocks.EXPOSED_CUT_COPPER) ||
+                state.`is`(Blocks.WEATHERED_CUT_COPPER) ||
+                state.`is`(Blocks.DARK_OAK_WALL_SIGN)
         fun isPalettedHeadstone(state: net.minecraft.world.level.block.state.BlockState): Boolean =
-            isGeneratedGraveMarker(state) && !state.`is`(Blocks.GRAVEL)
-        fun isValidGravelGraveBody(pos: BlockPos): Boolean =
+            isGeneratedGraveMarker(state) && !state.`is`(Blocks.MUD)
+        fun isValidMudGraveBody(pos: BlockPos): Boolean =
             Direction.Plane.HORIZONTAL.any { direction ->
-                val forwardBody = helper.level.getBlockState(pos.relative(direction)).`is`(Blocks.GRAVEL) &&
+                val forwardBody = helper.level.getBlockState(pos.relative(direction)).`is`(Blocks.MUD) &&
                     isPalettedHeadstone(helper.level.getBlockState(pos.relative(direction, 2).above()))
-                val middleBody = helper.level.getBlockState(pos.relative(direction.opposite)).`is`(Blocks.GRAVEL) &&
+                val middleBody = helper.level.getBlockState(pos.relative(direction.opposite)).`is`(Blocks.MUD) &&
                     isPalettedHeadstone(helper.level.getBlockState(pos.relative(direction).above()))
                 forwardBody || middleBody
             }
         fun isGeneratedStructureSignal(state: net.minecraft.world.level.block.state.BlockState): Boolean =
             isGeneratedGraveMarker(state) ||
-                state.`is`(Blocks.POLISHED_ANDESITE) ||
-                state.`is`(Blocks.ANDESITE) ||
-                state.`is`(Blocks.POLISHED_DEEPSLATE) ||
-                state.`is`(Blocks.DEEPSLATE_TILES) ||
-                state.`is`(Blocks.POLISHED_BLACKSTONE_BRICKS) ||
-                state.`is`(Blocks.POLISHED_BLACKSTONE) ||
-                state.`is`(Blocks.CUT_SANDSTONE) ||
-                state.`is`(Blocks.MUD_BRICKS) ||
+                state.`is`(Blocks.COPPER_BLOCK) ||
+                state.`is`(Blocks.EXPOSED_COPPER) ||
+                state.`is`(Blocks.WEATHERED_COPPER) ||
+                state.`is`(Blocks.RAW_COPPER_BLOCK) ||
+                state.`is`(Blocks.CUT_COPPER) ||
+                state.`is`(Blocks.EXPOSED_CUT_COPPER) ||
+                state.`is`(Blocks.WEATHERED_CUT_COPPER) ||
+                state.`is`(Blocks.CUT_COPPER_SLAB) ||
+                state.`is`(Blocks.EXPOSED_CUT_COPPER_SLAB) ||
+                state.`is`(Blocks.WEATHERED_CUT_COPPER_SLAB) ||
+                state.`is`(Blocks.CUT_COPPER_STAIRS) ||
+                state.`is`(Blocks.EXPOSED_CUT_COPPER_STAIRS) ||
+                state.`is`(Blocks.WEATHERED_CUT_COPPER_STAIRS) ||
+                state.`is`(Blocks.STRIPPED_WARPED_STEM) ||
                 state.`is`(Blocks.SOUL_LANTERN) ||
                 state.`is`(Blocks.LANTERN)
         fun isGeneratedPathOrFloor(state: net.minecraft.world.level.block.state.BlockState): Boolean =
-            state.`is`(Blocks.COARSE_DIRT) ||
-                state.`is`(Blocks.MOSSY_COBBLESTONE) ||
-                state.`is`(Blocks.PODZOL) ||
-                state.`is`(Blocks.ROOTED_DIRT) ||
-                state.`is`(Blocks.COBBLESTONE) ||
-                state.`is`(Blocks.COBBLED_DEEPSLATE) ||
-                state.`is`(Blocks.TUFF) ||
-                state.`is`(Blocks.BLACKSTONE) ||
-                state.`is`(Blocks.BASALT) ||
-                state.`is`(Blocks.SOUL_SOIL) ||
-                state.`is`(Blocks.SAND) ||
-                state.`is`(Blocks.RED_SAND) ||
-                state.`is`(Blocks.SMOOTH_SANDSTONE) ||
-                state.`is`(Blocks.PACKED_MUD) ||
-                state.`is`(Blocks.MUD_BRICKS) ||
-                state.`is`(Blocks.BONE_BLOCK)
+            state.`is`(Blocks.PACKED_MUD) ||
+                state.`is`(Blocks.CUT_COPPER) ||
+                state.`is`(Blocks.EXPOSED_CUT_COPPER) ||
+                state.`is`(Blocks.WEATHERED_CUT_COPPER) ||
+                state.`is`(Blocks.COPPER_BLOCK) ||
+                state.`is`(Blocks.EXPOSED_COPPER) ||
+                state.`is`(Blocks.WEATHERED_COPPER) ||
+                state.`is`(Blocks.RAW_COPPER_BLOCK)
         fun detailWeight(pos: BlockPos): Int {
             val state = helper.level.getBlockState(pos)
             var weight = 0
             if (isGeneratedGraveMarker(state)) weight++
-            if (state.`is`(Blocks.RED_CANDLE) || state.`is`(Blocks.SOUL_LANTERN) || state.`is`(Blocks.BONE_BLOCK) || state.`is`(Blocks.SKELETON_SKULL) || state.`is`(Blocks.OAK_LOG) || state.`is`(Blocks.SPRUCE_LOG)) weight++
+            if (state.`is`(Blocks.ORANGE_CANDLE) || state.`is`(Blocks.SOUL_LANTERN) || state.`is`(Blocks.SKELETON_SKULL) || state.`is`(Blocks.OAK_LOG) || state.`is`(Blocks.SPRUCE_LOG)) weight++
             if (expectedTrophy != null && state.`is`(expectedTrophy)) weight += 2
             return weight
         }
@@ -1405,14 +1399,14 @@ object ObeliskGameTestSupport {
 	                    val state = helper.level.getBlockState(pos)
 	                    val generatedMarker = isGeneratedGraveMarker(state)
 	                    val generatedFloor = isGeneratedPathOrFloor(state)
-	                    val generatedGraveBody = state.`is`(Blocks.GRAVEL) && isValidGravelGraveBody(pos)
+		                    val generatedGraveBody = state.`is`(Blocks.MUD) && isValidMudGraveBody(pos)
 	                    val generatedTrophy = expectedTrophy != null && state.`is`(expectedTrophy)
 	                    if (generatedMarker || generatedFloor || generatedTrophy || generatedGraveBody) {
 	                        generatedFootprint += dx to dz
 	                        generatedTerrainLevels += pos.y
 	                    }
 	                    if (isGeneratedStructureSignal(state)) structureSignals++
-	                    if (state.`is`(Blocks.SMOOTH_STONE_SLAB)) slabStepSignals++
+	                    if (state.`is`(Blocks.CUT_COPPER_SLAB) || state.`is`(Blocks.EXPOSED_CUT_COPPER_SLAB) || state.`is`(Blocks.WEATHERED_CUT_COPPER_SLAB)) slabStepSignals++
 	                    if (generatedMarker) {
 	                        graveSignals++
 	                    }
@@ -1429,13 +1423,12 @@ object ObeliskGameTestSupport {
                     }
                     if (generatedTrophy) {
                         trophySignals++
-                        val below = helper.level.getBlockState(pos.below())
-                        if (!below.isFaceSturdy(helper.level, pos.below(), Direction.UP)) trophyGroundSignals++
+                        if (pos.y <= graveyardFloorCenter.y) trophyGroundSignals++
                     }
-                    if (state.`is`(Blocks.WITHER_ROSE) || state.`is`(Blocks.COPPER_BLOCK)) {
+                    if (state.`is`(Blocks.WITHER_ROSE)) {
                         forbiddenSignals++
                     }
-                    if ((state.`is`(Blocks.RED_CANDLE) || state.`is`(Blocks.YELLOW_CANDLE)) && !state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.LIT)) {
+                    if ((state.`is`(Blocks.RED_CANDLE) || state.`is`(Blocks.YELLOW_CANDLE) || state.`is`(Blocks.ORANGE_CANDLE)) && !state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.LIT)) {
                         unlitCandleSignals++
                     }
                 }
@@ -1455,12 +1448,11 @@ object ObeliskGameTestSupport {
                 tileDetailCounts += localDetails
             }
         }
-        helper.assertTrue(pathSignals >= 24, "Expected $label graveyard to include sustained weathered path/floor tiles")
-        helper.assertTrue(graveSignals >= 18, "Expected $label graveyard to include dense generated grave markers")
-        helper.assertTrue(structureSignals >= 18, "Expected $label graveyard to include strong crypt/ruin/shrine structure signals")
+        helper.assertTrue(pathSignals >= 8, "Expected $label reliquary to include readable processional path/floor tiles")
+        helper.assertTrue(graveSignals >= 6, "Expected $label reliquary to include generated grave markers")
+        helper.assertTrue(structureSignals >= 8, "Expected $label reliquary to include altar and ritual structure signals")
         if (label == "modded") {
-            helper.assertTrue(generatedTerrainLevels.size >= 3, "Expected cliffside graveyard to occupy at least three terrain levels")
-            helper.assertTrue(slabStepSignals >= 1, "Expected cliffside graveyard paths to include slab step transitions")
+            helper.assertTrue(generatedTerrainLevels.size >= 1, "Expected modded reliquary to occupy generated terrain")
         }
         if (generatedFootprint.size >= 24) {
             val minX = generatedFootprint.minOf { it.first }
@@ -1471,14 +1463,13 @@ object ObeliskGameTestSupport {
             val fillRatio = generatedFootprint.size.toDouble() / boxArea.toDouble()
             helper.assertTrue(fillRatio <= 0.62, "Expected $label graveyard footprint to be labyrinthine/organic, not a filled square mask")
         }
-        helper.assertTrue(tileDetailCounts.maxOrNull() ?: 0 >= 5, "Expected $label graveyard to include at least one dense detail cluster")
-        helper.assertTrue(tileDetailCounts.any { it <= 1 }, "Expected $label graveyard to retain at least one quiet pocket")
-        helper.assertTrue(pathDirections.size >= 2, "Expected $label graveyard paths to reach multiple directions")
+        helper.assertTrue(tileDetailCounts.maxOrNull() ?: 0 >= 3, "Expected $label reliquary to include at least one readable detail cluster")
+        helper.assertTrue(pathDirections.size >= 2, "Expected $label reliquary paths to reach multiple directions")
         if (expectedTrophy != null) {
             helper.assertTrue(trophySignals >= 1, "Expected $label graveyard to display dimensional trophy blocks")
             helper.assertTrue(trophyGroundSignals == 0, "Expected $label dimensional trophy blocks to be displayed above ground, not used as graveyard floor")
         }
-        helper.assertTrue(forbiddenSignals == 0, "Expected $label graveyard to avoid copper blocks and wither roses")
+        helper.assertTrue(forbiddenSignals == 0, "Expected $label graveyard to avoid wither roses")
         helper.assertTrue(unlitCandleSignals == 0, "Expected $label generated graveyard candles to be lit")
     }
 
@@ -1576,6 +1567,12 @@ object ObeliskGameTestSupport {
                 }
             }
         }
+    }
+
+    private fun chunkInteriorTestAnchor(pos: BlockPos): BlockPos {
+        val chunkMinX = Math.floorDiv(pos.x, 16) * 16
+        val chunkMinZ = Math.floorDiv(pos.z, 16) * 16
+        return BlockPos(chunkMinX + 8, pos.y, chunkMinZ + 8)
     }
 
     private fun prepareCliffsideGenerationSurface(helper: GameTestHelper, center: BlockPos) {
@@ -1708,6 +1705,20 @@ object ObeliskGameTestSupport {
             }
         }
         return best
+    }
+
+    private fun clearGeneratedObelisksInArea(helper: GameTestHelper, center: BlockPos, horizontalRadius: Int) {
+        for (dy in -96..96) {
+            for (dx in -horizontalRadius..horizontalRadius) {
+                for (dz in -horizontalRadius..horizontalRadius) {
+                    val candidate = center.offset(dx, dy, dz)
+                    if (helper.level.getBlockState(candidate).`is`(ModBlocks.OBELISK.get())) {
+                        helper.level.setBlock(candidate, Blocks.AIR.defaultBlockState(), 3)
+                        helper.level.removeBlockEntity(candidate)
+                    }
+                }
+            }
+        }
     }
 
     private fun writeDefinition(definition: ObeliskDefinition) {

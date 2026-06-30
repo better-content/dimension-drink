@@ -26,4 +26,38 @@ class DimensionalFontWorldgenPlacementTest {
             "The feature scans each selected column itself; a heightmap modifier can bias placement onto foliage"
         )
     }
+
+    @Test
+    fun wetOvergrowthRecognizesModdedWetAndLushBiomeNames() {
+        listOf(
+            "byg:temperate_rainforest",
+            "byg:tropical_rainforest",
+            "byg:lush_stacks",
+            "byg:cypress_swamplands",
+            "terralith:orchid_swamp",
+            "biomesoplenty:bayou",
+            "biomesoplenty:fen",
+            "biomesoplenty:wetland",
+            "atmospheric:rainforest",
+            "regions_unexplored:willow_forest",
+            "minecraft:mushroom_fields"
+        ).forEach { id ->
+            assertTrue(
+                WetBiomeClassifier.matchesId(id),
+                "Expected wet overgrowth to recognize $id"
+            )
+        }
+
+        listOf(
+            "minecraft:desert",
+            "minecraft:badlands",
+            "terralith:volcanic_crater",
+            "byg:arid_highlands"
+        ).forEach { id ->
+            assertFalse(
+                WetBiomeClassifier.matchesId(id),
+                "Expected wet overgrowth to ignore dry biome $id"
+            )
+        }
+    }
 }
