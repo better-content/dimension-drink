@@ -88,10 +88,10 @@ class ObeliskBlockEntityRenderer(
         poseStack.pushPose()
         poseStack.translate(0.5, 0.72, 0.5)
         poseStack.mulPose(Axis.YP.rotationDegrees(rotation))
-        poseStack.scale(0.48f, 0.48f, 0.48f)
+        poseStack.scale(0.5f, 0.5f, 0.5f)
         Minecraft.getInstance().itemRenderer.renderStatic(
             heart,
-            ItemDisplayContext.GROUND,
+            ItemDisplayContext.FIXED,
             packedLight,
             OverlayTexture.NO_OVERLAY,
             poseStack,
