@@ -13,6 +13,7 @@ import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket
 import net.minecraft.nbt.CompoundTag
 import net.minecraft.nbt.Tag
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.sounds.SoundEvents
 import net.minecraft.sounds.SoundSource
 import net.minecraft.world.item.ItemStack
@@ -23,8 +24,11 @@ import net.minecraftforge.common.capabilities.Capability
 import net.minecraftforge.common.capabilities.ForgeCapabilities
 import net.minecraftforge.common.util.LazyOptional
 import net.minecraftforge.energy.IEnergyStorage
+import net.minecraftforge.fluids.FluidStack
+import net.minecraftforge.fluids.capability.IFluidHandler
 import net.minecraftforge.items.IItemHandler
 import net.minecraftforge.items.ItemStackHandler
+import net.minecraftforge.registries.ForgeRegistries
 import java.util.UUID
 import kotlin.random.Random
 
@@ -36,6 +40,8 @@ class ObeliskBlockEntity(
         private const val GRAVE_SOIL_REGEN_PER_BLOCK = 0.01
         private const val GRAVE_SOIL_REGEN_MULTIPLIER_CAP = 3.0
         private const val MAX_STORED_GRAVE_SOIL_POSITIONS = 512
+        private val BLOOD_MAGIC_LIFE_ESSENCE_FLUID_ID = ResourceLocation("bloodmagic", "life_essence_fluid")
+        private const val BLOOD_MAGIC_LIFE_ESSENCE_DESCRIPTION_ID = "fluid.bloodmagic.life_essence_fluid"
     }
 
     var modifiers: List<ObeliskModifier> = ObeliskModifier.generateModifiers()
@@ -119,7 +125,54 @@ class ObeliskBlockEntity(
         override fun canReceive(): Boolean = true
     }
 
+    private val fluidStorage = object : IFluidHandler {
+        override fun getTanks(): Int = 1
+
+        override fun getFluidInTank(tank: Int): FluidStack {
+            if (tank != 0) return FluidStack.EMPTY
+            val fluid = lifeEssenceFluid() ?: return FluidStack.EMPTY
+            return FluidStack(fluid, bloodStored.toInt().coerceAtLeast(0))
+        }
+
+        override fun getTankCapacity(tank: Int): Int =
+            if (tank == 0) getModifiedMaxStorage() else 0
+
+        override fun isFluidValid(tank: Int, stack: FluidStack): Boolean =
+            tank == 0 && isLifeEssence(stack)
+
+        override fun fill(resource: FluidStack, action: IFluidHandler.FluidAction): Int {
+            if (resource.isEmpty || !isLifeEssence(resource)) return 0
+            val maxStorage = getModifiedMaxStorage().toDouble()
+            if (bloodStored >= maxStorage) return 0
+            val accepted = minOf(resource.amount.toDouble(), maxStorage - bloodStored).toInt().coerceAtLeast(0)
+            if (accepted > 0 && action.execute()) {
+                bloodStored = (bloodStored + accepted.toDouble()).coerceAtMost(maxStorage)
+                setChanged()
+                syncToClients()
+            }
+            return accepted
+        }
+
+        override fun drain(resource: FluidStack, action: IFluidHandler.FluidAction): FluidStack {
+            if (resource.isEmpty || !isLifeEssence(resource)) return FluidStack.EMPTY
+            return drain(resource.amount, action)
+        }
+
+        override fun drain(maxDrain: Int, action: IFluidHandler.FluidAction): FluidStack {
+            val fluid = lifeEssenceFluid() ?: return FluidStack.EMPTY
+            if (maxDrain <= 0 || bloodStored <= 0.0) return FluidStack.EMPTY
+            val drained = minOf(maxDrain, bloodStored.toInt()).coerceAtLeast(0)
+            if (drained > 0 && action.execute()) {
+                bloodStored = (bloodStored - drained.toDouble()).coerceAtLeast(0.0)
+                setChanged()
+                syncToClients()
+            }
+            return if (drained > 0) FluidStack(fluid, drained) else FluidStack.EMPTY
+        }
+    }
+
     private val energyCapability: LazyOptional<IEnergyStorage> = LazyOptional.of { energyStorage }
+    private val fluidCapability: LazyOptional<IFluidHandler> = LazyOptional.of { fluidStorage }
     private val itemCapability: LazyOptional<IItemHandler> = LazyOptional.of { limitedItemHandler }
 
     init {
@@ -289,6 +342,21 @@ class ObeliskBlockEntity(
     fun getBloodPercent(): Double = bloodStored / getMaxBlood().coerceAtLeast(1.0)
     fun getEnergyStored(): Int = bloodStored.toInt()
     fun getMaxEnergyStored(): Int = getModifiedMaxStorage()
+
+    private fun lifeEssenceFluid() =
+        ForgeRegistries.FLUIDS.getValue(BLOOD_MAGIC_LIFE_ESSENCE_FLUID_ID)
+            ?.takeIf { fluid ->
+                ForgeRegistries.FLUIDS.getKey(fluid) == BLOOD_MAGIC_LIFE_ESSENCE_FLUID_ID ||
+                    fluid.fluidType.descriptionId == BLOOD_MAGIC_LIFE_ESSENCE_DESCRIPTION_ID
+            }
+
+    fun isLifeEssence(stack: FluidStack): Boolean {
+        if (stack.isEmpty) return false
+        val registeredName = ForgeRegistries.FLUIDS.getKey(stack.fluid)
+        return registeredName == BLOOD_MAGIC_LIFE_ESSENCE_FLUID_ID ||
+            stack.fluid.fluidType.descriptionId == BLOOD_MAGIC_LIFE_ESSENCE_DESCRIPTION_ID
+    }
+
     fun getBeamColorFloats(): FloatArray = floatArrayOf(
         beamColorRed / 255.0f,
         beamColorGreen / 255.0f,
@@ -518,6 +586,7 @@ class ObeliskBlockEntity(
 
     override fun <T : Any?> getCapability(cap: Capability<T>, side: Direction?): LazyOptional<T> {
         if (cap == ForgeCapabilities.ENERGY) return energyCapability.cast()
+        if (cap == ForgeCapabilities.FLUID_HANDLER) return fluidCapability.cast()
         if (cap == ForgeCapabilities.ITEM_HANDLER && side != null) return itemCapability.cast()
         return super.getCapability(cap, side)
     }
@@ -525,6 +594,7 @@ class ObeliskBlockEntity(
     override fun invalidateCaps() {
         super.invalidateCaps()
         energyCapability.invalidate()
+        fluidCapability.invalidate()
         itemCapability.invalidate()
     }
 

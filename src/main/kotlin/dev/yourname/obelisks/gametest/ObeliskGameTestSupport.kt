@@ -49,11 +49,16 @@ import net.minecraft.world.level.block.Blocks
 import net.minecraft.util.RandomSource
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.Items
+import net.minecraft.world.level.material.Fluids
 import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.Vec3
+import net.minecraftforge.common.capabilities.ForgeCapabilities
 import net.minecraftforge.network.NetworkHooks
 import net.minecraftforge.event.entity.living.LivingDeathEvent
 import net.minecraftforge.event.entity.player.PlayerEvent
+import net.minecraftforge.fluids.FluidStack
+import net.minecraftforge.fluids.capability.IFluidHandler
+import net.minecraftforge.registries.ForgeRegistries
 import java.nio.file.Files
 import java.nio.file.Path
 import java.lang.reflect.Proxy
@@ -1138,6 +1143,50 @@ object ObeliskGameTestSupport {
 
     fun terrainClearingTaskIsRemoved(helper: GameTestHelper) {
         helper.assertTrue(true, "Dimensional fonts do not run terrain clearing tasks")
+        helper.succeed()
+    }
+
+    fun fontFluidTankAcceptsOnlyBloodMagicLifeEssence(helper: GameTestHelper) {
+        val obeliskPos = helper.absolutePos(BlockPos(20, 2, 20))
+        placeChargedDefinitionObelisk(helper, obeliskPos, "end")
+        val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
+            ?: error("Expected obelisk block entity for fluid tank test")
+        obelisk.setEnergyStoredForDebug(0)
+
+        val handler = obelisk.getCapability(ForgeCapabilities.FLUID_HANDLER, Direction.UP).resolve().orElse(null)
+        helper.assertTrue(handler != null, "Expected font to expose Forge fluid handler capability")
+        val tank = handler ?: error("Expected non-null fluid handler after assertion")
+        val lifeEssenceId = ResourceLocation("bloodmagic", "life_essence_fluid")
+        val lifeEssence = ForgeRegistries.FLUIDS.getValue(lifeEssenceId)
+            ?.takeIf { ForgeRegistries.FLUIDS.getKey(it) == lifeEssenceId || it.fluidType.descriptionId == "fluid.bloodmagic.life_essence_fluid" }
+        val water = FluidStack(Fluids.WATER, 1_000)
+
+        helper.assertTrue(tank.tanks == 1, "Expected font fluid handler to expose one internal tank")
+        helper.assertTrue(tank.getTankCapacity(0) == obelisk.getModifiedMaxStorage(), "Expected fluid tank capacity to match font blood capacity")
+        helper.assertTrue(!tank.isFluidValid(0, water), "Expected font fluid tank to reject water")
+        helper.assertTrue(tank.fill(water, IFluidHandler.FluidAction.EXECUTE) == 0, "Expected water fill to be rejected")
+        helper.assertTrue(obelisk.bloodStored.toInt() == 0, "Expected rejected fluid not to change font blood")
+        if (lifeEssence == null) {
+            helper.assertTrue(tank.getFluidInTank(0).isEmpty, "Expected missing Blood Magic runtime to report an empty fluid tank")
+            helper.succeed()
+            return
+        }
+
+        val blood = FluidStack(lifeEssence, 1_000)
+        helper.assertTrue(tank.isFluidValid(0, blood), "Expected font fluid tank to accept Blood Magic life essence")
+        helper.assertTrue(tank.fill(blood, IFluidHandler.FluidAction.SIMULATE) == 1_000, "Expected simulated life essence fill amount")
+        helper.assertTrue(obelisk.bloodStored.toInt() == 0, "Expected simulated fill not to mutate font blood")
+        helper.assertTrue(tank.fill(blood, IFluidHandler.FluidAction.EXECUTE) == 1_000, "Expected executed life essence fill")
+        helper.assertTrue(obelisk.bloodStored.toInt() == 1_000, "Expected life essence fill to update font blood")
+        helper.assertTrue(tank.getFluidInTank(0).fluid == lifeEssence, "Expected tank contents to report life essence")
+        helper.assertTrue(tank.getFluidInTank(0).amount == 1_000, "Expected tank contents to mirror font blood")
+
+        val simulatedDrain = tank.drain(400, IFluidHandler.FluidAction.SIMULATE)
+        helper.assertTrue(simulatedDrain.fluid == lifeEssence && simulatedDrain.amount == 400, "Expected simulated drain to return life essence")
+        helper.assertTrue(obelisk.bloodStored.toInt() == 1_000, "Expected simulated drain not to mutate font blood")
+        val drained = tank.drain(FluidStack(lifeEssence, 400), IFluidHandler.FluidAction.EXECUTE)
+        helper.assertTrue(drained.fluid == lifeEssence && drained.amount == 400, "Expected executed drain to return life essence")
+        helper.assertTrue(obelisk.bloodStored.toInt() == 600, "Expected drain to reduce font blood")
         helper.succeed()
     }
 
