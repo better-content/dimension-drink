@@ -2,7 +2,6 @@ package dev.yourname.obelisks.content
 
 import dev.yourname.obelisks.runtime.run.RunRegistry
 import net.minecraft.core.BlockPos
-import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.util.RandomSource
 import net.minecraft.world.InteractionHand
@@ -70,9 +69,7 @@ class ReturnPadBlock(properties: Properties) : Block(properties) {
     ): InteractionResult {
         if (level.isClientSide) return InteractionResult.SUCCESS
         val serverPlayer = player as? ServerPlayer ?: return InteractionResult.PASS
-        if (!RunRegistry.returnPlayer(serverPlayer)) {
-            serverPlayer.sendSystemMessage(Component.literal("You are not bound to an active font run."))
-        }
+        RunRegistry.returnPlayer(serverPlayer)
         return InteractionResult.CONSUME
     }
 

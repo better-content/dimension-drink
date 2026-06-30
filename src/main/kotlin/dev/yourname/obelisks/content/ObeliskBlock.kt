@@ -5,7 +5,6 @@ import dev.yourname.obelisks.registry.ModBlockEntities
 import net.minecraft.core.BlockPos
 import net.minecraft.core.particles.DustParticleOptions
 import net.minecraft.core.particles.ParticleTypes
-import net.minecraft.network.chat.Component
 import net.minecraft.sounds.SoundEvents
 import net.minecraft.sounds.SoundSource
 import net.minecraft.util.RandomSource
@@ -59,9 +58,7 @@ class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
 
         if (player.isShiftKeyDown && held.isEmpty) {
             val removed = obelisk.removeHeart()
-            if (removed.isEmpty) {
-                serverPlayer.sendSystemMessage(Component.literal("The font has no heart set into it."))
-            } else if (!serverPlayer.inventory.add(removed)) {
+            if (!removed.isEmpty && !serverPlayer.inventory.add(removed)) {
                 serverPlayer.drop(removed, false)
             }
             return InteractionResult.CONSUME
@@ -69,7 +66,6 @@ class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
 
         if (!held.isEmpty) {
             if (obelisk.placeHeart(held)) {
-                serverPlayer.sendSystemMessage(Component.literal("The heart settles into the font."))
                 level.playSound(null, pos, SoundEvents.RESPAWN_ANCHOR_CHARGE, SoundSource.BLOCKS, 0.45f, 0.85f)
                 return InteractionResult.CONSUME
             }
@@ -78,7 +74,6 @@ class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
 
         val result = RunRegistry.activateObelisk(serverPlayer, obelisk, pos)
         if (result != null) {
-            serverPlayer.sendSystemMessage(Component.literal(result))
             if (result.startsWith("Drinking")) {
                 serverPlayer.swing(hand, true)
                 level.playSound(null, pos, SoundEvents.HONEY_DRINK, SoundSource.BLOCKS, 0.7f, 0.75f)

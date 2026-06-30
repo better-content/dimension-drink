@@ -507,9 +507,6 @@ object RunRegistry : RunService {
             .mapNotNull { server.playerList.getPlayer(it) }
         onlinePlayers.forEach { player ->
             val returned = returnPlayer(player, disqualify = disqualify)
-            if (message != null) {
-                player.sendSystemMessage(Component.literal(message))
-            }
             if (!returned && message != null) {
                 logger.warn("Could not return player {} for font run {}", player.gameProfile.name, record.id)
             }
@@ -585,7 +582,6 @@ object RunRegistry : RunService {
                 clearEntryWarmup(player)
                 removePlayer(record, player.uuid)
                 persistRunNow(server, record)
-                player.sendSystemMessage(Component.literal("Failed to enter font run: ${result.reason}"))
                 RunEntryAttempt.Rejected("Run is unavailable right now - ${result.reason}")
             }
         }
