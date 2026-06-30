@@ -27,7 +27,12 @@ class ObeliskRuntimeGameTests {
     }
 
     @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_runtime", timeoutTicks = 120)
-    fun font_regen_responds_to_altar_copper_oxidation(helper: GameTestHelper) {
+    fun font_regen_degrades_with_altar_copper_oxidation(helper: GameTestHelper) {
         ObeliskGameTestSupport.fontRegenRespondsToAltarCopperOxidation(helper)
+    }
+
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_runtime", timeoutTicks = 120)
+    fun font_lightning_renews_altar_copper_oxidation(helper: GameTestHelper) {
+        ObeliskGameTestSupport.fontLightningRenewsAltarCopperOxidation(helper)
     }
 }

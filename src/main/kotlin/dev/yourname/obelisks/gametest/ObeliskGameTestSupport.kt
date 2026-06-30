@@ -1294,11 +1294,29 @@ object ObeliskGameTestSupport {
         val oxidizedMultiplier = obelisk.getOxidationRegenMultiplier()
 
         helper.assertTrue(freshMultiplier == 1.0, "Expected fresh copper altar support to be neutral")
-        helper.assertTrue(weatheredMultiplier > freshMultiplier, "Expected weathered copper to improve font regen")
-        helper.assertTrue(oxidizedMultiplier > weatheredMultiplier, "Expected oxidized copper to improve font regen more than weathered copper")
+        helper.assertTrue(weatheredMultiplier < freshMultiplier, "Expected weathered copper to reduce font regen")
+        helper.assertTrue(oxidizedMultiplier < weatheredMultiplier, "Expected oxidized copper to reduce font regen more than weathered copper")
         helper.assertTrue(freshRate > 0.0, "Expected font to have base regen")
-        helper.assertTrue(weatheredRate > freshRate, "Expected weathered copper altar support to increase font regen")
-        helper.assertTrue(oxidizedRate > weatheredRate, "Expected oxidized copper altar support to increase font regen most")
+        helper.assertTrue(weatheredRate < freshRate, "Expected weathered copper altar support to reduce font regen")
+        helper.assertTrue(oxidizedRate < weatheredRate, "Expected oxidized copper altar support to reduce font regen most")
+        helper.succeed()
+    }
+
+    fun fontLightningRenewsAltarCopperOxidation(helper: GameTestHelper) {
+        val obeliskPos = helper.absolutePos(BlockPos(20, 2, 20))
+        val pedestalPos = obeliskPos.below()
+        placeChargedDefinitionObelisk(helper, obeliskPos, "end")
+        val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
+            ?: error("Expected obelisk block entity for lightning renewal test")
+        helper.level.setBlock(pedestalPos, Blocks.OXIDIZED_COPPER.defaultBlockState(), 3)
+
+        val beforeMultiplier = obelisk.getOxidationRegenMultiplier()
+        val renewed = obelisk.renewAltarWithLightning(helper.level, visualStrike = false)
+        val afterMultiplier = obelisk.getOxidationRegenMultiplier()
+
+        helper.assertTrue(renewed >= 1, "Expected lightning renewal to clean at least one altar copper block")
+        helper.assertTrue(helper.level.getBlockState(pedestalPos).`is`(Blocks.WEATHERED_COPPER), "Expected oxidized copper to renew to weathered copper")
+        helper.assertTrue(afterMultiplier > beforeMultiplier, "Expected lightning renewal to improve font efficacy")
         helper.succeed()
     }
 

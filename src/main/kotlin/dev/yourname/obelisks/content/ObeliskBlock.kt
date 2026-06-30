@@ -39,7 +39,7 @@ class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
         if (blockEntityType != ModBlockEntities.OBELISK.get()) return null
         @Suppress("UNCHECKED_CAST")
         return BlockEntityTicker { tickLevel: Level, tickPos: BlockPos, _: BlockState, blockEntity: T ->
-            if (blockEntity is ObeliskBlockEntity) blockEntity.clientAmbientTick(tickLevel, tickPos)
+            if (blockEntity is ObeliskBlockEntity) blockEntity.tick(tickLevel, tickPos)
         }
     }
 
