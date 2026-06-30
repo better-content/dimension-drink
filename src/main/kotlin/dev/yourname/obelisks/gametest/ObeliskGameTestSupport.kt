@@ -1369,6 +1369,31 @@ object ObeliskGameTestSupport {
         for (dy in 1..3) {
             helper.assertTrue(helper.level.getBlockState(fontPos.above(dy)).isAir, "Expected $label font to keep clear space above it")
         }
+        val altarCenter = middleTierCenter
+        fun isLantern(state: net.minecraft.world.level.block.state.BlockState): Boolean =
+            state.`is`(Blocks.SOUL_LANTERN) || state.`is`(Blocks.LANTERN)
+        listOf(2 to 0, -2 to 0, 0 to 2, 0 to -2).forEach { (dx, dz) ->
+            val oldWalkwayLampPos = altarCenter.offset(dx, 3, dz)
+            helper.assertTrue(
+                !isLantern(helper.level.getBlockState(oldWalkwayLampPos)),
+                "Expected $label altar approach lane to stay clear of hanging lanterns at $oldWalkwayLampPos"
+            )
+        }
+        var cornerBracketLanterns = 0
+        listOf(-2 to -2, -2 to 2, 2 to -2, 2 to 2).forEach { (dx, dz) ->
+            val outwardX = if (dx < 0) -1 else 1
+            val bracketPos = altarCenter.offset(dx + outwardX, 3, dz)
+            val lampPos = bracketPos.below()
+            val bracketState = helper.level.getBlockState(bracketPos)
+            val lampState = helper.level.getBlockState(lampPos)
+            if (bracketState.`is`(Blocks.STRIPPED_WARPED_STEM) && isLantern(lampState)) {
+                cornerBracketLanterns++
+            }
+        }
+        helper.assertTrue(
+            cornerBracketLanterns >= 4,
+            "Expected $label altar lanterns to hang from outside corner warped-stem brackets"
+        )
         var graveSignals = 0
         var pathSignals = 0
         var trophySignals = 0

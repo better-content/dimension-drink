@@ -2163,10 +2163,33 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     setBlock(pos, directionalState(block, pos, facing), 3)
                 }
             }
-            listOf(-2 to 0, 2 to 0, 0 to -2, 0 to 2).forEach { (dx, dz) ->
-                val lampPos = BlockPos(center.x + dx, roofY - 1, center.z + dz)
-                placeHangingLantern(level, setBlock, lampPos, copperLanternBlock(lampPos, true))
+            listOf(-2 to -2, -2 to 2, 2 to -2, 2 to 2).forEach { (dx, dz) ->
+                placeCornerLanternBracket(level, setBlock, center, dx, dz, supportTopY)
             }
+        }
+
+        private fun placeCornerLanternBracket(
+            level: LevelAccessor,
+            setBlock: (BlockPos, BlockState, Int) -> Boolean,
+            center: BlockPos,
+            cornerDx: Int,
+            cornerDz: Int,
+            bracketY: Int
+        ) {
+            val outwardX = if (cornerDx < 0) -1 else 1
+            val bracketPos = BlockPos(center.x + cornerDx + outwardX, bracketY, center.z + cornerDz)
+            if (!canReplaceDecoration(level, bracketPos)) return
+            val bracketState = generatedState(Blocks.STRIPPED_WARPED_STEM, bracketPos).let { state ->
+                if (state.hasProperty(BlockStateProperties.AXIS)) {
+                    state.setValue(BlockStateProperties.AXIS, Direction.Axis.X)
+                } else {
+                    state
+                }
+            }
+            setBlock(bracketPos, bracketState, 3)
+
+            val lampPos = bracketPos.below()
+            placeHangingLantern(level, setBlock, lampPos, copperLanternBlock(lampPos, true))
         }
 
         private fun placeWetSupportVine(
