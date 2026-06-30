@@ -14,10 +14,8 @@ import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket
 import net.minecraft.nbt.CompoundTag
 import net.minecraft.nbt.Tag
 import net.minecraft.resources.ResourceLocation
-import net.minecraft.server.level.ServerLevel
 import net.minecraft.sounds.SoundEvents
 import net.minecraft.sounds.SoundSource
-import net.minecraft.world.entity.EntityType
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Block
@@ -45,9 +43,6 @@ class ObeliskBlockEntity(
     companion object {
         private const val GRAVE_SOIL_REGEN_PER_BLOCK = 0.01
         private const val GRAVE_SOIL_REGEN_MULTIPLIER_CAP = 3.0
-        private const val OXIDATION_REGEN_STEP = 0.08
-        private const val LIGHTNING_RENEWAL_MIN_TICKS = 6_000L
-        private const val LIGHTNING_RENEWAL_RANDOM_TICKS = 6_000
         private const val MAX_STORED_GRAVE_SOIL_POSITIONS = 512
         private val BLOOD_MAGIC_LIFE_ESSENCE_FLUID_ID = ResourceLocation("bloodmagic", "life_essence_fluid")
         private const val BLOOD_MAGIC_LIFE_ESSENCE_DESCRIPTION_ID = "fluid.bloodmagic.life_essence_fluid"
@@ -101,7 +96,6 @@ class ObeliskBlockEntity(
     private var graveSoilPositions: List<BlockPos> = emptyList()
     private var lastGraveSoilGlowState: Boolean? = null
     private var nextGraveSoilGlowRefresh: Long = 0L
-    private var nextLightningRenewalGameTime: Long = 0L
 
     var heartStack: ItemStack = ItemStack.EMPTY
         private set
@@ -272,86 +266,33 @@ class ObeliskBlockEntity(
         var rate = getBaseBloodRegenPerTick()
         modifiers.filter { it.stat == FEStat.REGEN_RATE }.forEach { rate = it.applyTo(rate) }
         rate += StillBeatingHeartCompat.lpPerTick(heartStack).toDouble()
-        rate *= getOxidationRegenMultiplier()
         rate *= getGraveSoilRegenMultiplier()
         return rate.coerceAtLeast(0.0)
     }
 
-    fun getOxidationRegenMultiplier(): Double =
-        1.0 - (altarOxidationStage() * OXIDATION_REGEN_STEP)
-
-    private fun altarOxidationStage(): Int {
-        val currentLevel = level ?: return 0
-        var strongestStage = 0
-        for (dx in -1..1) {
-            for (dz in -1..1) {
-                strongestStage = maxOf(
-                    strongestStage,
-                    copperOxidationStage(currentLevel.getBlockState(blockPos.offset(dx, -1, dz)).block)
-                )
-            }
-        }
-        return strongestStage
-    }
-
-    private fun copperOxidationStage(block: Block): Int {
-        if (block == Blocks.RAW_COPPER_BLOCK) return 0
-        val path = BLOCKS.getKey(block)?.path ?: return 0
-        if (!path.contains("copper")) return 0
-        return when {
-            path.contains("oxidized") -> 3
-            path.contains("weathered") -> 2
-            path.contains("exposed") -> 1
-            else -> 0
-        }
-    }
+    fun getOxidationRegenMultiplier(): Double = 1.0
 
     fun tick(tickLevel: Level, tickPos: BlockPos) {
         if (tickLevel.isClientSide) {
             clientAmbientTick(tickLevel, tickPos)
-        } else if (tickLevel is ServerLevel) {
-            serverWeatherTick(tickLevel, tickPos)
         }
     }
 
-    private fun serverWeatherTick(serverLevel: ServerLevel, tickPos: BlockPos) {
-        val gameTime = serverLevel.gameTime
-        if (nextLightningRenewalGameTime <= 0L) {
-            scheduleNextLightningRenewal(serverLevel, gameTime)
-        }
-        if (gameTime < nextLightningRenewalGameTime) return
-        scheduleNextLightningRenewal(serverLevel, gameTime)
-        if (!serverLevel.isThundering || !serverLevel.canSeeSky(tickPos.above())) return
-        renewAltarWithLightning(serverLevel, visualStrike = true)
-    }
-
-    private fun scheduleNextLightningRenewal(serverLevel: ServerLevel, gameTime: Long) {
-        nextLightningRenewalGameTime = gameTime + LIGHTNING_RENEWAL_MIN_TICKS + serverLevel.random.nextInt(LIGHTNING_RENEWAL_RANDOM_TICKS).toLong()
-    }
-
-    fun renewAltarWithLightning(serverLevel: ServerLevel, visualStrike: Boolean = false): Int {
-        if (visualStrike) {
-            val lightning = EntityType.LIGHTNING_BOLT.create(serverLevel)
-            if (lightning != null) {
-                lightning.moveTo(blockPos.x + 0.5, blockPos.y + 1.0, blockPos.z + 0.5)
-                lightning.setVisualOnly(true)
-                serverLevel.addFreshEntity(lightning)
-            }
-        }
-
-        var renewed = 0
+    fun scrapeAltarCopperOxidation(currentLevel: Level): Int {
+        if (currentLevel.isClientSide) return 0
+        var scraped = 0
         for (dx in -1..1) {
             for (dz in -1..1) {
                 val pos = blockPos.offset(dx, -1, dz)
-                val state = serverLevel.getBlockState(pos)
+                val state = currentLevel.getBlockState(pos)
                 val renewedBlock = previousCopperStage(state.block) ?: continue
                 val renewedState = renewedBlock.withPropertiesOf(state)
                 if (renewedState == state) continue
-                serverLevel.setBlock(pos, renewedState, 3)
-                renewed++
+                currentLevel.setBlock(pos, renewedState, 3)
+                scraped++
             }
         }
-        return renewed
+        return scraped
     }
 
     private fun previousCopperStage(block: Block): Block? {

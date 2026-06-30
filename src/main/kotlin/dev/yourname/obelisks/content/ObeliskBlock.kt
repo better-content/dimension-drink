@@ -14,6 +14,7 @@ import net.minecraft.world.level.block.entity.BlockEntityType
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.InteractionResult
 import net.minecraft.world.entity.player.Player
+import net.minecraft.world.item.AxeItem
 import net.minecraft.world.level.BlockGetter
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Block
@@ -55,6 +56,15 @@ class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
         val serverPlayer = player as? ServerPlayer ?: return InteractionResult.PASS
         val obelisk = level.getBlockEntity(pos) as? ObeliskBlockEntity ?: return InteractionResult.PASS
         val held = player.getItemInHand(hand)
+
+        if (held.item is AxeItem) {
+            val scraped = obelisk.scrapeAltarCopperOxidation(level)
+            if (scraped > 0) {
+                held.hurtAndBreak(1, serverPlayer) { brokenPlayer -> brokenPlayer.broadcastBreakEvent(hand) }
+                level.playSound(null, pos, SoundEvents.AXE_SCRAPE, SoundSource.BLOCKS, 0.85f, 0.95f + level.random.nextFloat() * 0.2f)
+                return InteractionResult.CONSUME
+            }
+        }
 
         if (player.isShiftKeyDown && held.isEmpty) {
             val removed = obelisk.removeHeart()

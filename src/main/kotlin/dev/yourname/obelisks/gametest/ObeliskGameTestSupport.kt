@@ -1280,12 +1280,12 @@ object ObeliskGameTestSupport {
         helper.succeed()
     }
 
-    fun fontRegenRespondsToAltarCopperOxidation(helper: GameTestHelper) {
+    fun fontRegenIgnoresAltarCopperOxidation(helper: GameTestHelper) {
         val obeliskPos = helper.absolutePos(BlockPos(20, 2, 20))
         val pedestalPos = obeliskPos.below()
         placeChargedDefinitionObelisk(helper, obeliskPos, "end")
         val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
-            ?: error("Expected obelisk block entity for oxidation regen test")
+            ?: error("Expected obelisk block entity for cosmetic oxidation test")
         obelisk.setEnergyStoredForDebug(0)
 
         helper.level.setBlock(pedestalPos, Blocks.COPPER_BLOCK.defaultBlockState(), 3)
@@ -1301,30 +1301,41 @@ object ObeliskGameTestSupport {
         val oxidizedMultiplier = obelisk.getOxidationRegenMultiplier()
 
         helper.assertTrue(freshMultiplier == 1.0, "Expected fresh copper altar support to be neutral")
-        helper.assertTrue(weatheredMultiplier < freshMultiplier, "Expected weathered copper to reduce font regen")
-        helper.assertTrue(oxidizedMultiplier < weatheredMultiplier, "Expected oxidized copper to reduce font regen more than weathered copper")
+        helper.assertTrue(weatheredMultiplier == 1.0, "Expected weathered copper to be cosmetic only")
+        helper.assertTrue(oxidizedMultiplier == 1.0, "Expected oxidized copper to be cosmetic only")
         helper.assertTrue(freshRate > 0.0, "Expected font to have base regen")
-        helper.assertTrue(weatheredRate < freshRate, "Expected weathered copper altar support to reduce font regen")
-        helper.assertTrue(oxidizedRate < weatheredRate, "Expected oxidized copper altar support to reduce font regen most")
+        helper.assertTrue(weatheredRate == freshRate, "Expected weathered copper altar support not to change regen")
+        helper.assertTrue(oxidizedRate == freshRate, "Expected oxidized copper altar support not to change regen")
         helper.succeed()
     }
 
-    fun fontLightningRenewsAltarCopperOxidation(helper: GameTestHelper) {
+    fun fontAxeScrapesAltarCopperOxidation(helper: GameTestHelper) {
+        val server = helper.level.server
         val obeliskPos = helper.absolutePos(BlockPos(20, 2, 20))
         val pedestalPos = obeliskPos.below()
         placeChargedDefinitionObelisk(helper, obeliskPos, "end")
-        val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
-            ?: error("Expected obelisk block entity for lightning renewal test")
         helper.level.setBlock(pedestalPos, Blocks.OXIDIZED_COPPER.defaultBlockState(), 3)
 
-        val beforeMultiplier = obelisk.getOxidationRegenMultiplier()
-        val renewed = obelisk.renewAltarWithLightning(helper.level, visualStrike = false)
-        val afterMultiplier = obelisk.getOxidationRegenMultiplier()
+        val client = connectHeadlessPlayer(helper)
+        val player = client.player
+        try {
+            player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack(Items.IRON_AXE))
+            val result = ModBlocks.OBELISK.get().use(
+                helper.level.getBlockState(obeliskPos),
+                helper.level,
+                obeliskPos,
+                player,
+                InteractionHand.MAIN_HAND,
+                BlockHitResult(Vec3.atCenterOf(obeliskPos), Direction.UP, obeliskPos, false)
+            )
 
-        helper.assertTrue(renewed >= 1, "Expected lightning renewal to clean at least one altar copper block")
-        helper.assertTrue(helper.level.getBlockState(pedestalPos).`is`(Blocks.WEATHERED_COPPER), "Expected oxidized copper to renew to weathered copper")
-        helper.assertTrue(afterMultiplier > beforeMultiplier, "Expected lightning renewal to improve font efficacy")
-        helper.succeed()
+            helper.assertTrue(result == InteractionResult.CONSUME, "Expected axe use on font to scrape altar copper")
+            helper.assertTrue(helper.level.getBlockState(pedestalPos).`is`(Blocks.WEATHERED_COPPER), "Expected oxidized copper to scrape back to weathered copper")
+            helper.assertTrue(player.getItemInHand(InteractionHand.MAIN_HAND).damageValue == 1, "Expected successful scraping to damage the axe")
+            helper.succeed()
+        } finally {
+            client.close(server)
+        }
     }
 
     fun waitUntil(
