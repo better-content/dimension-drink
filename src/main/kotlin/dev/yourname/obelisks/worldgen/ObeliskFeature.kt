@@ -1676,10 +1676,6 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     setBlock(barPos, generatedState(copperBarsBlock(barPos), barPos), 3)
                 }
             }
-            val cap = base.above(3)
-            if (canReplaceDecoration(level, cap)) {
-                setBlock(cap, generatedState(Blocks.WAXED_EXPOSED_CUT_COPPER, cap), 3)
-            }
             val lampPos = base.relative(Direction.Plane.HORIZONTAL.toList().shuffled(random).first()).above()
             if (isSupportedGround(level, lampPos.below(), level.getBlockState(lampPos.below())) && canReplaceDecoration(level, lampPos)) {
                 setBlock(lampPos, generatedState(copperLanternBlock(lampPos, random.nextBoolean()), lampPos), 3)

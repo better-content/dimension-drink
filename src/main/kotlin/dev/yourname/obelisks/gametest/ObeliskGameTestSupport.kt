@@ -1481,6 +1481,7 @@ object ObeliskGameTestSupport {
         var pathSignals = 0
         var trophySignals = 0
         var trophyGroundSignals = 0
+        var cappedTrophySignals = 0
         var forbiddenSignals = 0
         var unlitCandleSignals = 0
         var structureSignals = 0
@@ -1580,6 +1581,15 @@ object ObeliskGameTestSupport {
                     if (generatedTrophy) {
                         trophySignals++
                         if (pos.y <= graveyardFloorCenter.y) trophyGroundSignals++
+                        val aboveTrophy = helper.level.getBlockState(pos.above())
+                        if (
+                            aboveTrophy.`is`(Blocks.WAXED_EXPOSED_CUT_COPPER) ||
+                            aboveTrophy.`is`(Blocks.CUT_COPPER) ||
+                            aboveTrophy.`is`(Blocks.EXPOSED_CUT_COPPER) ||
+                            aboveTrophy.`is`(Blocks.WEATHERED_CUT_COPPER)
+                        ) {
+                            cappedTrophySignals++
+                        }
                     }
                     if (state.`is`(Blocks.WITHER_ROSE)) {
                         forbiddenSignals++
@@ -1624,6 +1634,7 @@ object ObeliskGameTestSupport {
         if (expectedTrophy != null) {
             helper.assertTrue(trophySignals >= 1, "Expected $label graveyard to display dimensional trophy blocks")
             helper.assertTrue(trophyGroundSignals == 0, "Expected $label dimensional trophy blocks to be displayed above ground, not used as graveyard floor")
+            helper.assertTrue(cappedTrophySignals == 0, "Expected $label dimensional trophy blocks to remain uncapped")
         }
         helper.assertTrue(forbiddenSignals == 0, "Expected $label graveyard to avoid wither roses")
         helper.assertTrue(unlitCandleSignals == 0, "Expected $label generated graveyard candles to be lit")

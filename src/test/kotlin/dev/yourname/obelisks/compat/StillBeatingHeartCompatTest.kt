@@ -3,6 +3,8 @@ package dev.yourname.obelisks.compat
 import net.minecraft.nbt.CompoundTag
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class StillBeatingHeartCompatTest {
     @Test
@@ -28,6 +30,24 @@ class StillBeatingHeartCompatTest {
         data.putInt("level", -5)
 
         assertEquals(0, StillBeatingHeartCompat.getLevel(data))
+    }
+
+    @Test
+    fun `level zero heart data is still valid for font placement`() {
+        val root = CompoundTag()
+        val data = CompoundTag()
+        data.putInt("schema_version", 2)
+        data.putInt("level", 0)
+        root.put(StillBeatingHeartCompat.DATA_TAG, data)
+
+        assertTrue(StillBeatingHeartCompat.hasHeartDataTag(root))
+        assertEquals(0, StillBeatingHeartCompat.getLevel(root.getCompound(StillBeatingHeartCompat.DATA_TAG)))
+    }
+
+    @Test
+    fun `tags without heart data are not valid heart data`() {
+        assertFalse(StillBeatingHeartCompat.hasHeartDataTag(null))
+        assertFalse(StillBeatingHeartCompat.hasHeartDataTag(CompoundTag()))
     }
 
     @Test

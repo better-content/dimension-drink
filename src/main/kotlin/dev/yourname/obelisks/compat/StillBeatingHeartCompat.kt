@@ -15,10 +15,17 @@ object StillBeatingHeartCompat {
     private val rpgStatsHeartId = ResourceLocation("rpgstats", "still_beating_heart")
 
     fun isFontHeart(stack: ItemStack): Boolean {
-        if (stack.isEmpty || getLevel(stack) <= 0) return false
+        if (stack.isEmpty) return false
         val itemId = ForgeRegistries.ITEMS.getKey(stack.item)
         return itemId == rpgStatsHeartId || stack.`is`(fontHeartTag())
     }
+
+    fun hasHeartData(stack: ItemStack): Boolean {
+        return hasHeartDataTag(stack.tag)
+    }
+
+    fun hasHeartDataTag(tag: CompoundTag?): Boolean =
+        tag?.contains(DATA_TAG, Tag.TAG_COMPOUND.toInt()) == true
 
     fun getLevel(stack: ItemStack): Int {
         val tag = stack.tag ?: return 0
