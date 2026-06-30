@@ -13,6 +13,7 @@ import dev.yourname.obelisks.runtime.player.VanillaPortalBlocker
 import dev.yourname.obelisks.runtime.reward.RewardSystem
 import dev.yourname.obelisks.runtime.run.RunRegistry
 import dev.yourname.obelisks.runtime.ui.RunBossBarManager
+import dev.yourname.obelisks.worldgen.village.VillageShrinePools
 import net.minecraftforge.common.MinecraftForge
 import net.minecraftforge.fml.common.Mod
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext
@@ -35,6 +36,7 @@ class ObelisksMod {
         MinecraftForge.EVENT_BUS.register(RunRegistry)
         MinecraftForge.EVENT_BUS.register(RunBossBarManager)
         MinecraftForge.EVENT_BUS.register(ObeliskCommands)
+        MinecraftForge.EVENT_BUS.register(VillageShrinePools)
     }
 
     companion object {
