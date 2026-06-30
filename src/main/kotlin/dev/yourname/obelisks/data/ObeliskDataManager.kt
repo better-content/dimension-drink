@@ -122,8 +122,6 @@ object ObeliskDataManager {
             spawnSearchRadius = definition.spawnSearchRadius?.coerceIn(0, 128) ?: 16,
             runRadius = definition.runRadius?.coerceIn(16, 512) ?: 96,
             maxBlood = definition.maxBlood?.coerceIn(1.0, 1_000_000.0) ?: 15_000.0,
-            bloodStartCost = definition.bloodStartCost?.coerceAtLeast(0.0) ?: 5_000.0,
-            bloodJoinCost = definition.bloodJoinCost?.coerceAtLeast(0.0) ?: 1_000.0,
             baseBloodPerTick = definition.baseBloodPerTick?.coerceAtLeast(0.0) ?: 0.25,
             heartBloodMultiplier = definition.heartBloodMultiplier?.coerceAtLeast(0.0) ?: 0.08,
             runBloodDrainPerTick = definition.runBloodDrainPerTick?.coerceAtLeast(0.0) ?: 20.0,

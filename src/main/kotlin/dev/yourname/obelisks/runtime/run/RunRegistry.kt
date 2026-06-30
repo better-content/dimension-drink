@@ -197,31 +197,17 @@ object RunRegistry : RunService {
 
         val existingRun = obelisk.activeRunId?.let { runs[it] }
         if (existingRun != null && existingRun.state != RunState.FINISHED && existingRun.state != RunState.FAILED) {
-            val joinCost = obelisk.getBloodJoinCost()
-            if (!obelisk.drainBlood(joinCost)) {
-                return "The font is too low to share its blood (${obelisk.bloodStored.toInt()}/${joinCost.toInt()})"
-            }
             if (existingRun.pendingPlayers.add(player.uuid)) {
                 markEligible(existingRun, player.uuid)
                 existingRun.updatedGameTime = currentGameTime(server)
                 persistRunNow(server, existingRun)
             }
-            startEntryWarmup(server, existingRun, player, joinCost, "Drinking from active ${displayName(existingRun.definitionId)}...")
+            startEntryWarmup(server, existingRun, player, 0.0, "Drinking from active ${displayName(existingRun.definitionId)}...")
             return when (val entry = tryQueueEntry(server, existingRun, player)) {
                 RunEntryAttempt.Entered -> "Drinking from active ${displayName(existingRun.definitionId)}..."
                 is RunEntryAttempt.Waiting -> entry.message
                 is RunEntryAttempt.Rejected -> entry.message
             }
-        }
-
-        if (obelisk.isOnCooldown()) {
-            val seconds = (obelisk.getCooldownRemainingTicks() / ObeliskConstants.TICKS_PER_SECOND).coerceAtLeast(1L)
-            return "Dimensional font on cooldown (${seconds}s remaining)"
-        }
-
-        val startCost = obelisk.getBloodStartCost()
-        if (obelisk.bloodStored < startCost) {
-            return "Dimensional font lacks blood (${obelisk.bloodStored.toInt()}/${startCost.toInt()})"
         }
 
         val instanceTemplateId = templateIdForDefinition(obelisk.definitionId)
@@ -237,10 +223,9 @@ object RunRegistry : RunService {
             originObeliskPos = pos,
             queuedPlayerId = player.uuid
         ) ?: return "Run is unavailable for ${displayName(obelisk.definitionId)} right now"
-        obelisk.drainBlood(startCost)
         obelisk.setActiveRun(created.id)
         markEligible(created, player.uuid)
-        startEntryWarmup(server, created, player, startCost, "Drinking from ${displayName(created.definitionId)}...")
+        startEntryWarmup(server, created, player, 0.0, "Drinking from ${displayName(created.definitionId)}...")
         return when (val entry = tryQueueEntry(server, created, player)) {
             RunEntryAttempt.Entered -> "Drinking from ${displayName(created.definitionId)}..."
             is RunEntryAttempt.Waiting -> entry.message

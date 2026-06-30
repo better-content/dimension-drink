@@ -18,8 +18,6 @@
   },
   "rewardTableId": "overworld",
   "maxBlood": 15000,
-  "bloodStartCost": 5000,
-  "bloodJoinCost": 1000,
   "baseBloodPerTick": 0.25,
   "heartBloodMultiplier": 0.08,
   "runBloodDrainPerTick": 20.0

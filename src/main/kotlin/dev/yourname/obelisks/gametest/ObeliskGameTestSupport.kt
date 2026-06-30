@@ -538,15 +538,14 @@ object ObeliskGameTestSupport {
                 )
 
                 helper.assertTrue(RunRegistry.finishRun(server, runId), "Expected death-return cleanup to finish the run")
-                waitUntil(helper, 360, "Expected death-return cleanup to cooldown the origin font and clear the run", condition = {
+                waitUntil(helper, 360, "Expected death-return cleanup to clear the origin font run", condition = {
                     client.pump(server)
                     RunRegistry.get(runId) == null &&
-                        (helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)?.activeRunId == null &&
-                        ((helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)?.isOnCooldown() == true)
+                        (helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)?.activeRunId == null
                 }, onSuccess = {
                     val cooledObelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
                     helper.assertTrue(cooledObelisk?.activeRunId == null, "Expected death-return cleanup to clear the active run id")
-                    helper.assertTrue(cooledObelisk?.isOnCooldown() == true, "Expected death-return cleanup to start cooldown")
+                    helper.assertTrue(cooledObelisk?.isOnCooldown() == false, "Expected death-return cleanup to leave font usable without cooldown")
                     helper.assertTrue(RunRegistry.get(runId) == null, "Expected death-return cleanup to remove the run")
                     client.close(server)
                     helper.succeed()

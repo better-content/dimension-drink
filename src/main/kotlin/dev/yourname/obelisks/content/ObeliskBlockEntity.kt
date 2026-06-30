@@ -129,18 +129,15 @@ class ObeliskBlockEntity(
     fun isRunActive(): Boolean = activeRunId != null
 
     fun isOnCooldown(): Boolean {
-        val currentLevel = level ?: return false
-        return cooldownUntilGameTime > currentLevel.gameTime
+        return false
     }
 
     fun getCooldownRemainingTicks(): Long {
-        val currentLevel = level ?: return 0L
-        return (cooldownUntilGameTime - currentLevel.gameTime).coerceAtLeast(0L)
+        return 0L
     }
 
-    fun startCooldown(durationTicks: Long = ObeliskConstants.COOLDOWN_TICKS) {
-        val currentLevel = level ?: return
-        cooldownUntilGameTime = currentLevel.gameTime + durationTicks
+    fun startCooldown() {
+        cooldownUntilGameTime = 0L
         setChanged()
         syncToClients()
     }
@@ -199,11 +196,9 @@ class ObeliskBlockEntity(
     private fun getDefinitionMaxBlood(): Double =
         ObeliskDataManager.getObelisk(definitionId)?.maxBlood ?: ObeliskConstants.MAX_BLOOD_STORAGE
 
-    fun getBloodStartCost(): Double =
-        ObeliskDataManager.getObelisk(definitionId)?.bloodStartCost ?: ObeliskConstants.BLOOD_START_COST
+    fun getBloodStartCost(): Double = 0.0
 
-    fun getBloodJoinCost(): Double =
-        ObeliskDataManager.getObelisk(definitionId)?.bloodJoinCost ?: ObeliskConstants.BLOOD_JOIN_COST
+    fun getBloodJoinCost(): Double = 0.0
 
     fun getBaseBloodRegenPerTick(): Double =
         ObeliskDataManager.getObelisk(definitionId)?.baseBloodPerTick ?: ObeliskConstants.BLOOD_REGEN_PER_TICK
@@ -237,7 +232,7 @@ class ObeliskBlockEntity(
 
     fun getRecordedGraveSoilPositions(): List<BlockPos> = graveSoilPositions
 
-    fun isCharging(): Boolean = !isRunActive() && bloodStored < getBloodStartCost()
+    fun isCharging(): Boolean = !isRunActive() && bloodStored < getModifiedMaxStorage().toDouble()
 
     fun updateGraveSoilGlow(force: Boolean = false) {
         setGraveSoilGlow(isCharging(), force)
@@ -343,9 +338,9 @@ class ObeliskBlockEntity(
 
     fun hasHeart(): Boolean = !heartStack.isEmpty
 
-    fun isReadyToOpen(): Boolean = hasHeart() && !isRunActive() && !isOnCooldown() && bloodStored >= getBloodStartCost()
+    fun isReadyToOpen(): Boolean = hasHeart() && !isRunActive()
 
-    fun isLowBloodWarning(): Boolean = hasHeart() && !isReadyToOpen() && bloodStored < getBloodStartCost() * 0.35
+    fun isLowBloodWarning(): Boolean = false
 
     fun clientAmbientTick(tickLevel: Level, tickPos: BlockPos) {
         if (!tickLevel.isClientSide) return
@@ -448,7 +443,6 @@ class ObeliskBlockEntity(
         tag.putString("definition_id", definitionId)
         tag.putString("target_template_id", targetTemplateId)
         activeRunId?.let { tag.putUUID("active_run_id", it) }
-        tag.putLong("cooldown_until_game_time", cooldownUntilGameTime)
         tag.putBoolean("beam_visible", beamVisible)
         tag.putInt("beam_color_red", beamColorRed)
         tag.putInt("beam_color_green", beamColorGreen)
@@ -485,7 +479,7 @@ class ObeliskBlockEntity(
             else -> getMaxBlood()
         }.coerceIn(0.0, getMaxBlood())
         activeRunId = if (tag.hasUUID("active_run_id")) tag.getUUID("active_run_id") else null
-        cooldownUntilGameTime = tag.getLong("cooldown_until_game_time")
+        cooldownUntilGameTime = 0L
         beamVisible = !tag.contains("beam_visible") || tag.getBoolean("beam_visible")
         beamColorRed = if (tag.contains("beam_color_red")) tag.getInt("beam_color_red") else Random.nextInt(256)
         beamColorGreen = if (tag.contains("beam_color_green")) tag.getInt("beam_color_green") else Random.nextInt(256)

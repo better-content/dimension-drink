@@ -9,8 +9,6 @@ data class ObeliskDefinition(
     val spawnSearchRadius: Int? = null,
     val runRadius: Int? = null,
     val maxBlood: Double? = null,
-    val bloodStartCost: Double? = null,
-    val bloodJoinCost: Double? = null,
     val baseBloodPerTick: Double? = null,
     val heartBloodMultiplier: Double? = null,
     val runBloodDrainPerTick: Double? = null,
