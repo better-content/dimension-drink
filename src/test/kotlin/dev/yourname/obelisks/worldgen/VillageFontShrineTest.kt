@@ -12,10 +12,11 @@ import kotlin.test.assertTrue
 
 class VillageFontShrineTest {
     @Test
-    fun shrineTemplateUsesSingleFontAndMaintainedCopperOnly() {
+    fun shrineTemplateUsesSingleFontMaintainedCopperAndFullSizedAltarFootprint() {
         val root = loadShrineTemplate()
         val palette = root.getList("palette", Tag.TAG_COMPOUND.toInt())
         val blocks = root.getList("blocks", Tag.TAG_COMPOUND.toInt())
+        val size = root.getList("size", Tag.TAG_INT.toInt())
 
         val paletteNames = (0 until palette.size).map { palette.getCompound(it).getString("Name") }
         val blockNames = (0 until blocks.size).map { blockIndex ->
@@ -23,6 +24,8 @@ class VillageFontShrineTest {
             paletteNames[stateIndex]
         }
 
+        assertTrue(size.getInt(0) >= 9 && size.getInt(2) >= 9, "Village shrine should stay full-sized, not a compact roadside piece")
+        assertTrue(size.getInt(1) >= 5, "Village shrine should preserve a stepped altar profile")
         assertEquals(1, blockNames.count { it == "dimensionalfonts:dimensional_font" }, "Village shrine should contain exactly one dimensional font")
 
         val allowedCopper = setOf(
@@ -34,6 +37,7 @@ class VillageFontShrineTest {
         val copperBlocks = blockNames.filter { "copper" in it }
         assertTrue(copperBlocks.isNotEmpty(), "Village shrine should visibly use waxed fresh copper")
         assertTrue(copperBlocks.all { it in allowedCopper }, "Village shrine should use only maintained waxed fresh copper variants")
+        assertTrue(blockNames.count { it == "minecraft:stone_bricks" } >= 100, "Village shrine should feel like a full altar site the village built around")
     }
 
     @Test
