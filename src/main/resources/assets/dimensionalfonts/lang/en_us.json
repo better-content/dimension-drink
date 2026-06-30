@@ -1,8 +1,8 @@
 {
   "block.dimensionalfonts.dimensional_font": "Dimensional Font",
   "item.dimensionalfonts.dimensional_font": "Dimensional Font",
-  "block.dimensionalfonts.return_seal": "Return Seal",
-  "item.dimensionalfonts.return_seal": "Return Seal",
+  "block.dimensionalfonts.return_seal": "Return Font",
+  "item.dimensionalfonts.return_seal": "Return Font",
   "block.dimensionalfonts.grave_soil": "Grave Soil",
   "item.dimensionalfonts.grave_soil": "Grave Soil",
   "item.dimensionalfonts.affix.durability": "+%s%% Durability",

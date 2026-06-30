@@ -1457,15 +1457,15 @@ object ObeliskGameTestSupport {
     }
 
     private fun assertGenericSpawnPlatform(helper: GameTestHelper, level: Level, returnPadPos: BlockPos) {
-        helper.assertTrue(level.getBlockState(returnPadPos).`is`(ModBlocks.RETURN_PAD.get()), "Expected canonical spawn contract center to be a return pad")
+        helper.assertTrue(level.getBlockState(returnPadPos).`is`(ModBlocks.RETURN_FONT.get()), "Expected canonical spawn contract center to be a return font")
 
-        for (x in -1..1) {
-            for (z in -1..1) {
+        for (x in -2..2) {
+            for (z in -2..2) {
                 val floorPos = returnPadPos.offset(x, 0, z)
                 val floorState = level.getBlockState(floorPos)
                 helper.assertTrue(
-                    !floorState.isAir,
-                    "Expected canonical spawn contract floor to be solid at $floorPos"
+                    floorState.`is`(Blocks.OXIDIZED_COPPER) || floorState.`is`(ModBlocks.RETURN_FONT.get()),
+                    "Expected canonical spawn contract floor to stay fully oxidized around $floorPos"
                 )
 
                 for (dy in 1..3) {

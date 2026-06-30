@@ -110,6 +110,15 @@ object RunRegistry : RunService {
         }
     }
 
+    fun drinkReturnFont(player: ServerPlayer): String {
+        applyEntryWarmupEffects(player)
+        return if (returnPlayer(player)) {
+            "Drinking from return font..."
+        } else {
+            "The return font has nowhere to send you."
+        }
+    }
+
     fun clearPlayerAssignment(server: MinecraftServer, playerId: UUID): Boolean {
         val record = mutableRunForPlayer(playerId) ?: return false
         removePlayer(record, playerId, disqualify = true)

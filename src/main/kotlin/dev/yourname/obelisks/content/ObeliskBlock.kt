@@ -1,5 +1,6 @@
 package dev.yourname.obelisks.content
 
+import dev.yourname.obelisks.runtime.backend.ArrivalSiteLayout
 import dev.yourname.obelisks.runtime.run.RunRegistry
 import dev.yourname.obelisks.registry.ModBlockEntities
 import net.minecraft.core.BlockPos
@@ -26,7 +27,10 @@ import net.minecraft.world.level.pathfinder.PathComputationType
 import net.minecraft.world.phys.BlockHitResult
 import org.joml.Vector3f
 
-class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
+class ObeliskBlock(
+    properties: Properties,
+    private val returnOnly: Boolean = false
+) : Block(properties), EntityBlock {
 
     override fun newBlockEntity(pos: BlockPos, state: BlockState): BlockEntity = ObeliskBlockEntity(pos, state)
 
@@ -56,6 +60,16 @@ class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
         val serverPlayer = player as? ServerPlayer ?: return InteractionResult.PASS
         val obelisk = level.getBlockEntity(pos) as? ObeliskBlockEntity ?: return InteractionResult.PASS
         val held = player.getItemInHand(hand)
+
+        if (returnOnly) {
+            if (!held.isEmpty || player.isShiftKeyDown) return InteractionResult.PASS
+            val result = RunRegistry.drinkReturnFont(serverPlayer)
+            if (result.startsWith("Drinking")) {
+                serverPlayer.swing(hand, true)
+                level.playSound(null, pos, SoundEvents.HONEY_DRINK, SoundSource.BLOCKS, 0.7f, 0.75f)
+            }
+            return InteractionResult.CONSUME
+        }
 
         if (held.item is AxeItem) {
             val scraped = obelisk.scrapeAltarCopperOxidation(level)
@@ -93,6 +107,10 @@ class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
     }
 
     override fun animateTick(state: BlockState, level: Level, pos: BlockPos, random: RandomSource) {
+        if (returnOnly) {
+            animateReturnFontTick(level, pos, random)
+            return
+        }
         val obelisk = level.getBlockEntity(pos) as? ObeliskBlockEntity ?: return
         val blood = obelisk.getEnergyPercent()
         val ready = obelisk.isReadyToOpen()
@@ -147,6 +165,25 @@ class ObeliskBlock(properties: Properties) : Block(properties), EntityBlock {
                     (random.nextDouble() - 0.5) * 0.04
                 )
             }
+        }
+    }
+
+    private fun animateReturnFontTick(level: Level, pos: BlockPos, random: RandomSource) {
+        val verdigris = DustParticleOptions(Vector3f(0.34f, 0.76f, 0.58f), 0.72f)
+        val offsets = ArrivalSiteLayout.floorOffsets()
+        repeat(4) {
+            val offset = offsets[random.nextInt(offsets.size)]
+            val copperPos = pos.offset(offset)
+            if (!ArrivalSiteLayout.isVerdigrisCopper(level.getBlockState(copperPos).block)) return@repeat
+            level.addParticle(
+                verdigris,
+                copperPos.x + 0.25 + random.nextDouble() * 0.5,
+                copperPos.y + 1.02 + random.nextDouble() * 0.18,
+                copperPos.z + 0.25 + random.nextDouble() * 0.5,
+                (random.nextDouble() - 0.5) * 0.01,
+                0.018 + random.nextDouble() * 0.03,
+                (random.nextDouble() - 0.5) * 0.01
+            )
         }
     }
 

@@ -154,7 +154,7 @@ object SpawnPlatformGenerator {
         for (x in -1..1) {
             for (z in -1..1) {
                 if (x == 0 && z == 0) {
-                    level.setBlock(padPos.offset(x, 0, z), ModBlocks.RETURN_PAD.get().defaultBlockState(), PLATFORM_SET_FLAGS)
+                    level.setBlock(padPos.offset(x, 0, z), ModBlocks.RETURN_FONT.get().defaultBlockState(), PLATFORM_SET_FLAGS)
                 } else {
                     level.setBlock(padPos.offset(x, 0, z), Blocks.OBSIDIAN.defaultBlockState(), PLATFORM_SET_FLAGS)
                 }
