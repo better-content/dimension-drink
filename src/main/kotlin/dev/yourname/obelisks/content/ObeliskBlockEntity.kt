@@ -260,10 +260,7 @@ class ObeliskBlockEntity(
     fun getModifiedRegenRate(): Double {
         var rate = getBaseBloodRegenPerTick()
         modifiers.filter { it.stat == FEStat.REGEN_RATE }.forEach { rate = it.applyTo(rate) }
-        val heartLevel = getHeartLevel()
-        if (heartLevel > 0) {
-            rate *= StillBeatingHeartCompat.bloodMultiplier(heartLevel, getHeartBloodMultiplier())
-        }
+        rate += StillBeatingHeartCompat.lpPerTick(heartStack).toDouble()
         rate *= getGraveSoilRegenMultiplier()
         return rate.coerceAtLeast(0.0)
     }

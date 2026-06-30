@@ -8,14 +8,20 @@ import net.minecraft.tags.TagKey
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
 import net.minecraftforge.registries.ForgeRegistries
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.pow
 
 object StillBeatingHeartCompat {
     const val DATA_TAG: String = "StillBeatingHeartData"
+    private const val BASE_LP_PER_TICK: Int = 5
+    private const val LEVELS_PER_DOUBLING: Double = 10.0
+    private const val MAX_LP_PER_TICK: Int = 4096
 
     private val rpgStatsHeartId = ResourceLocation("rpgstats", "still_beating_heart")
 
     fun isFontHeart(stack: ItemStack): Boolean {
-        if (stack.isEmpty) return false
+        if (stack.isEmpty || getLevel(stack) <= 0) return false
         val itemId = ForgeRegistries.ITEMS.getKey(stack.item)
         return itemId == rpgStatsHeartId || stack.`is`(fontHeartTag())
     }
@@ -46,6 +52,14 @@ object StillBeatingHeartCompat {
 
     fun bloodMultiplier(level: Int, perLevelMultiplier: Double): Double =
         1.0 + (level.coerceAtLeast(0) * perLevelMultiplier.coerceAtLeast(0.0))
+
+    fun lpPerTick(stack: ItemStack): Int = lpPerTick(getLevel(stack))
+
+    fun lpPerTick(level: Int): Int {
+        if (level <= 0) return 0
+        val scaled = BASE_LP_PER_TICK * 2.0.pow(max(0, level) / LEVELS_PER_DOUBLING)
+        return min(MAX_LP_PER_TICK, max(1, scaled.toInt()))
+    }
 
     private fun fontHeartTag(): TagKey<Item> =
         TagKey.create(ForgeRegistries.ITEMS.registryKey, ResourceLocation(MOD_ID, "font_hearts"))

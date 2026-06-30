@@ -33,7 +33,7 @@ class StillBeatingHeartCompatTest {
     }
 
     @Test
-    fun `level zero heart data is still valid for font placement`() {
+    fun `level zero heart data has no font output`() {
         val root = CompoundTag()
         val data = CompoundTag()
         data.putInt("schema_version", 2)
@@ -42,6 +42,7 @@ class StillBeatingHeartCompatTest {
 
         assertTrue(StillBeatingHeartCompat.hasHeartDataTag(root))
         assertEquals(0, StillBeatingHeartCompat.getLevel(root.getCompound(StillBeatingHeartCompat.DATA_TAG)))
+        assertEquals(0, StillBeatingHeartCompat.lpPerTick(root.getCompound(StillBeatingHeartCompat.DATA_TAG).getInt("level")))
     }
 
     @Test
@@ -51,12 +52,12 @@ class StillBeatingHeartCompatTest {
     }
 
     @Test
-    fun `higher level hearts produce stronger font blood multiplier`() {
-        val low = StillBeatingHeartCompat.bloodMultiplier(level = 5, perLevelMultiplier = 0.08)
-        val high = StillBeatingHeartCompat.bloodMultiplier(level = 20, perLevelMultiplier = 0.08)
-
-        assertEquals(1.4, low)
-        assertEquals(2.6, high)
+    fun `font heart lp per tick matches blood altar formula`() {
+        assertEquals(0, StillBeatingHeartCompat.lpPerTick(0))
+        assertEquals(5, StillBeatingHeartCompat.lpPerTick(1))
+        assertEquals(10, StillBeatingHeartCompat.lpPerTick(10))
+        assertEquals(20, StillBeatingHeartCompat.lpPerTick(20))
+        assertEquals(4096, StillBeatingHeartCompat.lpPerTick(200))
     }
 
     @Test
