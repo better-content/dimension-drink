@@ -20,4 +20,9 @@ class ObeliskRuntimeGameTests {
     fun font_fluid_tank_accepts_only_blood_magic_life_essence(helper: GameTestHelper) {
         ObeliskGameTestSupport.fontFluidTankAcceptsOnlyBloodMagicLifeEssence(helper)
     }
+
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_runtime", timeoutTicks = 120)
+    fun grave_soil_charging_state_follows_font_charging(helper: GameTestHelper) {
+        ObeliskGameTestSupport.graveSoilChargingStateFollowsFontCharging(helper)
+    }
 }

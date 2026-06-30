@@ -5,6 +5,7 @@ import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.sounds.SoundEvents
 import net.minecraft.sounds.SoundSource
+import net.minecraft.util.RandomSource
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.Level
@@ -25,6 +26,35 @@ class GraveSoilBlock(properties: Properties) : Block(properties) {
 
     override fun createBlockStateDefinition(builder: StateDefinition.Builder<Block, BlockState>) {
         builder.add(CHARGING)
+    }
+
+    override fun animateTick(state: BlockState, level: Level, pos: BlockPos, random: RandomSource) {
+        if (!state.getValue(CHARGING)) return
+        if (random.nextInt(2) != 0) return
+
+        val x = pos.x + 0.5 + (random.nextDouble() - 0.5) * 0.45
+        val y = pos.y + 1.02
+        val z = pos.z + 0.5 + (random.nextDouble() - 0.5) * 0.45
+        level.addParticle(
+            if (random.nextBoolean()) ParticleTypes.SOUL else ParticleTypes.SOUL_FIRE_FLAME,
+            x,
+            y,
+            z,
+            0.0,
+            0.025 + random.nextDouble() * 0.04,
+            0.0
+        )
+        if (random.nextFloat() < 0.25f) {
+            level.addParticle(
+                ParticleTypes.END_ROD,
+                pos.x + 0.5,
+                y + 0.05,
+                pos.z + 0.5,
+                0.0,
+                0.01 + random.nextDouble() * 0.02,
+                0.0
+            )
+        }
     }
 
     override fun playerDestroy(level: Level, player: Player, pos: BlockPos, state: BlockState, blockEntity: BlockEntity?, stack: ItemStack) {

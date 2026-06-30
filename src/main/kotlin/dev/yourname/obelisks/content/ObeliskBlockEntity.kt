@@ -101,9 +101,8 @@ class ObeliskBlockEntity(
             if (maxReceive <= 0) return 0
             val accepted = minOf(getModifiedMaxStorage() - getEnergyStored(), maxReceive)
             if (!simulate && accepted > 0) {
-                bloodStored = (bloodStored + accepted.toDouble()).coerceAtMost(getMaxBlood())
-                setChanged()
-                syncToClients()
+                bloodStored = (bloodStored + accepted.toDouble()).coerceAtMost(getModifiedMaxStorage().toDouble())
+                onBloodStorageChanged()
             }
             return accepted
         }
@@ -113,8 +112,7 @@ class ObeliskBlockEntity(
             val extracted = minOf(getEnergyStored(), maxExtract)
             if (!simulate && extracted > 0) {
                 bloodStored = (bloodStored - extracted.toDouble()).coerceAtLeast(0.0)
-                setChanged()
-                syncToClients()
+                onBloodStorageChanged()
             }
             return extracted
         }
@@ -147,8 +145,7 @@ class ObeliskBlockEntity(
             val accepted = minOf(resource.amount.toDouble(), maxStorage - bloodStored).toInt().coerceAtLeast(0)
             if (accepted > 0 && action.execute()) {
                 bloodStored = (bloodStored + accepted.toDouble()).coerceAtMost(maxStorage)
-                setChanged()
-                syncToClients()
+                onBloodStorageChanged()
             }
             return accepted
         }
@@ -164,8 +161,7 @@ class ObeliskBlockEntity(
             val drained = minOf(maxDrain, bloodStored.toInt()).coerceAtLeast(0)
             if (drained > 0 && action.execute()) {
                 bloodStored = (bloodStored - drained.toDouble()).coerceAtLeast(0.0)
-                setChanged()
-                syncToClients()
+                onBloodStorageChanged()
             }
             return if (drained > 0) FluidStack(fluid, drained) else FluidStack.EMPTY
         }
@@ -208,16 +204,14 @@ class ObeliskBlockEntity(
     }
 
     fun setEnergyStoredForDebug(amount: Int) {
-        bloodStored = amount.toDouble().coerceIn(0.0, getMaxBlood())
-        setChanged()
-        syncToClients()
+        bloodStored = amount.toDouble().coerceIn(0.0, getModifiedMaxStorage().toDouble())
+        onBloodStorageChanged()
     }
 
     fun setGeneratedMaxBlood(maxBlood: Double?) {
         generatedMaxBlood = maxBlood?.coerceAtLeast(getDefinitionMaxBlood())
-        bloodStored = bloodStored.coerceIn(0.0, getMaxBlood())
-        setChanged()
-        syncToClients()
+        bloodStored = bloodStored.coerceIn(0.0, getModifiedMaxStorage().toDouble())
+        onBloodStorageChanged()
     }
 
     fun fillToCapacity() {
@@ -234,6 +228,7 @@ class ObeliskBlockEntity(
 
     fun setActiveRun(runId: UUID?) {
         activeRunId = runId
+        updateGraveSoilGlow(force = true)
         setChanged()
         syncToClients()
     }
@@ -279,6 +274,7 @@ class ObeliskBlockEntity(
             .filter { it.distSqr(blockPos) <= 96.0 * 96.0 }
             .take(MAX_STORED_GRAVE_SOIL_POSITIONS)
             .map { it.immutable() }
+        updateGraveSoilGlow(force = true)
         setChanged()
         syncToClients()
     }
@@ -369,8 +365,7 @@ class ObeliskBlockEntity(
         if (amount <= 0.0) return true
         if (bloodStored < amount) return false
         bloodStored -= amount
-        setChanged()
-        syncToClients()
+        onBloodStorageChanged()
         return true
     }
 
@@ -382,8 +377,7 @@ class ObeliskBlockEntity(
         if (bloodStored >= maxStorage) return 0.0
         val actual = minOf(amount, maxStorage - bloodStored)
         bloodStored += actual
-        setChanged()
-        syncToClients()
+        onBloodStorageChanged()
         return actual
     }
 
@@ -395,9 +389,14 @@ class ObeliskBlockEntity(
         if (bloodStored >= maxStorage) return 0.0
         val actual = minOf(amount, maxStorage - bloodStored)
         bloodStored += actual
+        onBloodStorageChanged()
+        return actual
+    }
+
+    private fun onBloodStorageChanged() {
+        updateGraveSoilGlow(force = true)
         setChanged()
         syncToClients()
-        return actual
     }
 
     fun getInternalItemHandler(): ItemStackHandler = itemHandler
@@ -545,7 +544,7 @@ class ObeliskBlockEntity(
             tag.contains("blood_stored", Tag.TAG_DOUBLE.toInt()) -> tag.getDouble("blood_stored")
             tag.contains("fe_stored", Tag.TAG_INT.toInt()) -> tag.getInt("fe_stored").toDouble()
             else -> getMaxBlood()
-        }.coerceIn(0.0, getMaxBlood())
+        }.coerceIn(0.0, getModifiedMaxStorage().toDouble())
         activeRunId = if (tag.hasUUID("active_run_id")) tag.getUUID("active_run_id") else null
         cooldownUntilGameTime = 0L
         beamVisible = !tag.contains("beam_visible") || tag.getBoolean("beam_visible")

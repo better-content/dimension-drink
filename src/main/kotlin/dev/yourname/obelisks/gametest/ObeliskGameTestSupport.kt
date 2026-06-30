@@ -6,6 +6,7 @@ import dev.yourname.obelisks.MOD_ID
 import dev.yourname.obelisks.ObeliskConstants
 import dev.yourname.obelisks.api.ObeliskApi
 import dev.yourname.obelisks.api.RunBeginResult
+import dev.yourname.obelisks.content.GraveSoilBlock
 import dev.yourname.obelisks.content.ObeliskBlockEntity
 import dev.yourname.obelisks.data.CanonicalTargetResolver
 import dev.yourname.obelisks.data.GraveyardPaletteDefinition
@@ -1187,6 +1188,47 @@ object ObeliskGameTestSupport {
         val drained = tank.drain(FluidStack(lifeEssence, 400), IFluidHandler.FluidAction.EXECUTE)
         helper.assertTrue(drained.fluid == lifeEssence && drained.amount == 400, "Expected executed drain to return life essence")
         helper.assertTrue(obelisk.bloodStored.toInt() == 600, "Expected drain to reduce font blood")
+        helper.succeed()
+    }
+
+    fun graveSoilChargingStateFollowsFontCharging(helper: GameTestHelper) {
+        val obeliskPos = helper.absolutePos(BlockPos(20, 2, 20))
+        val soilA = obeliskPos.offset(2, 0, 0)
+        val soilB = obeliskPos.offset(-2, 0, 0)
+        placeChargedDefinitionObelisk(helper, obeliskPos, "end")
+        helper.level.setBlock(soilA, ModBlocks.GRAVE_SOIL.get().defaultBlockState(), 3)
+        helper.level.setBlock(soilB, ModBlocks.GRAVE_SOIL.get().defaultBlockState(), 3)
+
+        val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
+            ?: error("Expected obelisk block entity for grave soil charging test")
+        obelisk.setGraveSoilPositions(listOf(soilA, soilB))
+        obelisk.setEnergyStoredForDebug(0)
+        helper.assertTrue(
+            helper.level.getBlockState(soilA).getValue(GraveSoilBlock.CHARGING) &&
+                helper.level.getBlockState(soilB).getValue(GraveSoilBlock.CHARGING),
+            "Expected recorded grave soil to glow while the font is charging"
+        )
+
+        obelisk.fillToCapacity()
+        helper.assertTrue(
+            !helper.level.getBlockState(soilA).getValue(GraveSoilBlock.CHARGING) &&
+                !helper.level.getBlockState(soilB).getValue(GraveSoilBlock.CHARGING),
+            "Expected recorded grave soil glow to stop when the font is full"
+        )
+
+        obelisk.drainBlood(1.0)
+        obelisk.setActiveRun(UUID.randomUUID())
+        helper.assertTrue(
+            !helper.level.getBlockState(soilA).getValue(GraveSoilBlock.CHARGING) &&
+                !helper.level.getBlockState(soilB).getValue(GraveSoilBlock.CHARGING),
+            "Expected recorded grave soil glow to stay off while a run is active"
+        )
+        obelisk.setActiveRun(null)
+        helper.assertTrue(
+            helper.level.getBlockState(soilA).getValue(GraveSoilBlock.CHARGING) &&
+                helper.level.getBlockState(soilB).getValue(GraveSoilBlock.CHARGING),
+            "Expected recorded grave soil glow to resume after an active run clears"
+        )
         helper.succeed()
     }
 
