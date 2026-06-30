@@ -53,6 +53,10 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private const val FONT_CLEARANCE = 3
         private const val ALTAR_HEIGHT = 1
         private const val ALTAR_RADIUS = 3
+        private const val COURT_MIN_HALF_EXTENT = 5
+        private const val COURT_MAX_HALF_EXTENT = 7
+        private const val COURT_PATH_SCAN_RADIUS = 8
+        private const val COURT_ENTRY_SCAN_DISTANCE = 12
         private const val RELIQUARY_MIN_RADIUS = 8
         private const val RELIQUARY_RADIUS = 136
         private const val ALTAR_MAX_FOUNDATION_DROP = 2
@@ -282,7 +286,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             placeWetBiomeOvergrowth(level, setBlock, tiles.values.toList(), random)
             graveRecords.forEach { enforceGraveLine(level, setBlock, it, pathColumns) }
 
-            val fontPos = placeElevatedAltar(level, setBlock, altarCenter, altarSurface, palette, random)
+            val courtLayout = shapeReliquaryCourt(level, setBlock, altarCenter, palette, pathColumns)
+            val fontPos = placeElevatedAltar(level, setBlock, altarCenter, altarSurface, palette, courtLayout, random)
             return BuiltSite(fontPos, generatedCapacityForSite(definition, tiles), graveSoilPositionsFor(graveRecords))
         }
 
@@ -924,8 +929,10 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 val neighbor = tiles[tile.coord.relative(direction)] ?: return@forEach
                 if (abs(neighbor.groundPos.y - tile.groundPos.y) != 1) return@forEach
                 val lower = if (neighbor.groundPos.y < tile.groundPos.y) neighbor.groundPos else tile.groundPos
-                val slabPos = lower.relative(if (lower == tile.groundPos) direction else direction.opposite, TILE_SIZE / 2).above()
-                if (canReplaceDecoration(level, slabPos) && isSupportedGround(level, slabPos.below(), level.getBlockState(slabPos.below()))) {
+                val supportPos = lower.relative(if (lower == tile.groundPos) direction else direction.opposite, TILE_SIZE / 2)
+                val slabPos = supportPos.above()
+                if (canUseTileGround(level, supportPos, clearance = 1) && canReplaceDecoration(level, slabPos)) {
+                    placeMinimalPath(level, setBlock, supportPos)
                     setBlock(slabPos, cutCopperSlabState(slabPos), 3)
                 }
             }
@@ -934,7 +941,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private fun placeSlopeStep(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, a: BlockPos, b: BlockPos) {
             val lower = if (a.y < b.y) a else b
             val slabPos = lower.above()
-            if (canReplaceDecoration(level, slabPos) && isSupportedGround(level, lower, level.getBlockState(lower))) {
+            if (canUseTileGround(level, lower, clearance = 1) && canReplaceDecoration(level, slabPos)) {
+                placeMinimalPath(level, setBlock, lower)
                 setBlock(slabPos, cutCopperSlabState(slabPos), 3)
             }
         }
@@ -959,6 +967,10 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
         private fun columnKey(pos: BlockPos): Long =
             (pos.x.toLong() shl 32) xor (pos.z.toLong() and 0xffffffffL)
+
+        private fun columnX(key: Long): Int = (key shr 32).toInt()
+
+        private fun columnZ(key: Long): Int = key.toInt()
 
         private fun buildBurialPlot(
             level: LevelAccessor,
@@ -1980,6 +1992,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 val ground = terrainGroundInChunk(level, center.offset(dx, 0, dz), chunk, maxY, 1) ?: return@forEach
                 placeSupportedAbove(level, setBlock, ground.above(), palette.decoration(random))
             }
+            shapeReliquaryCourt(level, setBlock, center, palette, pathColumns) { pos -> isInsideChunkBounds(pos, chunk) }
             return graveSoilPositions.distinctBy { it.asLong() }
         }
 
@@ -2060,6 +2073,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             center: BlockPos,
             surfaceByOffset: Map<Pair<Int, Int>, Int>,
             palette: GraveyardPalette,
+            courtLayout: CourtLayout,
             random: RandomSource
         ): BlockPos {
             val baseY = center.y
@@ -2085,7 +2099,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
             val pedestalPos = center.above(ALTAR_HEIGHT)
             setBlock(pedestalPos, generatedState(Blocks.RAW_COPPER_BLOCK, pedestalPos), 3)
-            placeAltarWelcomeDetails(level, setBlock, center, palette)
+            placeAltarWelcomeDetails(level, setBlock, center, palette, courtLayout)
             val fontPos = center.above(ALTAR_HEIGHT + 1)
             for (dy in 1..FONT_CLEARANCE) {
                 setBlock(fontPos.above(dy), Blocks.AIR.defaultBlockState(), 3)
@@ -2093,11 +2107,204 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             return fontPos
         }
 
+        private fun shapeReliquaryCourt(
+            level: LevelAccessor,
+            setBlock: (BlockPos, BlockState, Int) -> Boolean,
+            altarCenter: BlockPos,
+            palette: GraveyardPalette,
+            pathColumns: Set<Long>,
+            allowed: (BlockPos) -> Boolean = { true }
+        ): CourtLayout {
+            val layout = planCourtLayout(altarCenter, pathColumns)
+            for (x in layout.minX..layout.maxX) {
+                for (z in layout.minZ..layout.maxZ) {
+                    if (!allowed(BlockPos(x, altarCenter.y, z))) continue
+                    val ground = findCourtGround(level, altarCenter, x, z) ?: continue
+                    reclaimCourtColumn(level, setBlock, ground, altarCenter)
+                    val zone = layout.zoneFor(ground, altarCenter)
+                    val block = courtFloorBlock(ground, palette, zone)
+                    setBlock(ground, generatedState(block, ground), 3)
+                }
+            }
+            blendCourtEntries(level, setBlock, altarCenter, layout, allowed)
+            placeCourtPerimeterPots(level, setBlock, altarCenter, layout, allowed)
+            return layout
+        }
+
+        private fun planCourtLayout(altarCenter: BlockPos, pathColumns: Set<Long>): CourtLayout {
+            var minX = altarCenter.x - (ALTAR_RADIUS + 1)
+            var maxX = altarCenter.x + (ALTAR_RADIUS + 1)
+            var minZ = altarCenter.z - (ALTAR_RADIUS + 1)
+            var maxZ = altarCenter.z + (ALTAR_RADIUS + 1)
+            pathColumns.forEach { key ->
+                val x = columnX(key)
+                val z = columnZ(key)
+                if (abs(x - altarCenter.x) > COURT_PATH_SCAN_RADIUS || abs(z - altarCenter.z) > COURT_PATH_SCAN_RADIUS) return@forEach
+                minX = minOf(minX, x)
+                maxX = maxOf(maxX, x)
+                minZ = minOf(minZ, z)
+                maxZ = maxOf(maxZ, z)
+            }
+            val targetSpan = (maxOf(maxX - minX, maxZ - minZ) + 2).coerceIn(COURT_MIN_HALF_EXTENT * 2, COURT_MAX_HALF_EXTENT * 2)
+            while (maxX - minX < targetSpan) {
+                minX--
+                if (maxX - minX < targetSpan) maxX++
+            }
+            while (maxZ - minZ < targetSpan) {
+                minZ--
+                if (maxZ - minZ < targetSpan) maxZ++
+            }
+            val entryOffsets = Direction.Plane.HORIZONTAL.associateWith { direction ->
+                detectCourtEntryOffsets(altarCenter, direction, minX, maxX, minZ, maxZ, pathColumns)
+            }.filterValues { it.isNotEmpty() }
+            return CourtLayout(minX, maxX, minZ, maxZ, entryOffsets)
+        }
+
+        private fun detectCourtEntryOffsets(
+            altarCenter: BlockPos,
+            direction: Direction,
+            minX: Int,
+            maxX: Int,
+            minZ: Int,
+            maxZ: Int,
+            pathColumns: Set<Long>
+        ): Set<Int> {
+            val offsets = mutableSetOf<Int>()
+            for (distance in ALTAR_RADIUS + 1..COURT_ENTRY_SCAN_DISTANCE) {
+                val probe = altarCenter.relative(direction, distance)
+                val offset = if (direction.axis == Direction.Axis.X) probe.z - altarCenter.z else probe.x - altarCenter.x
+                val withinCourtWidth = if (direction.axis == Direction.Axis.X) {
+                    probe.z in (minZ - 1)..(maxZ + 1)
+                } else {
+                    probe.x in (minX - 1)..(maxX + 1)
+                }
+                if (!withinCourtWidth) continue
+                if (listOf(0, -1, 1).any { side ->
+                        val lane = if (direction.axis == Direction.Axis.X) probe.offset(0, 0, side) else probe.offset(side, 0, 0)
+                        columnKey(lane) in pathColumns
+                    }
+                ) {
+                    offsets += offset
+                }
+            }
+            return offsets
+        }
+
+        private fun findCourtGround(level: LevelAccessor, altarCenter: BlockPos, x: Int, z: Int): BlockPos? {
+            val top = altarCenter.y + ALTAR_MAX_FOUNDATION_DROP + 2
+            val bottom = (altarCenter.y - (ALTAR_MAX_FOUNDATION_DROP + 4)).coerceAtLeast(level.minBuildHeight + 1)
+            for (y in top downTo bottom) {
+                val pos = BlockPos(x, y, z)
+                val state = level.getBlockState(pos)
+                if (canReclaimCourtClutter(state)) continue
+                if (isSupportedGround(level, pos, state) && hasClearance(level, pos, 3)) return pos
+            }
+            return null
+        }
+
+        private fun reclaimCourtColumn(
+            level: LevelAccessor,
+            setBlock: (BlockPos, BlockState, Int) -> Boolean,
+            ground: BlockPos,
+            altarCenter: BlockPos
+        ) {
+            if (maxOf(abs(ground.x - altarCenter.x), abs(ground.z - altarCenter.z)) <= ALTAR_RADIUS) return
+            for (dy in 1..3) {
+                val pos = ground.above(dy)
+                val state = level.getBlockState(pos)
+                if (state.isAir) continue
+                if (canReclaimCourtClutter(state)) {
+                    setBlock(pos, Blocks.AIR.defaultBlockState(), 3)
+                }
+            }
+        }
+
+        private fun canReclaimCourtClutter(state: BlockState): Boolean {
+            if (canReplaceSiteAirspace(state)) return true
+            if (state.`is`(Blocks.PACKED_MUD) || state.`is`(Blocks.MUD) || state.`is`(Blocks.MOSS_CARPET)) return true
+            if (state.`is`(Blocks.DARK_OAK_WALL_SIGN)) return true
+            return isDisplayDetailBlock(state.block)
+        }
+
+        private fun courtFloorBlock(pos: BlockPos, palette: GraveyardPalette, zone: CourtZone): Block =
+            when (zone) {
+                CourtZone.CORNER -> palette.courtAnchorBlock(pos)
+                CourtZone.EDGE -> palette.courtSupportBlock(pos)
+                CourtZone.ENTRY_THRESHOLD -> if (((pos.x + pos.z) and 1) == 0) palette.courtAnchorBlock(pos) else palette.courtSupportBlock(pos)
+                CourtZone.ALTAR_THRESHOLD -> if (Math.floorMod(pos.x * 17 + pos.z * 13, 5) == 0) palette.courtSupportBlock(pos) else palette.courtPrimaryBlock(pos)
+                CourtZone.CROSSROADS -> when (Math.floorMod(pos.x * 19 + pos.z * 31, 7)) {
+                    0 -> palette.courtSupportBlock(pos)
+                    1 -> palette.courtAnchorBlock(pos)
+                    else -> palette.courtPrimaryBlock(pos)
+                }
+                CourtZone.PERIMETER_POCKET -> if (Math.floorMod(pos.x * 11 + pos.z * 7, 4) == 0) palette.courtAnchorBlock(pos) else palette.courtPrimaryBlock(pos)
+            }
+
+        private fun blendCourtEntries(
+            level: LevelAccessor,
+            setBlock: (BlockPos, BlockState, Int) -> Boolean,
+            altarCenter: BlockPos,
+            layout: CourtLayout,
+            allowed: (BlockPos) -> Boolean
+        ) {
+            layout.entryOffsets.forEach { (direction, offsets) ->
+                offsets.forEach { offset ->
+                    val edge = layout.edgePos(direction, offset, altarCenter)
+                    if (!allowed(edge)) return@forEach
+                    val edgeGround = terrainGroundNear(level, edge, altarCenter.y + 5, 1) ?: return@forEach
+                    for (step in 1..2) {
+                        val outside = edge.relative(direction, step)
+                        if (!allowed(outside)) continue
+                        val outsideGround = terrainGroundNear(level, outside, altarCenter.y + 5, 1) ?: continue
+                        if (!canUseTileGround(level, outsideGround, 1)) continue
+                        placeMinimalPath(level, setBlock, outsideGround)
+                        if (abs(outsideGround.y - edgeGround.y) == 1) {
+                            placeSlopeStep(level, setBlock, edgeGround, outsideGround)
+                        }
+                    }
+                }
+            }
+        }
+
+        private fun placeCourtPerimeterPots(
+            level: LevelAccessor,
+            setBlock: (BlockPos, BlockState, Int) -> Boolean,
+            altarCenter: BlockPos,
+            layout: CourtLayout,
+            allowed: (BlockPos) -> Boolean
+        ) {
+            val wet = isWetBiome(level, altarCenter)
+            val pockets = listOf(
+                BlockPos(layout.minX + 1, altarCenter.y, layout.minZ + 1),
+                BlockPos(layout.minX + 1, altarCenter.y, layout.maxZ - 1),
+                BlockPos(layout.maxX - 1, altarCenter.y, layout.minZ + 1),
+                BlockPos(layout.maxX - 1, altarCenter.y, layout.maxZ - 1),
+                BlockPos(altarCenter.x, altarCenter.y, layout.minZ + 1),
+                BlockPos(altarCenter.x, altarCenter.y, layout.maxZ - 1),
+                BlockPos(layout.minX + 1, altarCenter.y, altarCenter.z),
+                BlockPos(layout.maxX - 1, altarCenter.y, altarCenter.z)
+            )
+            pockets.distinctBy { it.x to it.z }.forEach { rough ->
+                val candidateOffsets = listOf(0 to 0, 1 to 0, -1 to 0, 0 to 1, 0 to -1)
+                val placed = candidateOffsets.any { (dx, dz) ->
+                    val candidate = rough.offset(dx, 0, dz)
+                    if (!allowed(candidate)) return@any false
+                    val zone = layout.zoneFor(candidate, altarCenter)
+                    if (zone != CourtZone.PERIMETER_POCKET && zone != CourtZone.CORNER) return@any false
+                    val ground = terrainGroundNear(level, candidate, altarCenter.y + 5, 1) ?: return@any false
+                    if (!canUseTileGround(level, ground, 1) || !canReplaceDecoration(level, ground.above())) return@any false
+                    setBlock(ground.above(), generatedState(courtPotBlock(wet, ground.above()), ground.above()), 3)
+                }
+                if (!placed) return@forEach
+            }
+        }
+
         private fun placeAltarWelcomeDetails(
             level: LevelAccessor,
             setBlock: (BlockPos, BlockState, Int) -> Boolean,
             center: BlockPos,
-            palette: GraveyardPalette
+            palette: GraveyardPalette,
+            courtLayout: CourtLayout
         ) {
             val baseY = center.y
             Direction.Plane.HORIZONTAL.forEach { direction ->
@@ -2105,21 +2312,34 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 val outer = center.relative(direction, 3)
                 val midPos = BlockPos(mid.x, baseY + 1, mid.z)
                 val outerPos = BlockPos(outer.x, baseY + 1, outer.z)
-                setBlock(midPos, generatedState(palette.path(RandomSource.create(center.asLong() xor direction.ordinal.toLong())), midPos), 3)
-                setBlock(
-                    outerPos,
-                    generatedState(Blocks.CUT_COPPER_STAIRS, outerPos).setValue(BlockStateProperties.HORIZONTAL_FACING, direction.opposite),
-                    3
-                )
-            }
-            Direction.Plane.HORIZONTAL.forEach { direction ->
-                val side = if (direction.axis == Direction.Axis.X) Direction.NORTH else Direction.EAST
-                val rough = center.relative(direction, 4).relative(side, 2)
-                val trophyBase = terrainGroundNear(level, rough, center.y + ALTAR_HEIGHT + 4, 3) ?: return@forEach
-                placeTrophyDisplay(level, setBlock, trophyBase, palette, emptySet(), RandomSource.create(center.asLong() xor direction.ordinal.toLong()))
+                setBlock(midPos, generatedState(palette.courtPrimaryBlock(midPos), midPos), 3)
+                if (direction in courtLayout.entryOffsets.keys) {
+                    setBlock(
+                        outerPos,
+                        generatedState(Blocks.CUT_COPPER_STAIRS, outerPos).setValue(BlockStateProperties.HORIZONTAL_FACING, direction.opposite),
+                        3
+                    )
+                } else {
+                    setBlock(outerPos, generatedState(palette.courtSupportBlock(outerPos), outerPos), 3)
+                }
             }
             placeAltarCopperRoof(level, setBlock, center)
         }
+
+        internal fun courtPotBlockForTests(wet: Boolean, pos: BlockPos): Block =
+            courtPotBlock(wet, pos)
+
+        private fun courtPotBlock(wet: Boolean, pos: BlockPos): Block =
+            if (!wet) {
+                Blocks.POTTED_DEAD_BUSH
+            } else {
+                when (Math.floorMod(pos.x * 37 + pos.z * 19 + pos.y * 7, 4)) {
+                    0 -> Blocks.POTTED_FERN
+                    1 -> Blocks.POTTED_AZALEA
+                    2 -> Blocks.POTTED_FLOWERING_AZALEA
+                    else -> Blocks.POTTED_MANGROVE_PROPAGULE
+                }
+            }
 
         private fun placeAltarCopperRoof(
             level: LevelAccessor,
@@ -2502,6 +2722,15 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             fun clusterStructure(random: RandomSource): TileType = clusterStructures[random.nextInt(clusterStructures.size)]
             fun edgeStructure(random: RandomSource): TileType = edgeStructures[random.nextInt(edgeStructures.size)]
             fun fieldStructure(random: RandomSource): TileType = fieldStructures[random.nextInt(fieldStructures.size)]
+            fun courtPrimaryBlock(pos: BlockPos): Block =
+                structure.firstOrNull { it == Blocks.CUT_COPPER || it == Blocks.EXPOSED_CUT_COPPER || it == Blocks.WEATHERED_CUT_COPPER }
+                    ?: ageCopperBlock(Blocks.CUT_COPPER, pos)
+            fun courtSupportBlock(pos: BlockPos): Block =
+                structure.firstOrNull { it == Blocks.COPPER_BLOCK || it == Blocks.EXPOSED_COPPER || it == Blocks.WEATHERED_COPPER }
+                    ?: ageCopperBlock(Blocks.COPPER_BLOCK, pos)
+            fun courtAnchorBlock(pos: BlockPos): Block =
+                structure.firstOrNull { it == Blocks.RAW_COPPER_BLOCK }
+                    ?: ageCopperBlock(Blocks.RAW_COPPER_BLOCK, pos)
 
             companion object {
                 private val THEMES = listOf(
@@ -2619,6 +2848,15 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val headstone: Block
         )
 
+        private enum class CourtZone {
+            ALTAR_THRESHOLD,
+            CROSSROADS,
+            PERIMETER_POCKET,
+            EDGE,
+            CORNER,
+            ENTRY_THRESHOLD
+        }
+
         private enum class TileType {
             FONT_PEDESTAL,
             PATH,
@@ -2671,6 +2909,47 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val radius: Int,
             val footprintSize: Int
         )
+
+        private data class CourtLayout(
+            val minX: Int,
+            val maxX: Int,
+            val minZ: Int,
+            val maxZ: Int,
+            val entryOffsets: Map<Direction, Set<Int>>
+        ) {
+            fun zoneFor(pos: BlockPos, altarCenter: BlockPos): CourtZone {
+                val onMinX = pos.x == minX
+                val onMaxX = pos.x == maxX
+                val onMinZ = pos.z == minZ
+                val onMaxZ = pos.z == maxZ
+                if ((onMinX || onMaxX) && (onMinZ || onMaxZ)) return CourtZone.CORNER
+                val edgeDirection = when {
+                    onMinZ -> Direction.NORTH
+                    onMaxZ -> Direction.SOUTH
+                    onMinX -> Direction.WEST
+                    onMaxX -> Direction.EAST
+                    else -> null
+                }
+                if (edgeDirection != null) {
+                    val offset = if (edgeDirection.axis == Direction.Axis.X) pos.z - altarCenter.z else pos.x - altarCenter.x
+                    if (entryOffsets[edgeDirection]?.any { abs(it - offset) <= 1 } == true) return CourtZone.ENTRY_THRESHOLD
+                    return CourtZone.EDGE
+                }
+                val radius = maxOf(abs(pos.x - altarCenter.x), abs(pos.z - altarCenter.z))
+                if (radius <= ALTAR_RADIUS + 1) return CourtZone.ALTAR_THRESHOLD
+                if (radius >= COURT_MIN_HALF_EXTENT - 1) return CourtZone.PERIMETER_POCKET
+                return CourtZone.CROSSROADS
+            }
+
+            fun edgePos(direction: Direction, offset: Int, altarCenter: BlockPos): BlockPos =
+                when (direction) {
+                    Direction.NORTH -> BlockPos(altarCenter.x + offset, altarCenter.y, minZ)
+                    Direction.SOUTH -> BlockPos(altarCenter.x + offset, altarCenter.y, maxZ)
+                    Direction.WEST -> BlockPos(minX, altarCenter.y, altarCenter.z + offset)
+                    Direction.EAST -> BlockPos(maxX, altarCenter.y, altarCenter.z + offset)
+                    else -> altarCenter
+                }
+        }
 
         private data class BuiltSite(
             val fontPos: BlockPos,
@@ -2811,7 +3090,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             placeWetBiomeOvergrowth(level, plannedSetBlock, fullPlan.values.toList(), detailRandom)
             graveRecords.forEach { enforceGraveLine(level, plannedSetBlock, it, pathColumns) }
 
-            val fontPos = placeElevatedAltar(level, plannedSetBlock, altarCenter, altarSurface, palette, detailRandom)
+            val courtLayout = shapeReliquaryCourt(level, plannedSetBlock, altarCenter, palette, pathColumns)
+            val fontPos = placeElevatedAltar(level, plannedSetBlock, altarCenter, altarSurface, palette, courtLayout, detailRandom)
             val tileRadius = fullPlan.keys.maxOfOrNull { maxOf(abs(it.x), abs(it.z)) } ?: MIN_TILE_RADIUS
             val allPositions = placements.map { it.pos } + fontPos
             return PlannedSite(
@@ -2854,7 +3134,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 if (!isInsideChunkBounds(altarCenter, chunk) || !isChunkInterior(altarCenter, ALTAR_RADIUS + 1)) return null
                 val altarSurface = altarSurfaceMap(level, altarCenter) ?: return null
                 if (!canPlaceElevatedAltarAndFont(level, altarCenter, altarSurface)) return null
-                fontPos = placeElevatedAltar(level, chunkLocalSetBlock, altarCenter, altarSurface, palette, detailRandom)
+                val courtLayout = shapeReliquaryCourt(level, chunkLocalSetBlock, altarCenter, palette, emptySet())
+                fontPos = placeElevatedAltar(level, chunkLocalSetBlock, altarCenter, altarSurface, palette, courtLayout, detailRandom)
                 altarCenter
             } else {
                 center

@@ -1492,8 +1492,8 @@ object ObeliskGameTestSupport {
             "Expected $label generated graveyard font capacity to exceed definition base capacity"
         )
         helper.assertTrue(
-            obelisk?.bloodStored == obelisk?.getMaxBlood(),
-            "Expected $label generated graveyard font to be filled to its generated capacity"
+            obelisk?.bloodStored == obelisk?.getModifiedMaxStorage()?.toDouble(),
+            "Expected $label generated graveyard font to be filled to its effective capacity"
         )
         helper.assertTrue(
             helper.level.getBlockState(baseCenter).`is`(Blocks.RAW_COPPER_BLOCK) ||
@@ -1606,6 +1606,23 @@ object ObeliskGameTestSupport {
                 state.`is`(Blocks.EXPOSED_COPPER) ||
                 state.`is`(Blocks.WEATHERED_COPPER) ||
                 state.`is`(Blocks.RAW_COPPER_BLOCK)
+        fun isCopperCourtFloor(state: net.minecraft.world.level.block.state.BlockState): Boolean =
+            state.`is`(Blocks.CUT_COPPER) ||
+                state.`is`(Blocks.EXPOSED_CUT_COPPER) ||
+                state.`is`(Blocks.WEATHERED_CUT_COPPER) ||
+                state.`is`(Blocks.COPPER_BLOCK) ||
+                state.`is`(Blocks.EXPOSED_COPPER) ||
+                state.`is`(Blocks.WEATHERED_COPPER) ||
+                state.`is`(Blocks.RAW_COPPER_BLOCK)
+        fun isLivingCourtPot(state: net.minecraft.world.level.block.state.BlockState): Boolean =
+            state.`is`(Blocks.POTTED_FERN) ||
+                state.`is`(Blocks.POTTED_AZALEA) ||
+                state.`is`(Blocks.POTTED_FLOWERING_AZALEA) ||
+                state.`is`(Blocks.POTTED_MANGROVE_PROPAGULE)
+        fun isDeadCourtPot(state: net.minecraft.world.level.block.state.BlockState): Boolean =
+            state.`is`(Blocks.POTTED_DEAD_BUSH)
+        fun columnHas(dx: Int, dz: Int, minDy: Int, maxDy: Int, predicate: (net.minecraft.world.level.block.state.BlockState) -> Boolean): Boolean =
+            (minDy..maxDy).any { dy -> predicate(helper.level.getBlockState(graveyardFloorCenter.offset(dx, dy, dz))) }
         fun detailWeight(pos: BlockPos): Int {
             val state = helper.level.getBlockState(pos)
             var weight = 0
@@ -1679,9 +1696,76 @@ object ObeliskGameTestSupport {
                 tileDetailCounts += localDetails
             }
         }
+        var courtCopperInterior = 0
+        var courtMudInterior = 0
+        var courtCornerSignals = 0
+        var courtEntrySignals = 0
+        var perimeterPotSignals = 0
+        var centralPotSignals = 0
+        var livingPotSignals = 0
+        var deadPotSignals = 0
+        for (dx in -6..6) {
+            for (dz in -6..6) {
+                if (maxOf(abs(dx), abs(dz)) <= 5) {
+                    if (columnHas(dx, dz, -1, 4, ::isCopperCourtFloor)) courtCopperInterior++
+                    if (columnHas(dx, dz, -1, 4) { it.`is`(Blocks.PACKED_MUD) }) courtMudInterior++
+                }
+                if (abs(dx) == 5 && abs(dz) == 5 && columnHas(dx, dz, -1, 4, ::isCopperCourtFloor)) {
+                    courtCornerSignals++
+                }
+                if (maxOf(abs(dx), abs(dz)) <= 2 && columnHas(dx, dz, 0, 4) { isLivingCourtPot(it) || isDeadCourtPot(it) }) {
+                    centralPotSignals++
+                }
+                if (maxOf(abs(dx), abs(dz)) in 4..6 && columnHas(dx, dz, 0, 4) { isLivingCourtPot(it) || isDeadCourtPot(it) }) {
+                    perimeterPotSignals++
+                }
+                if (columnHas(dx, dz, 0, 4, ::isLivingCourtPot)) livingPotSignals++
+                if (columnHas(dx, dz, 0, 4, ::isDeadCourtPot)) deadPotSignals++
+            }
+        }
+        Direction.Plane.HORIZONTAL.forEach { direction ->
+            val hasInteriorCopper = (4..6).any { step ->
+                val probe = when (direction) {
+                    Direction.NORTH -> 0 to -step
+                    Direction.SOUTH -> 0 to step
+                    Direction.WEST -> -step to 0
+                    Direction.EAST -> step to 0
+                    else -> 0 to 0
+                }
+                listOf(-1, 0, 1).any { side ->
+                    val sample = if (direction.axis == Direction.Axis.X) probe.first to probe.second + side else probe.first + side to probe.second
+                    columnHas(sample.first, sample.second, -1, 4, ::isCopperCourtFloor)
+                }
+            }
+            val hasExteriorMud = (7..9).any { step ->
+                val probe = when (direction) {
+                    Direction.NORTH -> 0 to -step
+                    Direction.SOUTH -> 0 to step
+                    Direction.WEST -> -step to 0
+                    Direction.EAST -> step to 0
+                    else -> 0 to 0
+                }
+                listOf(-1, 0, 1).any { side ->
+                    val sample = if (direction.axis == Direction.Axis.X) probe.first to probe.second + side else probe.first + side to probe.second
+                    columnHas(sample.first, sample.second, -1, 3) { it.`is`(Blocks.PACKED_MUD) }
+                }
+            }
+            if (hasInteriorCopper && hasExteriorMud) courtEntrySignals++
+        }
         helper.assertTrue(pathSignals >= 8, "Expected $label reliquary to include readable processional path/floor tiles")
         helper.assertTrue(graveSignals >= 6, "Expected $label reliquary to include generated grave markers")
         helper.assertTrue(structureSignals >= 8, "Expected $label reliquary to include altar and ritual structure signals")
+        helper.assertTrue(courtCopperInterior >= 36, "Expected $label reliquary court interior to be copper-dominant")
+        helper.assertTrue(courtCopperInterior > courtMudInterior, "Expected $label reliquary court to read as a built square instead of a mud crossroads")
+        helper.assertTrue(courtCornerSignals >= 3, "Expected $label reliquary court to keep a strong framed edge at the corners")
+        helper.assertTrue(courtEntrySignals >= 2, "Expected $label reliquary court to blend at least two real path entries from mud into copper")
+        if (label != "modded") {
+            helper.assertTrue(perimeterPotSignals >= 1, "Expected $label reliquary court to reserve decorative pots for perimeter pockets")
+        }
+        helper.assertTrue(centralPotSignals == 0, "Expected $label reliquary court center to stay clear of decorative pots")
+        if (label != "modded") {
+            helper.assertTrue(deadPotSignals >= 1, "Expected $label dry reliquary court dressing to use dead potted decoration")
+        }
         if (label == "modded") {
             helper.assertTrue(generatedTerrainLevels.size >= 1, "Expected modded reliquary to occupy generated terrain")
         }
