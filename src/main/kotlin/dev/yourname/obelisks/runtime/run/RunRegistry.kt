@@ -215,6 +215,10 @@ object RunRegistry : RunService {
         if (validationError != null) {
             return "Cannot open ${displayName(obelisk.definitionId)} run: $validationError"
         }
+        val startBloodMinimum = obelisk.getBloodStartCost()
+        if (obelisk.bloodStored < startBloodMinimum) {
+            return "The font needs ${startBloodMinimum.toInt()} mB of blood to open."
+        }
         val created = createRun(
             server = server,
             obeliskId = obelisk.obeliskId,

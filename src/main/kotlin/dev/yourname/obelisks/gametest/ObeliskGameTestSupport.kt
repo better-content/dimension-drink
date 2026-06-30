@@ -309,6 +309,47 @@ object ObeliskGameTestSupport {
         }
     }
 
+    fun fontRequiresVisibleBloodToStartRun(helper: GameTestHelper) {
+        val server = helper.level.server
+        val client = connectHeadlessPlayer(helper)
+        val player = client.player
+        val obeliskPos = helper.absolutePos(BlockPos(4, 2, 6))
+
+        try {
+            configureActivationTestObelisks(server)
+            helper.level.setBlock(obeliskPos.below(), Blocks.OBSIDIAN.defaultBlockState(), 3)
+            helper.level.setBlock(obeliskPos, ModBlocks.OBELISK.get().defaultBlockState(), 3)
+            val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
+                ?: error("Expected placed obelisk block entity to exist")
+            prepareTestObelisk(obelisk)
+
+            waitForPreparedTemplate(helper, "end") {
+                obelisk.setEnergyStoredForDebug(obelisk.getBloodStartCost().toInt() - 1)
+                val rejected = RunRegistry.activateObelisk(player, obelisk, obeliskPos)
+                helper.assertTrue(
+                    rejected?.contains("500 mB") == true,
+                    "Expected font activation below 500 mB to reject, got: $rejected"
+                )
+                helper.assertTrue(obelisk.activeRunId == null, "Expected low-blood font not to create a run")
+
+                obelisk.setEnergyStoredForDebug(obelisk.getBloodStartCost().toInt())
+                val accepted = RunRegistry.activateObelisk(player, obelisk, obeliskPos)
+                helper.assertTrue(
+                    accepted?.startsWith("Drinking from ") == true,
+                    "Expected font activation at 500 mB to start drinking warmup, got: $accepted"
+                )
+                val runId = obelisk.activeRunId
+                helper.assertTrue(runId != null && RunRegistry.get(runId) != null, "Expected 500 mB font to create a run")
+                runId?.let { RunRegistry.finishRun(server, it) }
+                client.close(server)
+                helper.succeed()
+            }
+        } catch (t: Throwable) {
+            client.close(server)
+            throw t
+        }
+    }
+
     fun relocatedSpawnRetargetsTravelWarmup(helper: GameTestHelper) {
         val server = helper.level.server
         configureActivationTestObelisks(server)

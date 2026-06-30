@@ -11,6 +11,11 @@ class ObeliskActivationGameTests {
         ObeliskGameTestSupport.chargedObeliskActivatesRunAndReturnsPlayer(helper)
     }
 
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_activation_minimum_blood", timeoutTicks = 800)
+    fun font_requires_visible_blood_to_start_run(helper: GameTestHelper) {
+        ObeliskGameTestSupport.fontRequiresVisibleBloodToStartRun(helper)
+    }
+
     @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_activation_relocated", timeoutTicks = 3600)
     fun relocated_spawn_normalizes_canonical_target(helper: GameTestHelper) {
         ObeliskGameTestSupport.relocatedSpawnRetargetsTravelWarmup(helper)

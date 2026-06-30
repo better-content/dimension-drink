@@ -244,7 +244,7 @@ class ObeliskBlockEntity(
     private fun getDefinitionMaxBlood(): Double =
         ObeliskDataManager.getObelisk(definitionId)?.maxBlood ?: ObeliskConstants.MAX_BLOOD_STORAGE
 
-    fun getBloodStartCost(): Double = 0.0
+    fun getBloodStartCost(): Double = 500.0
 
     fun getBloodJoinCost(): Double = 0.0
 
