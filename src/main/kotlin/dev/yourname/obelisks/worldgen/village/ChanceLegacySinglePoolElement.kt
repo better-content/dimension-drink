@@ -45,7 +45,7 @@ class ChanceLegacySinglePoolElement(
         return super.place(structureTemplateManager, level, structureManager, chunkGenerator, blockPos, pivot, rotation, boundingBox, random, keepJigsaws)
     }
 
-    override fun getType(): StructurePoolElementType<*> = ModStructurePoolElements.CHANCE_LEGACY_SINGLE
+    override fun getType(): StructurePoolElementType<*> = ModStructurePoolElements.CHANCE_LEGACY_SINGLE.get()
 
     fun matchesLocation(other: ResourceLocation): Boolean = location == other
 

@@ -4,7 +4,7 @@ import net.minecraftforge.eventbus.api.IEventBus
 
 object ModRegistries {
     fun registerAll(bus: IEventBus) {
-        ModStructurePoolElements.bootstrap()
+        ModStructurePoolElements.register(bus)
         ModBlocks.REGISTRY.register(bus)
         ModItems.REGISTRY.register(bus)
         ModBlockEntities.REGISTRY.register(bus)

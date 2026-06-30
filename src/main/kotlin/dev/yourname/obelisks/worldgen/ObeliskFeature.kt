@@ -60,7 +60,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private const val SITE_GRID_CHUNKS = 6
         private const val SITE_GRID_BLOCKS = SITE_GRID_CHUNKS * 16
         private const val SITE_GRID_SCAN_RADIUS = 2
-        private const val TARGET_RARITY_CHUNKS = 64
+        private const val TARGET_RARITY_CHUNKS = 640
         private const val ACTIVE_SITE_THRESHOLD = 64
         private const val SITE_MAX_BLOCK_RADIUS = RELIQUARY_RADIUS + ALTAR_RADIUS + 8
         private const val SITE_LAYOUT_SALT = -0x61c8864680b583ebL
