@@ -18,6 +18,8 @@ import net.minecraft.sounds.SoundEvents
 import net.minecraft.sounds.SoundSource
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.Level
+import net.minecraft.world.level.block.Block
+import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraftforge.common.capabilities.Capability
@@ -39,6 +41,7 @@ class ObeliskBlockEntity(
     companion object {
         private const val GRAVE_SOIL_REGEN_PER_BLOCK = 0.01
         private const val GRAVE_SOIL_REGEN_MULTIPLIER_CAP = 3.0
+        private const val OXIDATION_REGEN_STEP = 0.05
         private const val MAX_STORED_GRAVE_SOIL_POSITIONS = 512
         private val BLOOD_MAGIC_LIFE_ESSENCE_FLUID_ID = ResourceLocation("bloodmagic", "life_essence_fluid")
         private const val BLOOD_MAGIC_LIFE_ESSENCE_DESCRIPTION_ID = "fluid.bloodmagic.life_essence_fluid"
@@ -261,8 +264,38 @@ class ObeliskBlockEntity(
         var rate = getBaseBloodRegenPerTick()
         modifiers.filter { it.stat == FEStat.REGEN_RATE }.forEach { rate = it.applyTo(rate) }
         rate += StillBeatingHeartCompat.lpPerTick(heartStack).toDouble()
+        rate *= getOxidationRegenMultiplier()
         rate *= getGraveSoilRegenMultiplier()
         return rate.coerceAtLeast(0.0)
+    }
+
+    fun getOxidationRegenMultiplier(): Double =
+        1.0 + (altarOxidationStage() * OXIDATION_REGEN_STEP)
+
+    private fun altarOxidationStage(): Int {
+        val currentLevel = level ?: return 0
+        var strongestStage = 0
+        for (dx in -1..1) {
+            for (dz in -1..1) {
+                strongestStage = maxOf(
+                    strongestStage,
+                    copperOxidationStage(currentLevel.getBlockState(blockPos.offset(dx, -1, dz)).block)
+                )
+            }
+        }
+        return strongestStage
+    }
+
+    private fun copperOxidationStage(block: Block): Int {
+        if (block == Blocks.RAW_COPPER_BLOCK) return 0
+        val path = ForgeRegistries.BLOCKS.getKey(block)?.path ?: return 0
+        if (!path.contains("copper")) return 0
+        return when {
+            path.contains("oxidized") -> 3
+            path.contains("weathered") -> 2
+            path.contains("exposed") -> 1
+            else -> 0
+        }
     }
 
     fun setGraveSoilPositions(positions: Collection<BlockPos>) {
