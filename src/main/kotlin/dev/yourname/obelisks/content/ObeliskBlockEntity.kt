@@ -282,7 +282,7 @@ class ObeliskBlockEntity(
     fun getModifiedDrainFactor(): Double {
         var factor = ObeliskConstants.DRAIN_EXPONENTIAL_FACTOR
         modifiers.filter { it.stat == FEStat.DRAIN_FACTOR }.forEach { factor = it.applyTo(factor) }
-        return factor
+        return factor.coerceAtLeast(0.0)
     }
 
     fun getEnergyPercent(): Double = getBloodPercent()

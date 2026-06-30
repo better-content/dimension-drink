@@ -10,7 +10,7 @@ object ObeliskConstants {
     const val BASE_FE_DRAIN_PER_TICK: Int = 20
     const val PER_PLAYER_FE_DRAIN: Int = 10
     const val FE_REGEN_PER_TICK: Int = 1
-    const val DRAIN_EXPONENTIAL_FACTOR: Double = 0.0015
+    const val DRAIN_EXPONENTIAL_FACTOR: Double = 0.00005
     const val DRAIN_EXPONENTIAL_INTERVAL_TICKS: Int = 20
     const val RUN_EMPTY_CLEANUP_DELAY_TICKS: Long = 40L
     const val BOSS_BAR_SHOW_THRESHOLD: Double = 0.90
