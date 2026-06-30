@@ -35,9 +35,10 @@ class VillageFontShrineTest {
             "minecraft:waxed_cut_copper_slab"
         )
         val copperBlocks = blockNames.filter { "copper" in it }
-        assertTrue(copperBlocks.isNotEmpty(), "Village shrine should visibly use waxed fresh copper")
+        assertTrue(copperBlocks.isNotEmpty(), "Village shrine should visibly use maintained waxed copper")
         assertTrue(copperBlocks.all { it in allowedCopper }, "Village shrine should use only maintained waxed fresh copper variants")
-        assertTrue(blockNames.count { it == "minecraft:stone_bricks" } >= 100, "Village shrine should feel like a full altar site the village built around")
+        assertTrue(blockNames.count { it == "minecraft:waxed_copper_block" } >= 100, "Village shrine should present the full altar as actively maintained waxed copper")
+        assertTrue(blockNames.none { it == "minecraft:stone_bricks" }, "Village shrine should not leave the altar shell in abandoned stone")
     }
 
     @Test

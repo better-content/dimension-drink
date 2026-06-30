@@ -6,7 +6,7 @@
     {pos: [1, 0, 0], state: 1},
     {pos: [2, 0, 0], state: 1},
     {pos: [3, 0, 0], state: 1},
-    {nbt: {final_state: "minecraft:stone_bricks", id: "minecraft:jigsaw", joint: "rollable", name: "minecraft:bottom", pool: "minecraft:empty", target: "minecraft:bottom"}, pos: [4, 0, 0], state: 2},
+    {nbt: {final_state: "minecraft:waxed_copper_block", id: "minecraft:jigsaw", joint: "rollable", name: "minecraft:bottom", pool: "minecraft:empty", target: "minecraft:bottom"}, pos: [4, 0, 0], state: 2},
     {pos: [5, 0, 0], state: 1},
     {pos: [6, 0, 0], state: 1},
     {pos: [7, 0, 0], state: 1},
@@ -173,7 +173,7 @@
   ],
   palette: [
     {Name: "minecraft:air"},
-    {Name: "minecraft:stone_bricks"},
+    {Name: "minecraft:waxed_copper_block"},
     {Name: "minecraft:jigsaw", Properties: {orientation: "down_south"}},
     {Name: "minecraft:waxed_copper_block"},
     {Name: "minecraft:waxed_cut_copper", Properties: {axis: "y"}},
