@@ -14,6 +14,7 @@ import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket
 import net.minecraft.nbt.CompoundTag
 import net.minecraft.nbt.Tag
 import net.minecraft.resources.ResourceLocation
+import net.minecraft.server.level.ServerLevel
 import net.minecraft.sounds.SoundEvents
 import net.minecraft.sounds.SoundSource
 import net.minecraft.world.item.ItemStack
@@ -275,6 +276,9 @@ class ObeliskBlockEntity(
     fun tick(tickLevel: Level, tickPos: BlockPos) {
         if (tickLevel.isClientSide) {
             clientAmbientTick(tickLevel, tickPos)
+        } else if (tickLevel is ServerLevel) {
+            updateGraveSoilGlow()
+            serverGraveSoilChargeTick(tickLevel)
         }
     }
 
@@ -540,6 +544,44 @@ class ObeliskBlockEntity(
                     soilPos.z + 0.5,
                     0.0,
                     0.015 + tickLevel.random.nextDouble() * 0.02,
+                    0.0
+                )
+            }
+        }
+    }
+
+    private fun serverGraveSoilChargeTick(tickLevel: ServerLevel) {
+        if (!isCharging()) return
+        val gameTime = tickLevel.gameTime
+        graveSoilPositions.forEach { soilPos ->
+            if (((gameTime + soilPos.asLong()) % 8L) != 0L) return@forEach
+            if (!tickLevel.isLoaded(soilPos)) return@forEach
+            if (!tickLevel.getBlockState(soilPos).`is`(ModBlocks.GRAVE_SOIL.get())) return@forEach
+
+            val x = soilPos.x + 0.5 + (tickLevel.random.nextDouble() - 0.5) * 0.35
+            val y = soilPos.y + 1.03
+            val z = soilPos.z + 0.5 + (tickLevel.random.nextDouble() - 0.5) * 0.35
+            tickLevel.sendParticles(
+                if (tickLevel.random.nextBoolean()) ParticleTypes.SOUL else ParticleTypes.SOUL_FIRE_FLAME,
+                x,
+                y,
+                z,
+                1,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+            )
+            if (tickLevel.random.nextFloat() < 0.35f) {
+                tickLevel.sendParticles(
+                    ParticleTypes.END_ROD,
+                    soilPos.x + 0.5,
+                    y + 0.05,
+                    soilPos.z + 0.5,
+                    1,
+                    0.0,
+                    0.0,
+                    0.0,
                     0.0
                 )
             }

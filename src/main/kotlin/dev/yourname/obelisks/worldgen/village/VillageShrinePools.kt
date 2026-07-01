@@ -10,6 +10,7 @@ import net.minecraft.world.level.levelgen.structure.pools.StructurePoolElement
 import net.minecraft.world.level.levelgen.structure.pools.StructureTemplatePool
 import net.minecraftforge.event.server.ServerAboutToStartEvent
 import net.minecraftforge.eventbus.api.SubscribeEvent
+import java.lang.reflect.Field
 
 object VillageShrinePools {
     private const val TARGET_ATTEMPT_RATE = 0.0025
@@ -33,9 +34,9 @@ object VillageShrinePools {
         target("taiga", 39)
     )
 
-    private val rawTemplatesField = StructureTemplatePool::class.java.getDeclaredField("rawTemplates").apply { isAccessible = true }
-    private val templatesField = StructureTemplatePool::class.java.getDeclaredField("templates").apply { isAccessible = true }
-    private val maxSizeField = StructureTemplatePool::class.java.getDeclaredField("maxSize").apply { isAccessible = true }
+    private val rawTemplatesField = findField("rawTemplates", "f_210559_")
+    private val templatesField = findField("templates", "f_210560_")
+    private val maxSizeField = findField("maxSize", "f_210562_")
 
     @SubscribeEvent
     fun onServerAboutToStart(event: ServerAboutToStartEvent) {
@@ -49,7 +50,7 @@ object VillageShrinePools {
 
     @Suppress("UNCHECKED_CAST")
     private fun appendShrineIfMissing(pool: StructureTemplatePool, target: ShrinePoolTarget) {
-        val rawTemplates = rawTemplatesField.get(pool) as MutableList<Pair<StructurePoolElement, Int>>
+        val rawTemplates = (rawTemplatesField.get(pool) as List<Pair<StructurePoolElement, Int>>).toMutableList()
         if (rawTemplates.any { pair ->
                 val element = pair.first
                 element is ChanceLegacySinglePoolElement && element.matchesLocation(target.templateId)
@@ -63,6 +64,7 @@ object VillageShrinePools {
             projection = StructureTemplatePool.Projection.RIGID
         )
         rawTemplates.add(Pair.of(shrine, SHRINE_WEIGHT))
+        rawTemplatesField.set(pool, rawTemplates)
 
         val expandedTemplates = templatesField.get(pool) as ObjectArrayList<StructurePoolElement>
         repeat(SHRINE_WEIGHT) {
@@ -81,5 +83,16 @@ object VillageShrinePools {
             basePoolWeight = basePoolWeight,
             placementChance = chance
         )
+    }
+
+    private fun findField(vararg names: String): Field {
+        val poolClass = StructureTemplatePool::class.java
+        for (name in names) {
+            try {
+                return poolClass.getDeclaredField(name).apply { isAccessible = true }
+            } catch (_: NoSuchFieldException) {
+            }
+        }
+        error("Unable to resolve StructureTemplatePool field from candidates: ${names.joinToString()}")
     }
 }

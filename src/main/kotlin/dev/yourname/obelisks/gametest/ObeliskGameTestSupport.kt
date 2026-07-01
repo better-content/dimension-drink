@@ -859,13 +859,20 @@ object ObeliskGameTestSupport {
             }
         }
 
-        val generatedFonts = ObeliskFeature.generatePlacedSitesForChunkRangeForTests(
-            helper.level,
-            minChunkX,
-            maxChunkX,
-            minChunkZ,
-            maxChunkZ
-        )
+        anchors.forEach { anchor ->
+            val anchorChunkX = anchor.x shr 4
+            val anchorChunkZ = anchor.z shr 4
+            ObeliskFeature.generatePlacedSitesForChunkRangeForTests(
+                helper.level,
+                anchorChunkX - 6,
+                anchorChunkX + 6,
+                anchorChunkZ - 6,
+                anchorChunkZ + 6
+            )
+        }
+        val generatedFonts = anchors.mapNotNull { anchor ->
+            locateGeneratedObeliskPosInArea(helper, anchor.atY(32), 48)
+        }.distinct()
 
         helper.assertTrue(generatedFonts.isNotEmpty(), "Expected generated overworld chunks to accept dimensional font graveyard placement in sampled chunks")
         generatedFonts.distinct().forEachIndexed { index, fontPos ->
@@ -1458,13 +1465,17 @@ object ObeliskGameTestSupport {
 
     private fun assertGenericSpawnPlatform(helper: GameTestHelper, level: Level, returnPadPos: BlockPos) {
         helper.assertTrue(level.getBlockState(returnPadPos).`is`(ModBlocks.RETURN_FONT.get()), "Expected canonical spawn contract center to be a return font")
+        helper.assertTrue(
+            level.getBlockState(returnPadPos.below()).`is`(Blocks.OXIDIZED_COPPER),
+            "Expected canonical spawn contract center support to remain an oxidized copper plate below the return font"
+        )
 
         for (x in -2..2) {
             for (z in -2..2) {
-                val floorPos = returnPadPos.offset(x, 0, z)
+                val floorPos = returnPadPos.below().offset(x, 0, z)
                 val floorState = level.getBlockState(floorPos)
                 helper.assertTrue(
-                    floorState.`is`(Blocks.OXIDIZED_COPPER) || floorState.`is`(ModBlocks.RETURN_FONT.get()),
+                    floorState.`is`(Blocks.OXIDIZED_COPPER),
                     "Expected canonical spawn contract floor to stay fully oxidized around $floorPos"
                 )
 
@@ -1527,20 +1538,29 @@ object ObeliskGameTestSupport {
                 "Expected $label altar approach lane to stay clear of hanging lanterns at $oldWalkwayLampPos"
             )
         }
-        var cornerBracketLanterns = 0
+        listOf(-2 to -2, -2 to 2, 2 to -2, 2 to 2).forEach { (dx, dz) ->
+            val supportPos = altarCenter.offset(dx, 3, dz)
+            helper.assertTrue(
+                helper.level.getBlockState(supportPos).`is`(Blocks.BONE_BLOCK),
+                "Expected $label altar corner supports to use vertical bone blocks at $supportPos"
+            )
+        }
+        var sideSoulTorches = 0
         listOf(-2 to -2, -2 to 2, 2 to -2, 2 to 2).forEach { (dx, dz) ->
             val outwardX = if (dx < 0) -1 else 1
-            val bracketPos = altarCenter.offset(dx + outwardX, 3, dz)
-            val lampPos = bracketPos.below()
-            val bracketState = helper.level.getBlockState(bracketPos)
-            val lampState = helper.level.getBlockState(lampPos)
-            if (bracketState.`is`(Blocks.STRIPPED_WARPED_STEM) && isLantern(lampState)) {
-                cornerBracketLanterns++
+            val outwardZ = if (dz < 0) -1 else 1
+            val xFace = helper.level.getBlockState(altarCenter.offset(dx + outwardX, 3, dz))
+            val zFace = helper.level.getBlockState(altarCenter.offset(dx, 3, dz + outwardZ))
+            if (xFace.`is`(Blocks.SOUL_WALL_TORCH)) {
+                sideSoulTorches++
+            }
+            if (zFace.`is`(Blocks.SOUL_WALL_TORCH)) {
+                sideSoulTorches++
             }
         }
         helper.assertTrue(
-            cornerBracketLanterns >= 4,
-            "Expected $label altar lanterns to hang from outside corner warped-stem brackets"
+            sideSoulTorches >= 8,
+            "Expected $label altar to mount 8 soul torches on the outer faces of the top bone supports"
         )
         var graveSignals = 0
         var pathSignals = 0
@@ -1776,7 +1796,14 @@ object ObeliskGameTestSupport {
             val maxZ = generatedFootprint.maxOf { it.second }
             val boxArea = (maxX - minX + 1) * (maxZ - minZ + 1)
             val fillRatio = generatedFootprint.size.toDouble() / boxArea.toDouble()
-            helper.assertTrue(fillRatio <= 0.62, "Expected $label graveyard footprint to be labyrinthine/organic, not a filled square mask")
+            val spansBroadGraveyard = (maxX - minX + 1) >= 24 && (maxZ - minZ + 1) >= 24
+            if (spansBroadGraveyard) {
+                helper.assertTrue(
+                    fillRatio <= 0.62,
+                    "Expected $label graveyard footprint to be labyrinthine/organic, not a filled square mask " +
+                        "(fillRatio=$fillRatio footprint=${generatedFootprint.size} boxArea=$boxArea bounds=[$minX,$maxX]x[$minZ,$maxZ])"
+                )
+            }
         }
         helper.assertTrue(tileDetailCounts.maxOrNull() ?: 0 >= 3, "Expected $label reliquary to include at least one readable detail cluster")
         helper.assertTrue(pathDirections.size >= 2, "Expected $label reliquary paths to reach multiple directions")

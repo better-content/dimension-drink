@@ -242,7 +242,7 @@ object CanonicalDimensionBackend : RunWorldBackend {
                 ?: BlockPos(desired.x, emergencySpawnY(level) - 1, desired.z)
         }
         ensureArrivalAnchor(level, record, resolvedFloor)
-        val spawn = resolvedFloor.above().immutable()
+        val spawn = resolvedFloor.above(2).immutable()
         record.spawnPos = spawn
         record.siteCenter = spawn
         record.siteBounds = boundsFor(spawn, level, config)
@@ -263,7 +263,7 @@ object CanonicalDimensionBackend : RunWorldBackend {
                 level.setBlock(floorPos.above(dy), Blocks.AIR.defaultBlockState(), 3)
             }
         }
-        level.setBlock(floor, ModBlocks.RETURN_FONT.get().defaultBlockState(), 3)
+        level.setBlock(floor.above(), ModBlocks.RETURN_FONT.get().defaultBlockState(), 3)
     }
 
     private fun normalizedArrivalTeleportPos(level: ServerLevel, spawn: BlockPos): BlockPos {

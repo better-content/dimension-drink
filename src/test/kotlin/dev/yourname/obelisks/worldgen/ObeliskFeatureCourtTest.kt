@@ -1,26 +1,47 @@
 package dev.yourname.obelisks.worldgen
 
 import net.minecraft.core.BlockPos
-import net.minecraft.world.level.block.Blocks
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ObeliskFeatureCourtTest {
     @Test
     fun dryCourtDecorationStaysDeadAndPotted() {
-        val block = ObeliskFeature.courtPotBlockForTests(false, BlockPos(0, 64, 0))
-        assertEquals(Blocks.POTTED_DEAD_BUSH, block, "Dry reliquary court dressing should stay in dead potted form")
+        val blockId = pickCourtPotBlockId(false, BlockPos(0, 64, 0))
+        assertEquals("minecraft:potted_dead_bush", blockId, "Dry reliquary court dressing should stay in dead potted form")
     }
 
     @Test
     fun wetCourtDecorationUsesLivingPottedVariants() {
         val variants = buildSet {
             for (index in 0..7) {
-                add(ObeliskFeature.courtPotBlockForTests(true, BlockPos(index, 64, index * 3)))
+                add(pickCourtPotBlockId(true, BlockPos(index, 64, index * 3)))
             }
         }
         assertTrue(variants.isNotEmpty(), "Wet reliquary courts should choose living potted decoration")
-        assertTrue(variants.all { it == Blocks.POTTED_FERN || it == Blocks.POTTED_AZALEA || it == Blocks.POTTED_FLOWERING_AZALEA || it == Blocks.POTTED_MANGROVE_PROPAGULE })
+        assertTrue(variants.all {
+            it == "minecraft:potted_fern" ||
+                it == "minecraft:potted_azalea_bush" ||
+                it == "minecraft:potted_flowering_azalea_bush" ||
+                it == "minecraft:potted_mangrove_propagule"
+        })
+    }
+
+    @Test
+    fun altarThresholdStairsOnlyAppearWhenCourtSideStepsUp() {
+        assertFalse(
+            shouldUseAltarThresholdStair(altarY = 64, outerGroundY = 64, isActiveEntry = true),
+            "Flat altar court seams should stay blocky instead of placing same-level stairs"
+        )
+        assertTrue(
+            shouldUseAltarThresholdStair(altarY = 64, outerGroundY = 63, isActiveEntry = true),
+            "Lower entry ground should still use a stair at the altar threshold"
+        )
+        assertFalse(
+            shouldUseAltarThresholdStair(altarY = 64, outerGroundY = 63, isActiveEntry = false),
+            "Inactive altar sides should not place threshold stairs"
+        )
     }
 }
