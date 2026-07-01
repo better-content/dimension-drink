@@ -7,24 +7,33 @@ import kotlin.test.assertTrue
 
 class DimensionalFontWorldgenPlacementTest {
     @Test
-    fun placedFeatureRunsEveryChunkAndColumnScanned() {
-        val resource = javaClass.classLoader.getResource(
-            "data/dimensionalfonts/worldgen/placed_feature/dimensional_font_placed.json"
-        )
-        val json = assertNotNull(resource).readText()
+    fun structureSetOwnsNaturalDimensionalFontPlacement() {
+        val structureSet = assertNotNull(
+            javaClass.classLoader.getResource("data/dimensionalfonts/worldgen/structure_set/dimensional_fonts.json")
+        ).readText()
+        val structure = assertNotNull(
+            javaClass.classLoader.getResource("data/dimensionalfonts/worldgen/structure/dimensional_font.json")
+        ).readText()
 
         assertTrue(
-            Regex(""""type"\s*:\s*"minecraft:rarity_filter"""").containsMatchIn(json),
-            "Dimensional font worldgen should keep an explicit rarity contract"
+            Regex(""""type"\s*:\s*"minecraft:random_spread"""").containsMatchIn(structureSet),
+            "Dimensional font worldgen should be controlled by vanilla random-spread structure placement"
         )
         assertTrue(
-            Regex(""""chance"\s*:\s*1\b""").containsMatchIn(json),
-            "Dimensional font graveyards are chunk-sliced structures, so the placed feature must execute every chunk"
+            Regex(""""spacing"\s*:\s*42\b""").containsMatchIn(structureSet),
+            "Dimensional font structure rarity should stay explicit and reviewable"
         )
-        assertFalse(
-            Regex(""""type"\s*:\s*"minecraft:heightmap"""").containsMatchIn(json),
-            "The feature scans each selected column itself; a heightmap modifier can bias placement onto foliage"
+        assertTrue(
+            Regex(""""separation"\s*:\s*12\b""").containsMatchIn(structureSet),
+            "Dimensional font structures should keep enough separation to avoid overlapping graveyards"
         )
+        assertTrue(
+            Regex(""""type"\s*:\s*"dimensionalfonts:dimensional_font"""").containsMatchIn(structure),
+            "Natural dimensional font placement should use the custom structure type"
+        )
+        assertFalse(javaClass.classLoader.getResource("data/dimensionalfonts/worldgen/placed_feature/dimensional_font_placed.json") != null)
+        assertFalse(javaClass.classLoader.getResource("data/dimensionalfonts/worldgen/configured_feature/dimensional_font.json") != null)
+        assertFalse(javaClass.classLoader.getResource("data/dimensionalfonts/forge/biome_modifier/add_dimensional_font.json") != null)
     }
 
     @Test

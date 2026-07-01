@@ -31,6 +31,7 @@ import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.block.state.properties.AttachFace
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.level.block.state.properties.SlabType
+import net.minecraft.world.level.levelgen.structure.BoundingBox
 import net.minecraft.world.level.levelgen.feature.Feature
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext
 import net.minecraft.world.level.levelgen.feature.configurations.NoneFeatureConfiguration
@@ -195,6 +196,50 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 placeGeneratedFont(level, site, definition)
             }
             return if (site.placedInChunk || feature.isInsideChunk(site.fontPos, chunk)) site.fontPos else null
+        }
+
+        fun placeStructureSiteForBox(
+            level: WorldGenLevel,
+            centerX: Int,
+            centerZ: Int,
+            siteSeed: Long,
+            box: BoundingBox
+        ): BlockPos? {
+            if (level.level.dimension() != Level.OVERWORLD) return null
+            val feature = ObeliskFeature(NoneFeatureConfiguration.CODEC)
+            val definition = feature.pickDeterministicObelisk(RandomSource.create(siteSeed)) ?: return null
+            val center = BlockPos(centerX, level.maxBuildHeight - TERRAIN_SCAN_UP - 2, centerZ)
+            return feature.placeStructureSiteBox(level, center, definition, siteSeed, box)
+        }
+
+        fun generateStructureSiteChunkBoxesForTests(
+            level: ServerLevel,
+            center: BlockPos,
+            definitionId: String,
+            siteSeed: Long
+        ): Boolean {
+            val definition = ObeliskDataManager.getObelisk(definitionId) ?: return false
+            val feature = ObeliskFeature(NoneFeatureConfiguration.CODEC)
+            var placedAny = false
+            val minChunkX = Math.floorDiv(center.x - SITE_MAX_BLOCK_RADIUS, 16)
+            val maxChunkX = Math.floorDiv(center.x + SITE_MAX_BLOCK_RADIUS, 16)
+            val minChunkZ = Math.floorDiv(center.z - SITE_MAX_BLOCK_RADIUS, 16)
+            val maxChunkZ = Math.floorDiv(center.z + SITE_MAX_BLOCK_RADIUS, 16)
+            for (chunkX in minChunkX..maxChunkX) {
+                for (chunkZ in minChunkZ..maxChunkZ) {
+                    val chunk = ChunkPos(chunkX, chunkZ)
+                    val box = BoundingBox(
+                        chunk.minBlockX,
+                        level.minBuildHeight,
+                        chunk.minBlockZ,
+                        chunk.maxBlockX,
+                        level.maxBuildHeight - 1,
+                        chunk.maxBlockZ
+                    )
+                    placedAny = feature.placeStructureSiteBox(level, center, definition, siteSeed, box) != null || placedAny
+                }
+            }
+            return placedAny
         }
 
         private fun chunkInteriorAnchor(pos: BlockPos): BlockPos {
@@ -2798,18 +2843,16 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             supportTopY: Int
         ) {
             listOf(
-                Triple(BlockPos(center.x - 2, supportTopY, center.z - 3), Direction.NORTH, BlockPos(center.x - 2, supportTopY, center.z - 2)),
-                Triple(BlockPos(center.x - 3, supportTopY, center.z - 2), Direction.WEST, BlockPos(center.x - 2, supportTopY, center.z - 2)),
-                Triple(BlockPos(center.x - 2, supportTopY, center.z + 3), Direction.SOUTH, BlockPos(center.x - 2, supportTopY, center.z + 2)),
-                Triple(BlockPos(center.x - 3, supportTopY, center.z + 2), Direction.WEST, BlockPos(center.x - 2, supportTopY, center.z + 2)),
-                Triple(BlockPos(center.x + 2, supportTopY, center.z - 3), Direction.NORTH, BlockPos(center.x + 2, supportTopY, center.z - 2)),
-                Triple(BlockPos(center.x + 3, supportTopY, center.z - 2), Direction.EAST, BlockPos(center.x + 2, supportTopY, center.z - 2)),
-                Triple(BlockPos(center.x + 2, supportTopY, center.z + 3), Direction.SOUTH, BlockPos(center.x + 2, supportTopY, center.z + 2)),
-                Triple(BlockPos(center.x + 3, supportTopY, center.z + 2), Direction.EAST, BlockPos(center.x + 2, supportTopY, center.z + 2))
-            ).forEach { (pos, facing, supportPos) ->
+                BlockPos(center.x - 2, supportTopY, center.z - 3) to Direction.NORTH,
+                BlockPos(center.x - 3, supportTopY, center.z - 2) to Direction.WEST,
+                BlockPos(center.x - 2, supportTopY, center.z + 3) to Direction.SOUTH,
+                BlockPos(center.x - 3, supportTopY, center.z + 2) to Direction.WEST,
+                BlockPos(center.x + 2, supportTopY, center.z - 3) to Direction.NORTH,
+                BlockPos(center.x + 3, supportTopY, center.z - 2) to Direction.EAST,
+                BlockPos(center.x + 2, supportTopY, center.z + 3) to Direction.SOUTH,
+                BlockPos(center.x + 3, supportTopY, center.z + 2) to Direction.EAST
+            ).forEach { (pos, facing) ->
                 if (!canReplaceDecoration(level, pos)) return@forEach
-                val supportState = level.getBlockState(supportPos)
-                if (!supportState.isFaceSturdy(level, supportPos, facing)) return@forEach
                 val state = directionalState(Blocks.SOUL_WALL_TORCH, pos, facing)
                 setBlock(pos, state, 3)
             }
@@ -3380,6 +3423,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private data class PlannedSite(
             val fontPos: BlockPos,
             val maxBlood: Double,
+            val graveSoilPositions: List<BlockPos>,
             val placements: List<PlannedPlacement>,
             val minX: Int,
             val maxX: Int,
@@ -3469,7 +3513,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         return placedFonts
     }
 
-        private fun planSite(level: WorldGenLevel, center: BlockPos, definition: ObeliskDefinition, siteSeed: Long): PlannedSite? {
+        private fun planSite(level: LevelAccessor, center: BlockPos, definition: ObeliskDefinition, siteSeed: Long): PlannedSite? {
             val palette = GraveyardPalette.from(definition, center)
             val fullPlan = planTiles(level, center, palette, RandomSource.create(siteSeed xor SITE_LAYOUT_SALT))
             val centerGround = tileGround(level, center, TileCoord(0, 0)) ?: return null
@@ -3514,6 +3558,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             return PlannedSite(
                 fontPos = fontPos,
                 maxBlood = generatedCapacityForSite(definition, tileRadius, fullPlan.size),
+                graveSoilPositions = graveSoilPositionsFor(graveRecords),
                 placements = placements,
                 minX = allPositions.minOf { it.x },
                 maxX = allPositions.maxOf { it.x },
@@ -3567,6 +3612,21 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 graveSoilPositions = graveSoilPositions,
                 placedInChunk = placedInChunk
             )
+        }
+
+        private fun placeStructureSiteBox(
+            level: WorldGenLevel,
+            center: BlockPos,
+            definition: ObeliskDefinition,
+            siteSeed: Long,
+            box: BoundingBox
+        ): BlockPos? {
+            val chunk = ChunkPos(Math.floorDiv(box.minX(), 16), Math.floorDiv(box.minZ(), 16))
+            val site = buildSite(level, center, definition, siteSeed, chunk) ?: return null
+            if (box.isInside(site.fontPos)) {
+                placeGeneratedFont(level, site, definition)
+            }
+            return if (site.placedInChunk || box.isInside(site.fontPos)) site.fontPos else null
         }
 
     private fun altarIntersectsChunk(center: BlockPos, chunk: ChunkPos): Boolean =

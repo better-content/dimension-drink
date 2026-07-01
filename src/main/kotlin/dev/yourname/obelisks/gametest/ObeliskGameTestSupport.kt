@@ -799,11 +799,11 @@ object ObeliskGameTestSupport {
         helper.succeed()
     }
 
-    fun chunkSlicedWorldgenProducesFontAltarSites(helper: GameTestHelper) {
+    fun structurePieceWorldgenProducesCompleteFontAltarSites(helper: GameTestHelper) {
         deleteTestConfigs()
         val definition = ObeliskDefinition(
-            id = "test_chunk_sliced_visual_definition",
-            displayName = "Chunk Sliced Visual",
+            id = "test_structure_piece_visual_definition",
+            displayName = "Structure Piece Visual",
             instanceTemplateId = "blue_skies:everbright",
             targetDimension = "blue_skies:everbright",
             rewardTableId = "default",
@@ -815,19 +815,19 @@ object ObeliskGameTestSupport {
         val center = chunkInteriorTestAnchor(helper.absolutePos(BlockPos(260, 3, 4)))
         prepareCliffsideGenerationSurface(helper, center)
         helper.assertTrue(
-            ObeliskFeature.generateDefinitionSiteForTests(helper.level, center.above(18), definition.id, RandomSource.create(9012L)),
-            "Expected minimal reliquary test generation to place a font and altar"
+            ObeliskFeature.generateStructureSiteChunkBoxesForTests(helper.level, center.above(18), definition.id, 9012L),
+            "Expected structure-piece chunk-box generation to place a complete font and altar"
         )
 
         val fontPos = requireNotNull(locateGeneratedObeliskPosInArea(helper, center, 40)) {
-            "Expected minimal reliquary generation to place a font on the altar"
+            "Expected structure-piece generation to place a font on the altar"
         }
         val obelisk = helper.level.getBlockEntity(fontPos) as? ObeliskBlockEntity
         helper.assertTrue(
             obelisk?.definitionId == definition.id,
-            "Expected minimal reliquary generated obelisk to keep its definition id"
+            "Expected structure-piece generated obelisk to keep its definition id"
         )
-        assertGeneratedAltar(helper, fontPos, "chunk-sliced")
+        assertGeneratedAltar(helper, fontPos, "structure-piece")
 
         deleteTestConfigs()
         reloadData()

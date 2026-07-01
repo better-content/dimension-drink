@@ -35,9 +35,9 @@ class ObeliskDataGameTests {
         ObeliskGameTestSupport.worldgenDefinitionsProduceFontAltarSites(helper)
     }
 
-    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data_chunk_sliced", timeoutTicks = 300)
-    fun chunk_sliced_worldgen_produces_font_altar_sites(helper: GameTestHelper) {
-        ObeliskGameTestSupport.chunkSlicedWorldgenProducesFontAltarSites(helper)
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data_structure_piece", timeoutTicks = 500)
+    fun structure_piece_worldgen_produces_complete_font_altar_sites(helper: GameTestHelper) {
+        ObeliskGameTestSupport.structurePieceWorldgenProducesCompleteFontAltarSites(helper)
     }
 
     @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data_overworld_presence", timeoutTicks = 1600)
