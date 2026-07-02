@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack
 import com.mojang.blaze3d.vertex.VertexConsumer
 import dev.yourname.obelisks.content.ObeliskBlockEntity
 import net.minecraft.client.Minecraft
+import net.minecraft.client.renderer.LightTexture
 import net.minecraft.client.renderer.MultiBufferSource
 import net.minecraft.client.renderer.RenderType
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
@@ -26,20 +27,19 @@ class ObeliskBlockEntityRenderer(
         packedLight: Int,
         packedOverlay: Int
     ) {
-        renderReservoir(obelisk, poseStack, bufferSource, packedLight)
+        renderReservoir(obelisk, poseStack, bufferSource)
         renderHeart(obelisk, partialTick, poseStack, bufferSource, packedLight)
     }
 
     private fun renderReservoir(
         obelisk: ObeliskBlockEntity,
         poseStack: PoseStack,
-        bufferSource: MultiBufferSource,
-        packedLight: Int
+        bufferSource: MultiBufferSource
     ) {
         val percent = obelisk.getBloodPercent().toFloat().coerceIn(0.0f, 1.0f)
         if (percent <= 0.01f) return
 
-        val top = Mth.lerp(percent, LOWER_BLOOD_Y, UPPER_BLOOD_Y)
+        val top = Mth.lerp(percent, LOWER_JUICE_Y, UPPER_JUICE_Y)
         val consumer = bufferSource.getBuffer(RenderType.translucent())
         val sprite = Minecraft.getInstance().getTextureAtlas(TextureAtlas.LOCATION_BLOCKS).apply(WATER_STILL)
         renderFluidVolume(
@@ -47,16 +47,19 @@ class ObeliskBlockEntityRenderer(
             consumer,
             sprite,
             4.15f / 16.0f,
-            LOWER_BLOOD_Y - 0.02f,
+            LOWER_JUICE_Y - 0.02f,
             top,
             4.15f / 16.0f,
             11.85f / 16.0f,
             11.85f / 16.0f,
-            packedLight,
-            238
+            LightTexture.FULL_BRIGHT,
+            224,
+            TRIP_JUICE_RED,
+            TRIP_JUICE_GREEN,
+            TRIP_JUICE_BLUE
         )
 
-        val meniscusY = (top + 0.006f).coerceAtMost(UPPER_BLOOD_Y + 0.012f)
+        val meniscusY = (top + 0.006f).coerceAtMost(UPPER_JUICE_Y + 0.012f)
         renderFluidSurface(
             poseStack,
             consumer,
@@ -66,8 +69,11 @@ class ObeliskBlockEntityRenderer(
             3.95f / 16.0f,
             12.05f / 16.0f,
             12.05f / 16.0f,
-            packedLight,
-            (130 + percent * 70.0f).toInt().coerceIn(130, 200)
+            LightTexture.FULL_BRIGHT,
+            (150 + percent * 80.0f).toInt().coerceIn(150, 230),
+            MENISCUS_RED,
+            MENISCUS_GREEN,
+            MENISCUS_BLUE
         )
     }
 
@@ -113,14 +119,17 @@ class ObeliskBlockEntityRenderer(
         maxX: Float,
         maxZ: Float,
         packedLight: Int,
-        alpha: Int
+        alpha: Int,
+        red: Int,
+        green: Int,
+        blue: Int
     ) {
         val pose = poseStack.last()
-        quad(consumer, pose, sprite, minX, y, minZ, minX, y, maxZ, maxX, y, maxZ, maxX, y, minZ, 0.0f, 1.0f, 0.0f, packedLight, alpha)
-        quad(consumer, pose, sprite, minX, minY, minZ, maxX, minY, minZ, maxX, y, minZ, minX, y, minZ, 0.0f, 0.0f, -1.0f, packedLight, alpha)
-        quad(consumer, pose, sprite, maxX, minY, maxZ, minX, minY, maxZ, minX, y, maxZ, maxX, y, maxZ, 0.0f, 0.0f, 1.0f, packedLight, alpha)
-        quad(consumer, pose, sprite, minX, minY, maxZ, minX, minY, minZ, minX, y, minZ, minX, y, maxZ, -1.0f, 0.0f, 0.0f, packedLight, alpha)
-        quad(consumer, pose, sprite, maxX, minY, minZ, maxX, minY, maxZ, maxX, y, maxZ, maxX, y, minZ, 1.0f, 0.0f, 0.0f, packedLight, alpha)
+        quad(consumer, pose, sprite, minX, y, minZ, minX, y, maxZ, maxX, y, maxZ, maxX, y, minZ, 0.0f, 1.0f, 0.0f, packedLight, alpha, red, green, blue)
+        quad(consumer, pose, sprite, minX, minY, minZ, maxX, minY, minZ, maxX, y, minZ, minX, y, minZ, 0.0f, 0.0f, -1.0f, packedLight, alpha, red, green, blue)
+        quad(consumer, pose, sprite, maxX, minY, maxZ, minX, minY, maxZ, minX, y, maxZ, maxX, y, maxZ, 0.0f, 0.0f, 1.0f, packedLight, alpha, red, green, blue)
+        quad(consumer, pose, sprite, minX, minY, maxZ, minX, minY, minZ, minX, y, minZ, minX, y, maxZ, -1.0f, 0.0f, 0.0f, packedLight, alpha, red, green, blue)
+        quad(consumer, pose, sprite, maxX, minY, minZ, maxX, minY, maxZ, maxX, y, maxZ, maxX, y, minZ, 1.0f, 0.0f, 0.0f, packedLight, alpha, red, green, blue)
     }
 
     private fun renderFluidSurface(
@@ -133,10 +142,13 @@ class ObeliskBlockEntityRenderer(
         maxX: Float,
         maxZ: Float,
         packedLight: Int,
-        alpha: Int
+        alpha: Int,
+        red: Int,
+        green: Int,
+        blue: Int
     ) {
         val pose = poseStack.last()
-        quad(consumer, pose, sprite, minX, y, minZ, minX, y, maxZ, maxX, y, maxZ, maxX, y, minZ, 0.0f, 1.0f, 0.0f, packedLight, alpha)
+        quad(consumer, pose, sprite, minX, y, minZ, minX, y, maxZ, maxX, y, maxZ, maxX, y, minZ, 0.0f, 1.0f, 0.0f, packedLight, alpha, red, green, blue)
     }
 
     private fun quad(
@@ -159,12 +171,15 @@ class ObeliskBlockEntityRenderer(
         normalY: Float,
         normalZ: Float,
         packedLight: Int,
-        alpha: Int
+        alpha: Int,
+        red: Int,
+        green: Int,
+        blue: Int
     ) {
-        vertex(consumer, pose, sprite, x1, y1, z1, 0.0f, 0.0f, packedLight, alpha, normalX, normalY, normalZ)
-        vertex(consumer, pose, sprite, x2, y2, z2, 0.0f, 1.0f, packedLight, alpha, normalX, normalY, normalZ)
-        vertex(consumer, pose, sprite, x3, y3, z3, 1.0f, 1.0f, packedLight, alpha, normalX, normalY, normalZ)
-        vertex(consumer, pose, sprite, x4, y4, z4, 1.0f, 0.0f, packedLight, alpha, normalX, normalY, normalZ)
+        vertex(consumer, pose, sprite, x1, y1, z1, 0.0f, 0.0f, packedLight, alpha, red, green, blue, normalX, normalY, normalZ)
+        vertex(consumer, pose, sprite, x2, y2, z2, 0.0f, 1.0f, packedLight, alpha, red, green, blue, normalX, normalY, normalZ)
+        vertex(consumer, pose, sprite, x3, y3, z3, 1.0f, 1.0f, packedLight, alpha, red, green, blue, normalX, normalY, normalZ)
+        vertex(consumer, pose, sprite, x4, y4, z4, 1.0f, 0.0f, packedLight, alpha, red, green, blue, normalX, normalY, normalZ)
     }
 
     private fun vertex(
@@ -178,12 +193,15 @@ class ObeliskBlockEntityRenderer(
         v: Float,
         packedLight: Int,
         alpha: Int,
+        red: Int,
+        green: Int,
+        blue: Int,
         normalX: Float,
         normalY: Float,
         normalZ: Float
     ) {
         consumer.vertex(pose.pose(), x, y, z)
-            .color(38, 92, 78, alpha)
+            .color(red, green, blue, alpha)
             .uv(sprite.getU((u * 16.0f).toDouble()), sprite.getV((v * 16.0f).toDouble()))
             .overlayCoords(OverlayTexture.NO_OVERLAY)
             .uv2(packedLight)
@@ -193,7 +211,13 @@ class ObeliskBlockEntityRenderer(
 
     companion object {
         private val WATER_STILL = ResourceLocation("minecraft", "block/water_still")
-        private const val LOWER_BLOOD_Y = 4.28f / 16.0f
-        private const val UPPER_BLOOD_Y = 8.72f / 16.0f
+        private const val LOWER_JUICE_Y = 4.28f / 16.0f
+        private const val UPPER_JUICE_Y = 8.72f / 16.0f
+        private const val TRIP_JUICE_RED = 70
+        private const val TRIP_JUICE_GREEN = 232
+        private const val TRIP_JUICE_BLUE = 210
+        private const val MENISCUS_RED = 190
+        private const val MENISCUS_GREEN = 126
+        private const val MENISCUS_BLUE = 255
     }
 }
