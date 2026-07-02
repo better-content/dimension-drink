@@ -48,7 +48,7 @@ object RunBossBarManager {
 
             val bossBar = activeBossBars.getOrPut(run.id) {
                 ServerBossEvent(
-                    Component.literal("Font Blood"),
+                    Component.literal("Font Trip Juice"),
                     BossEvent.BossBarColor.GREEN,
                     BossEvent.BossBarOverlay.PROGRESS
                 )
@@ -60,7 +60,7 @@ object RunBossBarManager {
                 blood > ObeliskConstants.BOSS_BAR_YELLOW_THRESHOLD -> BossEvent.BossBarColor.YELLOW
                 else -> BossEvent.BossBarColor.RED
             }
-            bossBar.name = Component.literal("Font Blood: ${(blood * 100.0).toInt()}%")
+            bossBar.name = Component.literal("Font Trip Juice: ${(blood * 100.0).toInt()}%")
 
             val livePlayers = run.activePlayers.mapNotNull(server.playerList::getPlayer).toSet()
             livePlayers.forEach { player ->

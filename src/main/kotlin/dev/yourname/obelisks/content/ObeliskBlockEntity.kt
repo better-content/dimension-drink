@@ -42,9 +42,6 @@ class ObeliskBlockEntity(
     state: BlockState
 ) : BlockEntity(ModBlockEntities.OBELISK.get(), pos, state) {
     companion object {
-        private const val GRAVE_SOIL_REGEN_PER_BLOCK = 0.01
-        private const val GRAVE_SOIL_REGEN_MULTIPLIER_CAP = 3.0
-        private const val MAX_STORED_GRAVE_SOIL_POSITIONS = 512
         private val BLOOD_MAGIC_LIFE_ESSENCE_FLUID_ID = ResourceLocation("bloodmagic", "life_essence_fluid")
         private const val BLOOD_MAGIC_LIFE_ESSENCE_DESCRIPTION_ID = "fluid.bloodmagic.life_essence_fluid"
     }
@@ -94,9 +91,6 @@ class ObeliskBlockEntity(
 
     private var fractionalRegenCarry: Double = 0.0
     private var fractionalDrainCarry: Double = 0.0
-    private var graveSoilPositions: List<BlockPos> = emptyList()
-    private var lastGraveSoilGlowState: Boolean? = null
-    private var nextGraveSoilGlowRefresh: Long = 0L
 
     var heartStack: ItemStack = ItemStack.EMPTY
         private set
@@ -234,7 +228,6 @@ class ObeliskBlockEntity(
 
     fun setActiveRun(runId: UUID?) {
         activeRunId = runId
-        updateGraveSoilGlow(force = true)
         setChanged()
         syncToClients()
     }
@@ -267,7 +260,6 @@ class ObeliskBlockEntity(
         var rate = getBaseBloodRegenPerTick()
         modifiers.filter { it.stat == FEStat.REGEN_RATE }.forEach { rate = it.applyTo(rate) }
         rate += StillBeatingHeartCompat.lpPerTick(heartStack).toDouble()
-        rate *= getGraveSoilRegenMultiplier()
         return rate.coerceAtLeast(0.0)
     }
 
@@ -276,9 +268,6 @@ class ObeliskBlockEntity(
     fun tick(tickLevel: Level, tickPos: BlockPos) {
         if (tickLevel.isClientSide) {
             clientAmbientTick(tickLevel, tickPos)
-        } else if (tickLevel is ServerLevel) {
-            updateGraveSoilGlow()
-            serverGraveSoilChargeTick(tickLevel)
         }
     }
 
@@ -311,53 +300,7 @@ class ObeliskBlockEntity(
         return BLOCKS.getValue(ResourceLocation(id.namespace, renewedPath)).takeUnless { it == Blocks.AIR }
     }
 
-    fun setGraveSoilPositions(positions: Collection<BlockPos>) {
-        graveSoilPositions = positions
-            .distinctBy { it.asLong() }
-            .filter { it.distSqr(blockPos) <= 96.0 * 96.0 }
-            .take(MAX_STORED_GRAVE_SOIL_POSITIONS)
-            .map { it.immutable() }
-        updateGraveSoilGlow(force = true)
-        setChanged()
-        syncToClients()
-    }
-
-    fun getRecordedGraveSoilPositions(): List<BlockPos> = graveSoilPositions
-
     fun isCharging(): Boolean = !isRunActive() && lifeEssenceStored < getModifiedMaxStorage()
-
-    fun updateGraveSoilGlow(force: Boolean = false) {
-        setGraveSoilGlow(isCharging(), force)
-    }
-
-    private fun setGraveSoilGlow(desired: Boolean, force: Boolean = false) {
-        val currentLevel = level ?: return
-        if (currentLevel.isClientSide) return
-        val gameTime = currentLevel.gameTime
-        if (!force && lastGraveSoilGlowState == desired && gameTime < nextGraveSoilGlowRefresh) return
-        lastGraveSoilGlowState = desired
-        nextGraveSoilGlowRefresh = gameTime + 20L
-        graveSoilPositions.forEach { soilPos ->
-            if (!currentLevel.isLoaded(soilPos)) return@forEach
-            val state = currentLevel.getBlockState(soilPos)
-            if (!state.`is`(ModBlocks.GRAVE_SOIL.get()) || !state.hasProperty(GraveSoilBlock.CHARGING)) return@forEach
-            if (state.getValue(GraveSoilBlock.CHARGING) != desired) {
-                currentLevel.setBlock(soilPos, state.setValue(GraveSoilBlock.CHARGING, desired), 3)
-            }
-        }
-    }
-
-    private fun getValidGraveSoilCount(): Int {
-        val currentLevel = level ?: return 0
-        return graveSoilPositions.count { pos ->
-            currentLevel.isLoaded(pos) && currentLevel.getBlockState(pos).`is`(ModBlocks.GRAVE_SOIL.get())
-        }
-    }
-
-    private fun getGraveSoilRegenMultiplier(): Double {
-        val bonus = getValidGraveSoilCount() * GRAVE_SOIL_REGEN_PER_BLOCK
-        return (1.0 + bonus).coerceAtMost(GRAVE_SOIL_REGEN_MULTIPLIER_CAP)
-    }
 
     fun getModifiedBaseDrain(): Double {
         var drain = getRunBloodDrainPerTick()
@@ -471,7 +414,6 @@ class ObeliskBlockEntity(
     }
 
     private fun onBloodStorageChanged() {
-        updateGraveSoilGlow(force = true)
         setChanged()
         syncToClients()
     }
@@ -489,7 +431,6 @@ class ObeliskBlockEntity(
     fun clientAmbientTick(tickLevel: Level, tickPos: BlockPos) {
         if (!tickLevel.isClientSide) return
         val gameTime = tickLevel.gameTime
-        clientGraveSoilChargeTick(tickLevel, gameTime)
         if (isReadyToOpen() && gameTime >= nextReadyAmbientGameTime) {
             nextReadyAmbientGameTime = gameTime + 75L + tickLevel.random.nextInt(55)
             tickLevel.playLocalSound(
@@ -515,76 +456,6 @@ class ObeliskBlockEntity(
                 0.65f + tickLevel.random.nextFloat() * 0.25f,
                 false
             )
-        }
-    }
-
-    private fun clientGraveSoilChargeTick(tickLevel: Level, gameTime: Long) {
-        if (!isCharging()) return
-        graveSoilPositions.forEach { soilPos ->
-            if (((gameTime + soilPos.asLong()) % 8L) != 0L) return@forEach
-            if (!tickLevel.isLoaded(soilPos)) return@forEach
-            if (!tickLevel.getBlockState(soilPos).`is`(ModBlocks.GRAVE_SOIL.get())) return@forEach
-            val x = soilPos.x + 0.5 + (tickLevel.random.nextDouble() - 0.5) * 0.35
-            val y = soilPos.y + 1.03
-            val z = soilPos.z + 0.5 + (tickLevel.random.nextDouble() - 0.5) * 0.35
-            tickLevel.addParticle(
-                if (tickLevel.random.nextBoolean()) ParticleTypes.SOUL else ParticleTypes.SOUL_FIRE_FLAME,
-                x,
-                y,
-                z,
-                0.0,
-                0.035 + tickLevel.random.nextDouble() * 0.035,
-                0.0
-            )
-            if (tickLevel.random.nextFloat() < 0.35f) {
-                tickLevel.addParticle(
-                    ParticleTypes.END_ROD,
-                    soilPos.x + 0.5,
-                    y + 0.05,
-                    soilPos.z + 0.5,
-                    0.0,
-                    0.015 + tickLevel.random.nextDouble() * 0.02,
-                    0.0
-                )
-            }
-        }
-    }
-
-    private fun serverGraveSoilChargeTick(tickLevel: ServerLevel) {
-        if (!isCharging()) return
-        val gameTime = tickLevel.gameTime
-        graveSoilPositions.forEach { soilPos ->
-            if (((gameTime + soilPos.asLong()) % 8L) != 0L) return@forEach
-            if (!tickLevel.isLoaded(soilPos)) return@forEach
-            if (!tickLevel.getBlockState(soilPos).`is`(ModBlocks.GRAVE_SOIL.get())) return@forEach
-
-            val x = soilPos.x + 0.5 + (tickLevel.random.nextDouble() - 0.5) * 0.35
-            val y = soilPos.y + 1.03
-            val z = soilPos.z + 0.5 + (tickLevel.random.nextDouble() - 0.5) * 0.35
-            tickLevel.sendParticles(
-                if (tickLevel.random.nextBoolean()) ParticleTypes.SOUL else ParticleTypes.SOUL_FIRE_FLAME,
-                x,
-                y,
-                z,
-                1,
-                0.0,
-                0.0,
-                0.0,
-                0.0
-            )
-            if (tickLevel.random.nextFloat() < 0.35f) {
-                tickLevel.sendParticles(
-                    ParticleTypes.END_ROD,
-                    soilPos.x + 0.5,
-                    y + 0.05,
-                    soilPos.z + 0.5,
-                    1,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0
-                )
-            }
         }
     }
 
@@ -632,7 +503,6 @@ class ObeliskBlockEntity(
         tag.putInt("beam_color_red", beamColorRed)
         tag.putInt("beam_color_green", beamColorGreen)
         tag.putInt("beam_color_blue", beamColorBlue)
-        tag.putLongArray("grave_soil_positions", graveSoilPositions.map { it.asLong() })
         tag.put("inventory", itemHandler.serializeNBT())
         if (!heartStack.isEmpty) {
             tag.put("heart", heartStack.save(CompoundTag()))
@@ -680,16 +550,6 @@ class ObeliskBlockEntity(
         beamColorRed = if (tag.contains("beam_color_red")) tag.getInt("beam_color_red") else Random.nextInt(256)
         beamColorGreen = if (tag.contains("beam_color_green")) tag.getInt("beam_color_green") else Random.nextInt(256)
         beamColorBlue = if (tag.contains("beam_color_blue")) tag.getInt("beam_color_blue") else Random.nextInt(256)
-        graveSoilPositions = if (tag.contains("grave_soil_positions", Tag.TAG_LONG_ARRAY.toInt())) {
-            tag.getLongArray("grave_soil_positions")
-                .asSequence()
-                .distinct()
-                .take(MAX_STORED_GRAVE_SOIL_POSITIONS)
-                .map { BlockPos.of(it).immutable() }
-                .toList()
-        } else {
-            emptyList()
-        }
         if (tag.contains("inventory")) itemHandler.deserializeNBT(tag.getCompound("inventory"))
         heartStack = if (tag.contains("heart", Tag.TAG_COMPOUND.toInt())) {
             ItemStack.of(tag.getCompound("heart"))
@@ -732,7 +592,6 @@ class ObeliskBlockEntity(
     }
 
     override fun setRemoved() {
-        setGraveSoilGlow(false, force = true)
         ObeliskRuntimeService.unregisterLoaded(this)
         super.setRemoved()
         FERegenerationHandler.unregisterObelisk(this)

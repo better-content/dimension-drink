@@ -226,7 +226,7 @@ object RunRegistry : RunService {
         }
         val startBloodMinimum = obelisk.getBloodStartCost()
         if (obelisk.bloodStored < startBloodMinimum) {
-            return "The font needs ${startBloodMinimum.toInt()} mB of blood to open."
+            return "The font needs ${startBloodMinimum.toInt()} mB of trip juice to open."
         }
         val created = createRun(
             server = server,
@@ -500,7 +500,7 @@ object RunRegistry : RunService {
         val drained = obelisk.drainBlood(drainAmount)
         record.updatedGameTime = currentGameTime(server)
         if (!drained) {
-            collapseRun(server, record, "The font runs dry.", "blood-depleted")
+            collapseRun(server, record, "The font runs out of trip juice.", "juice-depleted")
             return
         }
         markRunDirty(record.id)

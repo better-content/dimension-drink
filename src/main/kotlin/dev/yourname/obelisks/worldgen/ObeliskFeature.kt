@@ -10,9 +10,6 @@ import net.minecraft.core.BlockPos
 import net.minecraft.world.level.ChunkPos
 import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.nbt.CompoundTag
-import net.minecraft.nbt.ListTag
-import net.minecraft.nbt.StringTag
 import net.minecraft.resources.ResourceLocation
 import net.minecraft.tags.BiomeTags
 import net.minecraft.tags.BlockTags
@@ -25,8 +22,6 @@ import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.BushBlock
 import net.minecraft.world.level.block.LeavesBlock
 import net.minecraft.world.level.block.SlabBlock
-import net.minecraft.world.level.block.WallSignBlock
-import net.minecraft.world.level.block.entity.SignBlockEntity
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.block.state.properties.AttachFace
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
@@ -342,23 +337,18 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         ): BuiltSite? {
             val palette = GraveyardPalette.from(definition, center)
             val tiles = planTiles(level, center, palette, random)
-            val graveHeadstone = Blocks.COPPER_BLOCK
-            val graveDirection = graveyardGraveDirection(center, definition.id)
             val fontTile = tiles[TileCoord(0, 0)] ?: return null
             val altarCenter = findNearestViableAltarCenter(level, fontTile.groundPos, fontTile.groundPos.y + ALTAR_MAX_FOUNDATION_DROP) { true } ?: return null
             val altarSurface = altarSurfaceMap(level, altarCenter) ?: return null
             if (!canPlaceElevatedAltarAndFont(level, altarCenter, altarSurface)) return null
 
-            val graveFootprints = mutableSetOf<BlockPos>()
             val pathColumns = plannedPathColumns(tiles)
-            val graveRecords = mutableListOf<GravePlacement>()
             tiles.values.sortedWith(compareBy<TilePlan> { abs(it.coord.x) + abs(it.coord.z) }.thenBy { it.coord.x }.thenBy { it.coord.z }).forEach { tile ->
-                placeTile(level, setBlock, tile, tiles, palette, graveHeadstone, graveDirection, graveFootprints, pathColumns, graveRecords, random)
+                placeTile(level, setBlock, tile, tiles, palette, pathColumns, random)
             }
             placeIntersectionTrophies(level, setBlock, tiles, palette, random)
             placeBoundaryAccents(level, setBlock, tiles, palette, random)
             placeWetBiomeOvergrowth(level, setBlock, tiles.values.toList(), random)
-            graveRecords.forEach { enforceGraveLine(level, setBlock, it, pathColumns) }
 
             val courtLayout = shapeReliquaryCourt(level, setBlock, altarCenter, palette, pathColumns)
             val fontPos = placeElevatedAltar(level, setBlock, altarCenter, altarSurface, palette, courtLayout, random)
@@ -366,7 +356,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             ensureReliquaryTrophyDisplay(level, setBlock, altarCenter, palette, pathColumns, random) { rough ->
                 terrainGroundNear(level, rough, altarCenter.y + 5, 4)
             }
-            return BuiltSite(fontPos, generatedCapacityForSite(definition, tiles), graveSoilPositionsFor(graveRecords))
+            return BuiltSite(fontPos, generatedCapacityForSite(definition, tiles))
         }
 
         private fun generatedCapacityForSite(definition: ObeliskDefinition, tiles: Map<TileCoord, TilePlan>): Double {
@@ -387,7 +377,6 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val font = level.getBlockEntity(site.fontPos) as? ObeliskBlockEntity ?: return false
             font.setDefinition(definition.id)
             font.setGeneratedMaxBlood(site.maxBlood)
-            font.setGraveSoilPositions(site.graveSoilPositions)
             font.fillToCapacity()
             font.syncToClients()
             return true
@@ -923,11 +912,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             tile: TilePlan,
             tiles: Map<TileCoord, TilePlan>,
             palette: GraveyardPalette,
-            graveHeadstone: Block,
-            graveDirection: Direction,
-            graveFootprints: MutableSet<BlockPos>,
             pathColumns: Set<Long>,
-            graveRecords: MutableList<GravePlacement>,
             random: RandomSource
         ) {
             when (tile.type) {
@@ -942,8 +927,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     placeStepForRaisedNeighbors(level, setBlock, tile, tiles)
                     scatterTileDetails(level, setBlock, tile.groundPos, palette, random, 2)
                 }
-                TileType.GRAVE_SINGLE -> buildBurialPlot(level, setBlock, tile.groundPos, palette, graveHeadstone, graveDirection, graveFootprints, pathColumns, graveRecords, random, 1)
-                TileType.GRAVE_DOUBLE -> buildBurialPlot(level, setBlock, tile.groundPos, palette, graveHeadstone, graveDirection, graveFootprints, pathColumns, graveRecords, random, 2)
+                TileType.GRAVE_SINGLE -> buildDecor(level, setBlock, tile.groundPos, palette, pathColumns, random)
+                TileType.GRAVE_DOUBLE -> buildTrophyCourt(level, setBlock, tile.groundPos, palette, pathColumns, random)
                 TileType.MAUSOLEUM_SMALL -> buildMausoleum(level, setBlock, tile.groundPos, palette, random)
                 TileType.SHRINE -> buildShrine(level, setBlock, tile.groundPos, palette, random)
                 TileType.STATUE_RUIN -> buildRuin(level, setBlock, tile.groundPos, palette, random)
@@ -956,7 +941,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 TileType.DECOR -> buildDecor(level, setBlock, tile.groundPos, palette, pathColumns, random)
             }
             if (tile.zone == TileZone.DENSE_CLUSTER && tile.type != TileType.PATH && tile.type != TileType.FONT_PEDESTAL) {
-                reinforceDenseCluster(level, setBlock, tile.groundPos, palette, graveHeadstone, random)
+                reinforceDenseCluster(level, setBlock, tile.groundPos, palette, Blocks.COPPER_BLOCK, random)
             }
         }
 
@@ -1054,265 +1039,6 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private fun columnX(key: Long): Int = (key shr 32).toInt()
 
         private fun columnZ(key: Long): Int = key.toInt()
-
-        private fun buildBurialPlot(
-            level: LevelAccessor,
-            setBlock: (BlockPos, BlockState, Int) -> Boolean,
-            base: BlockPos,
-            palette: GraveyardPalette,
-            graveHeadstone: Block,
-            direction: Direction,
-            graveFootprints: MutableSet<BlockPos>,
-            pathColumns: Set<Long>,
-            graveRecords: MutableList<GravePlacement>,
-            random: RandomSource,
-            targetClumps: Int
-        ) {
-            val side = if (direction.axis == Direction.Axis.X) Direction.NORTH else Direction.EAST
-            val starts = mutableListOf<BlockPos>()
-            for (row in -3..3 step 3) {
-                for (column in -1..3) {
-                    starts += base.relative(side, row).relative(direction, column)
-                }
-            }
-            var placedClumps = 0
-            starts.shuffled(random).forEach { roughHead ->
-                if (placedClumps >= targetClumps) return@forEach
-                val center = terrainGroundNear(level, roughHead, base.y + 5, 2) ?: return@forEach
-                val heads = listOf(center.relative(side, 2), center, center.relative(side.opposite, 2))
-                if (!canReserveGraveClump(level, heads, direction, graveFootprints, pathColumns)) return@forEach
-                val placed = heads.mapNotNull { head ->
-                    if (!buildGraveLine(level, setBlock, head, direction, graveHeadstone, palette, random)) return@mapNotNull null
-                    GravePlacement(head, direction, graveHeadstone)
-                }
-                if (placed.size == heads.size) {
-                    graveFootprints += heads.flatMap { graveLineSpacingFootprint(it, direction) }
-                    graveRecords += placed
-                    placedClumps++
-                }
-            }
-            if (placedClumps == 0) {
-                buildGraveClump(level, setBlock, base, direction, side, palette, graveHeadstone, graveFootprints, pathColumns, graveRecords, random)
-            } else {
-                Direction.Plane.HORIZONTAL.toList().shuffled(random).take(4).forEach { edge ->
-                    val edgePos = terrainGroundNear(level, base.relative(edge, 2), base.y + 5, 1) ?: return@forEach
-                    placeGround(level, setBlock, edgePos, palette.path(random))
-                    placeSupportedAbove(level, setBlock, edgePos.above(), if (random.nextBoolean()) palette.wall(random) else palette.decoration(random))
-                }
-            }
-        }
-
-        private fun buildGraveClump(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, direction: Direction, side: Direction, palette: GraveyardPalette, graveHeadstone: Block, graveFootprints: MutableSet<BlockPos>, pathColumns: Set<Long>, graveRecords: MutableList<GravePlacement>, random: RandomSource) {
-            val center = terrainGroundNear(level, base, base.y + 5, 2) ?: return buildDecor(level, setBlock, base, palette, pathColumns, random)
-            val heads = listOf(center.relative(side, 2), center, center.relative(side.opposite, 2))
-            if (!canReserveGraveClump(level, heads, direction, graveFootprints, pathColumns)) return buildDecor(level, setBlock, base, palette, pathColumns, random)
-            val placed = heads.mapNotNull { head ->
-                if (!buildGraveLine(level, setBlock, head, direction, graveHeadstone, palette, random)) return@mapNotNull null
-                GravePlacement(head, direction, graveHeadstone)
-            }
-            if (placed.size != heads.size) return buildDecor(level, setBlock, base, palette, pathColumns, random)
-            graveFootprints += heads.flatMap { graveLineSpacingFootprint(it, direction) }
-            graveRecords += placed
-        }
-
-        private fun buildDoubleGrave(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, graveHeadstone: Block, graveFootprints: MutableSet<BlockPos>, pathColumns: Set<Long>, graveRecords: MutableList<GravePlacement>, random: RandomSource) {
-            val direction = Direction.Plane.HORIZONTAL.toList().shuffled(random).first()
-            val side = if (direction.axis == Direction.Axis.X) Direction.NORTH else Direction.EAST
-            buildGraveClump(level, setBlock, base.relative(direction), direction, side, palette, graveHeadstone, graveFootprints, pathColumns, graveRecords, random)
-            buildGraveClump(level, setBlock, base.relative(direction.opposite), direction, side, palette, graveHeadstone, graveFootprints, pathColumns, graveRecords, random)
-            placeGround(level, setBlock, base, palette.path(random))
-            scatterTileDetails(level, setBlock, base, palette, random, 2)
-        }
-
-        private fun buildGraveLine(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, head: BlockPos, direction: Direction, graveHeadstone: Block, palette: GraveyardPalette, random: RandomSource): Boolean {
-            val body = head.relative(direction)
-            val headstoneBase = head.relative(direction, 2)
-            if (!canBuildGraveLineAt(level, head, direction)) return false
-            placeGround(level, setBlock, head, ModBlocks.GRAVE_SOIL.get())
-            placeGround(level, setBlock, body, ModBlocks.GRAVE_SOIL.get())
-            listOf(head.above(), body.above()).forEach { pos ->
-                if (canReplaceSiteAirspace(level.getBlockState(pos))) setBlock(pos, Blocks.AIR.defaultBlockState(), 3)
-            }
-            placeSupportedAbove(level, setBlock, headstoneBase.above(), graveHeadstone)
-            placeGraveSign(level, setBlock, headstoneBase.above(), direction, head)
-            val side = if (direction.axis == Direction.Axis.X) Direction.NORTH else Direction.EAST
-            listOf(headstoneBase.relative(side), headstoneBase.relative(side.opposite)).forEach { pos ->
-                if (random.nextInt(100) < 45 && canUseTileGround(level, pos, 1)) {
-                    placeSupportedAbove(level, setBlock, pos.above(), palette.decoration(random))
-                }
-            }
-            return true
-        }
-
-        private fun enforceGraveLine(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, grave: GravePlacement, pathColumns: Set<Long>) {
-            val head = grave.head
-            val body = head.relative(grave.direction)
-            val headstoneBase = head.relative(grave.direction, 2)
-            if (graveLineFootprint(head, grave.direction).any { columnKey(it) in pathColumns }) return
-            if (!isSupportedGround(level, head, level.getBlockState(head))) return
-            if (!isSupportedGround(level, body, level.getBlockState(body))) return
-            if (!isSupportedGround(level, headstoneBase, level.getBlockState(headstoneBase))) return
-            setBlock(head, generatedState(ModBlocks.GRAVE_SOIL.get(), head), 3)
-            setBlock(body, generatedState(ModBlocks.GRAVE_SOIL.get(), body), 3)
-            clearGraveSides(level, setBlock, head)
-            clearGraveSides(level, setBlock, body)
-            listOf(head.above(), body.above()).forEach { pos ->
-                val state = level.getBlockState(pos)
-                if (canReplaceSiteAirspace(state) || state.hasProperty(BlockStateProperties.LIT)) {
-                    setBlock(pos, Blocks.AIR.defaultBlockState(), 3)
-                }
-            }
-            val headstonePos = headstoneBase.above()
-            setBlock(headstonePos, generatedState(grave.headstone, headstonePos), 3)
-            placeGraveSign(level, setBlock, headstoneBase.above(), grave.direction, head)
-        }
-
-        private fun graveLineFootprint(head: BlockPos, direction: Direction): List<BlockPos> =
-            listOf(head, head.relative(direction), head.relative(direction, 2))
-
-        private fun graveSoilPositionsFor(graves: Collection<GravePlacement>): List<BlockPos> =
-            graves.flatMap { grave ->
-                listOf(grave.head, grave.head.relative(grave.direction))
-            }.distinctBy { it.asLong() }
-
-        private fun graveLineSpacingFootprint(head: BlockPos, direction: Direction): Set<BlockPos> {
-            val occupied = graveLineFootprint(head, direction)
-            return occupied.flatMap { pos ->
-                Direction.Plane.HORIZONTAL.map { pos.relative(it) } + pos
-            }.toSet()
-        }
-
-        private fun buildMinimalGraveLine(
-            level: LevelAccessor,
-            setBlock: (BlockPos, BlockState, Int) -> Boolean,
-            head: BlockPos,
-            direction: Direction,
-            headstone: Block
-        ): Boolean {
-            val body = head.relative(direction)
-            val headstoneBase = head.relative(direction, 2)
-            if (!canBuildGraveLineAt(level, head, direction)) return false
-            if (!placeGround(level, setBlock, head, ModBlocks.GRAVE_SOIL.get())) return false
-            if (!placeGround(level, setBlock, body, ModBlocks.GRAVE_SOIL.get())) return false
-            clearGraveSides(level, setBlock, head)
-            clearGraveSides(level, setBlock, body)
-            listOf(head.above(), body.above()).forEach { pos ->
-                if (canReplaceSiteAirspace(level.getBlockState(pos))) setBlock(pos, Blocks.AIR.defaultBlockState(), 3)
-            }
-            if (!placeSupportedAbove(level, setBlock, headstoneBase.above(), headstone)) return false
-            placeGraveSign(level, setBlock, headstoneBase.above(), direction, head)
-            return true
-        }
-
-        private fun canBuildGraveLineAt(level: LevelAccessor, head: BlockPos, direction: Direction): Boolean {
-            val body = head.relative(direction)
-            val headstoneBase = head.relative(direction, 2)
-            val footprint = listOf(head, body, headstoneBase)
-            if (!footprint.all { sameChunk(it, head) }) return false
-            if (head.y != body.y || body.y != headstoneBase.y) return false
-            return isProperlyBuriedGraveCell(level, head) &&
-                isProperlyBuriedGraveCell(level, body) &&
-                canUseTileGround(level, headstoneBase, 2)
-        }
-
-        private fun sameChunk(a: BlockPos, b: BlockPos): Boolean =
-            Math.floorDiv(a.x, 16) == Math.floorDiv(b.x, 16) && Math.floorDiv(a.z, 16) == Math.floorDiv(b.z, 16)
-
-        private fun canReserveGraveFootprint(level: LevelAccessor, footprint: List<BlockPos>, reserved: Set<BlockPos>, pathColumns: Set<Long>): Boolean =
-            footprint.distinct().size == footprint.size &&
-                footprint.none { it in reserved } &&
-                footprint.none { columnKey(it) in pathColumns } &&
-                footprint.withIndex().all { (index, pos) -> canUseTileGround(level, pos, clearance = if (index == 2) 2 else 1) }
-
-        private fun canReserveGraveClump(level: LevelAccessor, heads: List<BlockPos>, direction: Direction, reserved: Set<BlockPos>, pathColumns: Set<Long>): Boolean {
-            val footprint = heads.flatMap { graveLineFootprint(it, direction) }
-            val spacingFootprint = heads.flatMap { graveLineSpacingFootprint(it, direction) }
-            if (footprint.distinct().size != footprint.size) return false
-            if (spacingFootprint.distinct().size != spacingFootprint.size) return false
-            if (spacingFootprint.any { it in reserved }) return false
-            if (footprint.any { columnKey(it) in pathColumns }) return false
-            return heads.all { canBuildGraveLineAt(level, it, direction) }
-        }
-
-        private fun placeGraveSign(
-            level: LevelAccessor,
-            setBlock: (BlockPos, BlockState, Int) -> Boolean,
-            headstonePos: BlockPos,
-            graveDirection: Direction,
-            graveHead: BlockPos
-        ): Boolean {
-            val facing = graveDirection.opposite
-            val signPos = headstonePos.relative(facing)
-            if (!canReplaceDecoration(level, signPos)) return false
-            val state = Blocks.DARK_OAK_WALL_SIGN.defaultBlockState().setValue(WallSignBlock.FACING, facing)
-            if (!setBlock(signPos, state, 3)) return false
-            val sign = level.getBlockEntity(signPos) as? SignBlockEntity ?: return true
-            sign.load(sign.saveWithoutMetadata().apply {
-                put("front_text", graveSignTextTag(graveInscription(graveHead)))
-                put("back_text", graveSignTextTag(listOf("", "", "", "")))
-            })
-            return true
-        }
-
-        private fun graveSignTextTag(lines: List<String>): CompoundTag {
-            val messages = ListTag()
-            lines.take(4).forEach { line ->
-                messages.add(StringTag.valueOf(jsonString(line)))
-            }
-            while (messages.size < 4) {
-                messages.add(StringTag.valueOf("\"\""))
-            }
-            return CompoundTag().apply {
-                put("messages", messages)
-                putString("color", "black")
-                putBoolean("has_glowing_text", false)
-            }
-        }
-
-        private fun jsonString(value: String): String =
-            "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
-
-        private fun graveInscription(pos: BlockPos): List<String> {
-            val name = proceduralGraveName(pos)
-            return listOf("ESH VOR", name, "NETH KAL", "ORUM")
-        }
-
-        private fun proceduralGraveName(pos: BlockPos): String {
-            val syllables = listOf(
-                "ak", "bel", "dru", "esh", "ka", "lom", "mur", "neth",
-                "or", "raak", "sel", "thul", "um", "vhar", "yss", "zun"
-            )
-            var value = pos.asLong() xor 0x5deece66dL
-            val count = 2 + floorMod(value, 2)
-            val parts = mutableListOf<String>()
-            repeat(count) {
-                value = value * 6364136223846793005L + 1442695040888963407L
-                parts += syllables[floorMod(value, syllables.size)]
-            }
-            return parts.joinToString("'").replaceFirstChar { it.uppercaseChar() }
-        }
-
-        private fun floorMod(value: Long, divisor: Int): Int =
-            Math.floorMod(value, divisor.toLong()).toInt()
-
-        private fun isProperlyBuriedGraveCell(level: LevelAccessor, pos: BlockPos): Boolean {
-            if (!canUseTileGround(level, pos, 1)) return false
-            return Direction.Plane.HORIZONTAL.all { direction ->
-                val neighbor = pos.relative(direction)
-                val neighborState = level.getBlockState(neighbor)
-                !neighborState.isAir && isSupportedGround(level, neighbor, neighborState)
-            }
-        }
-
-        private fun clearGraveSides(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, pos: BlockPos) {
-            Direction.Plane.HORIZONTAL.forEach { direction ->
-                val sideAir = pos.relative(direction).above()
-                val state = level.getBlockState(sideAir)
-                if (canReplaceSiteAirspace(state)) {
-                    setBlock(sideAir, Blocks.AIR.defaultBlockState(), 3)
-                }
-            }
-        }
 
         private fun buildMausoleum(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
             if (buildLargeCrypt(level, setBlock, base, palette, random)) return
@@ -2206,18 +1932,11 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             chunk: ChunkPos,
             center: BlockPos,
             palette: GraveyardPalette,
-            definition: ObeliskDefinition,
             random: RandomSource,
             pathPlan: MinimalReliquaryPathPlan = planMinimalReliquaryPaths(center, random)
-        ): List<BlockPos> {
-            val graveDirection = graveyardGraveDirection(center, definition.id)
-            val graveSide = if (graveDirection.axis == Direction.Axis.X) Direction.NORTH else Direction.EAST
-            val headstone = Blocks.COPPER_BLOCK
-            val reservedGraves = mutableSetOf<BlockPos>()
-            val graveSoilPositions = mutableListOf<BlockPos>()
+        ) {
             val pathColumns = minimalReliquaryPathColumns(center, pathPlan.pathLengths).toMutableSet()
             val maxY = level.maxBuildHeight - 2
-            val altarReservedColumns = altarReservedColumns(center)
             val pathLengths = pathPlan.pathLengths
             val allowed: (BlockPos) -> Boolean = { pos -> isInsideChunkBounds(pos, chunk) }
 
@@ -2226,28 +1945,6 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 placeAltarApproachStairs(level, setBlock, chunk, center, direction, maxY)
                 for (step in 4..pathLength) {
                     placeThreeWidePath(level, setBlock, chunk, center, direction, step, maxY)
-                }
-            }
-
-            val graveOffsets = listOf(-11, -8, -5, 5, 8, 11)
-            val graveDistances = listOf(7, 11, 15, 19, 23, 27, 31)
-            for (fieldDirection in Direction.Plane.HORIZONTAL) {
-                for (row in graveOffsets) {
-                    for (distance in graveDistances) {
-                        val rough = center.relative(fieldDirection, distance).relative(graveSide, row)
-                        val head = terrainGroundInChunk(level, rough, chunk, maxY, 2) ?: continue
-                        val footprint = graveLineFootprint(head, graveDirection)
-                        val spacingFootprint = graveLineSpacingFootprint(head, graveDirection)
-                        if (footprint.any { !isInsideChunkBounds(it, chunk) }) continue
-                        if (spacingFootprint.any { columnKey(it) in altarReservedColumns }) continue
-                        if (spacingFootprint.any { it in reservedGraves }) continue
-                        if (footprint.any { columnKey(it) in pathColumns }) continue
-                        if (buildMinimalGraveLine(level, setBlock, head, graveDirection, headstone)) {
-                            reservedGraves += spacingFootprint
-                            graveSoilPositions += head.immutable()
-                            graveSoilPositions += head.relative(graveDirection).immutable()
-                        }
-                    }
                 }
             }
 
@@ -2274,7 +1971,6 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             ensureReliquaryTrophyDisplay(level, setBlock, center, palette, pathColumns, random) { rough ->
                 terrainGroundInChunk(level, rough, chunk, maxY, 4)
             }
-            return graveSoilPositions.distinctBy { it.asLong() }
         }
 
         private fun planMinimalReliquaryPaths(center: BlockPos, random: RandomSource): MinimalReliquaryPathPlan {
@@ -3308,12 +3004,6 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private fun occultCandleBlock(random: RandomSource): Block =
             if (random.nextBoolean()) Blocks.WHITE_CANDLE else Blocks.LIME_CANDLE
 
-        private data class GravePlacement(
-            val head: BlockPos,
-            val direction: Direction,
-            val headstone: Block
-        )
-
         private enum class CourtZone {
             ALTAR_THRESHOLD,
             CROSSROADS,
@@ -3421,7 +3111,6 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private data class BuiltSite(
             val fontPos: BlockPos,
             val maxBlood: Double,
-            val graveSoilPositions: List<BlockPos> = emptyList(),
             val placedInChunk: Boolean = false
         )
 
@@ -3438,7 +3127,6 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private data class PlannedSite(
             val fontPos: BlockPos,
             val maxBlood: Double,
-            val graveSoilPositions: List<BlockPos>,
             val placements: List<PlannedPlacement>,
             val minX: Int,
             val maxX: Int,
@@ -3546,21 +3234,16 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 }
             }
 
-            val graveHeadstone = Blocks.COPPER_BLOCK
-            val graveDirection = graveyardGraveDirection(center, definition.id)
-            val graveFootprints = mutableSetOf<BlockPos>()
             val pathColumns = plannedPathColumns(fullPlan)
-            val graveRecords = mutableListOf<GravePlacement>()
             val detailRandom = RandomSource.create(siteSeed xor SITE_CHUNK_DETAIL_SALT)
             fullPlan.values
                 .sortedWith(compareBy<TilePlan> { abs(it.coord.x) + abs(it.coord.z) }.thenBy { it.coord.x }.thenBy { it.coord.z })
                 .forEach { tile ->
-                    placeTile(level, plannedSetBlock, tile, fullPlan, palette, graveHeadstone, graveDirection, graveFootprints, pathColumns, graveRecords, detailRandom)
+                    placeTile(level, plannedSetBlock, tile, fullPlan, palette, pathColumns, detailRandom)
                 }
             placeIntersectionTrophies(level, plannedSetBlock, fullPlan, palette, detailRandom)
             placeBoundaryAccents(level, plannedSetBlock, fullPlan, palette, detailRandom)
             placeWetBiomeOvergrowth(level, plannedSetBlock, fullPlan.values.toList(), detailRandom)
-            graveRecords.forEach { enforceGraveLine(level, plannedSetBlock, it, pathColumns) }
 
             val courtLayout = shapeReliquaryCourt(level, plannedSetBlock, altarCenter, palette, pathColumns)
             val fontPos = placeElevatedAltar(level, plannedSetBlock, altarCenter, altarSurface, palette, courtLayout, detailRandom)
@@ -3573,7 +3256,6 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             return PlannedSite(
                 fontPos = fontPos,
                 maxBlood = generatedCapacityForSite(definition, tileRadius, fullPlan.size),
-                graveSoilPositions = graveSoilPositionsFor(graveRecords),
                 placements = placements,
                 minX = allPositions.minOf { it.x },
                 maxX = allPositions.maxOf { it.x },
@@ -3619,12 +3301,11 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             } else {
                 center
             }
-            val graveSoilPositions = placeMinimalReliquaryDressing(level, chunkLocalSetBlock, chunk, dressingCenter, palette, definition, detailRandom, pathPlan)
+            placeMinimalReliquaryDressing(level, chunkLocalSetBlock, chunk, dressingCenter, palette, detailRandom, pathPlan)
             placeWetBiomeOvergrowthAround(level, chunkLocalSetBlock, chunk, dressingCenter, RELIQUARY_RADIUS, detailRandom)
             return BuiltSite(
                 fontPos = fontPos,
                 maxBlood = generatedCapacityForSite(definition, MIN_TILE_RADIUS, 480),
-                graveSoilPositions = graveSoilPositions,
                 placedInChunk = placedInChunk
             )
         }

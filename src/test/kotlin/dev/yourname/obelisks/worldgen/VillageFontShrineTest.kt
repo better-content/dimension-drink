@@ -77,7 +77,7 @@ class VillageFontShrineTest {
     }
 
     @Test
-    fun shrineTemplateAvoidsVillagePoisAndGraveyardBlocks() {
+    fun shrineTemplateAvoidsVillagePoisAndLegacyBlocks() {
         val root = loadShrineTemplate()
         val template = loadTemplateState(root)
         val blockNames = template.values.map { it.name }
@@ -99,7 +99,7 @@ class VillageFontShrineTest {
             "minecraft:brewing_stand",
             "minecraft:composter"
         )
-        assertTrue(blockNames.none { it in forbiddenNames }, "Village shrine should not add bells, workstations, or graveyard blocks")
+        assertTrue(blockNames.none { it in forbiddenNames }, "Village shrine should not add bells, workstations, or legacy grave blocks")
         assertTrue(blockNames.none { it.endsWith("_bed") }, "Village shrine should not contain beds")
     }
 

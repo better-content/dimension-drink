@@ -111,7 +111,7 @@ object ObeliskCommands {
                     if (obelisk != null) {
                         ctx.source.sendSuccess({
                             Component.literal(
-                                "Font blood=${obelisk.bloodStored.toInt()}/${obelisk.getMaxBlood().toInt()} cooldown=${obelisk.getCooldownRemainingTicks()} activeRun=${obelisk.activeRunId} heartLevel=${obelisk.getHeartLevel()}"
+                                "Font tripJuice=${obelisk.bloodStored.toInt()}/${obelisk.getMaxBlood().toInt()} cooldown=${obelisk.getCooldownRemainingTicks()} activeRun=${obelisk.activeRunId} heartLevel=${obelisk.getHeartLevel()}"
                             )
                         }, false)
                     }
@@ -137,7 +137,7 @@ object ObeliskCommands {
                 }
                 ctx.source.sendSuccess({
                     Component.literal(
-                        "blood=${obelisk.bloodStored.toInt()}/${obelisk.getMaxBlood().toInt()} regen=${"%.3f".format(obelisk.getModifiedRegenRate())} baseDrain=${"%.3f".format(obelisk.getModifiedBaseDrain())} playerDrain=${"%.3f".format(obelisk.getModifiedPlayerDrain())} factor=${"%.4f".format(obelisk.getModifiedDrainFactor())}"
+                        "tripJuice=${obelisk.bloodStored.toInt()}/${obelisk.getMaxBlood().toInt()} regen=${"%.3f".format(obelisk.getModifiedRegenRate())} baseDrain=${"%.3f".format(obelisk.getModifiedBaseDrain())} playerDrain=${"%.3f".format(obelisk.getModifiedPlayerDrain())} factor=${"%.4f".format(obelisk.getModifiedDrainFactor())}"
                     )
                 }, false)
                 1

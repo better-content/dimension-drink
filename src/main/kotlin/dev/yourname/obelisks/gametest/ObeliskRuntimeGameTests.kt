@@ -22,11 +22,6 @@ class ObeliskRuntimeGameTests {
     }
 
     @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_runtime", timeoutTicks = 120)
-    fun grave_soil_charging_state_follows_font_charging(helper: GameTestHelper) {
-        ObeliskGameTestSupport.graveSoilChargingStateFollowsFontCharging(helper)
-    }
-
-    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_runtime", timeoutTicks = 120)
     fun font_regen_ignores_altar_copper_oxidation(helper: GameTestHelper) {
         ObeliskGameTestSupport.fontRegenIgnoresAltarCopperOxidation(helper)
     }

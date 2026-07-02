@@ -1,10 +1,8 @@
 package dev.yourname.obelisks.registry
 
 import dev.yourname.obelisks.MOD_ID
-import dev.yourname.obelisks.content.GraveSoilBlock
 import dev.yourname.obelisks.content.ObeliskBlock
 import net.minecraft.world.level.block.Block
-import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.state.BlockBehaviour
 import net.minecraft.world.level.material.MapColor
 import net.minecraftforge.registries.DeferredRegister
@@ -38,10 +36,4 @@ object ModBlocks {
     }
     val RETURN_PAD: RegistryObject<Block> = RETURN_FONT
 
-    val GRAVE_SOIL: RegistryObject<Block> = REGISTRY.register("grave_soil") {
-        GraveSoilBlock(
-            BlockBehaviour.Properties.copy(Blocks.MUD)
-                .lightLevel { state -> if (state.getValue(GraveSoilBlock.CHARGING)) 2 else 0 }
-        )
-    }
 }

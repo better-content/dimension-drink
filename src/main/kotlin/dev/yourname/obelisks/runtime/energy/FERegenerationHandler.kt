@@ -32,7 +32,6 @@ object FERegenerationHandler {
                 stale += ref
             } else {
                 obelisk.regenerateBlood(obelisk.getModifiedRegenRate())
-                obelisk.updateGraveSoilGlow()
             }
         }
         synchronized(trackedObelisks) {
