@@ -128,18 +128,21 @@ object ObeliskDataManager {
             requiredNamespace = requiredNamespace,
             worldgenFamilyId = stringOrNull(definition.worldgenFamilyId) ?: "altar",
             rewardTableId = stringOrNull(definition.rewardTableId) ?: "default",
-            graveyardPalette = definition.graveyardPalette?.let { palette ->
+            cultivationPalette = (definition.cultivationPalette ?: definition.graveyardPalette)?.let { palette ->
                 palette.copy(
                     pathBlocks = sanitizeIdList(palette.pathBlocks),
-                    graveBlocks = sanitizeIdList(palette.graveBlocks),
+                    cultivationBlocks = sanitizeIdList(palette.cultivationBlocks ?: palette.graveBlocks),
+                    graveBlocks = null,
                     structureBlocks = sanitizeIdList(palette.structureBlocks),
                     decorations = sanitizeIdList(palette.decorations),
                     trophyBlocks = sanitizeIdList(palette.trophyBlocks),
                     pedestalBlock = stringOrNull(palette.pedestalBlock)
                 )
             },
+            graveyardPalette = null,
             pathBlocks = sanitizeIdList(definition.pathBlocks),
-            graveBlocks = sanitizeIdList(definition.graveBlocks),
+            cultivationBlocks = sanitizeIdList(definition.cultivationBlocks ?: definition.graveBlocks),
+            graveBlocks = null,
             structureBlocks = sanitizeIdList(definition.structureBlocks),
             decorations = sanitizeIdList(definition.decorations),
             trophyBlocks = sanitizeIdList(definition.trophyBlocks),

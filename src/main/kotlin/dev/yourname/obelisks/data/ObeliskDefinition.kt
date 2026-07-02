@@ -17,8 +17,10 @@ data class ObeliskDefinition(
     val worldgenWeight: Double = 1.0,
     val worldgenFamilyId: String? = null,
     val rewardTableId: String = "default",
-    val graveyardPalette: GraveyardPaletteDefinition? = null,
+    val cultivationPalette: CultivationPaletteDefinition? = null,
+    val graveyardPalette: CultivationPaletteDefinition? = null,
     val pathBlocks: List<String>? = null,
+    val cultivationBlocks: List<String>? = null,
     val graveBlocks: List<String>? = null,
     val structureBlocks: List<String>? = null,
     val decorations: List<String>? = null,
@@ -29,8 +31,9 @@ data class ObeliskDefinition(
     val craterFillBlocks: List<String>? = null
 )
 
-data class GraveyardPaletteDefinition(
+data class CultivationPaletteDefinition(
     val pathBlocks: List<String>? = null,
+    val cultivationBlocks: List<String>? = null,
     val graveBlocks: List<String>? = null,
     val structureBlocks: List<String>? = null,
     val decorations: List<String>? = null,

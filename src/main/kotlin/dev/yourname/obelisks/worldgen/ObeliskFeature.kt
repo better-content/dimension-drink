@@ -335,7 +335,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             definition: ObeliskDefinition,
             random: RandomSource
         ): BuiltSite? {
-            val palette = GraveyardPalette.from(definition, center)
+            val palette = CultivationPalette.from(definition, center)
             val tiles = planTiles(level, center, palette, random)
             val fontTile = tiles[TileCoord(0, 0)] ?: return null
             val altarCenter = findNearestViableAltarCenter(level, fontTile.groundPos, fontTile.groundPos.y + ALTAR_MAX_FOUNDATION_DROP) { true } ?: return null
@@ -382,7 +382,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             return true
         }
 
-        private fun planTiles(level: LevelAccessor, center: BlockPos, palette: GraveyardPalette, random: RandomSource): Map<TileCoord, TilePlan> {
+        private fun planTiles(level: LevelAccessor, center: BlockPos, palette: CultivationPalette, random: RandomSource): Map<TileCoord, TilePlan> {
             val radius = MIN_TILE_RADIUS + random.nextInt(MAX_TILE_RADIUS - MIN_TILE_RADIUS + 1)
             val candidates = linkedMapOf<TileCoord, TilePlan>()
             for (x in -radius..radius) {
@@ -391,7 +391,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     if (!insideOrganicShape(coord, radius)) continue
                     val ground = tileGround(level, center, coord) ?: continue
                     if (!canUseTileGround(level, ground, clearance = 2)) continue
-                    candidates[coord] = TilePlan(coord, ground, TileType.DECOR, TileZone.GRAVE_FIELD, emptySet())
+                    candidates[coord] = TilePlan(coord, ground, TileType.CULTIVATION_DECOR, TileZone.CULTIVATION_FIELD, emptySet())
                 }
             }
 
@@ -437,19 +437,19 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 val zone = when {
                     coord == TileCoord(0, 0) -> TileZone.APPROACH_PATH
                     coord in paths -> TileZone.APPROACH_PATH
-                    coord in focalTiles -> TileZone.FOCAL_RUIN
-                    coord in trophyTiles -> TileZone.TROPHY_DISPLAY
-                    nearestDistance(coord, denseCenters) <= 2 -> TileZone.DENSE_CLUSTER
-                    nearestDistance(coord, quietCenters) <= 2 -> TileZone.QUIET_EDGE
-                    manhattan(coord) > radius - 4 && random.nextInt(100) < 22 -> TileZone.TREE_BREAK
-                    else -> TileZone.GRAVE_FIELD
+                    coord in focalTiles -> TileZone.PROCESSING_RUIN
+                    coord in trophyTiles -> TileZone.SPECIMEN_DISPLAY
+                    nearestDistance(coord, denseCenters) <= 2 -> TileZone.GROWING_CLUSTER
+                    nearestDistance(coord, quietCenters) <= 2 -> TileZone.FALLOW_EDGE
+                    manhattan(coord) > radius - 4 && random.nextInt(100) < 22 -> TileZone.OVERGROWN_BREAK
+                    else -> TileZone.CULTIVATION_FIELD
                 }
                 planned[coord] = tile.copy(type = typeForZone(zone, coord, paths, palette, random), zone = zone, pathExits = exitsForTile)
             }
             return planned
         }
 
-        private fun planChunkTiles(level: LevelAccessor, center: BlockPos, chunk: ChunkPos, palette: GraveyardPalette, random: RandomSource): ChunkSitePlan {
+        private fun planChunkTiles(level: LevelAccessor, center: BlockPos, chunk: ChunkPos, palette: CultivationPalette, random: RandomSource): ChunkSitePlan {
             val radius = MIN_TILE_RADIUS + random.nextInt(MAX_TILE_RADIUS - MIN_TILE_RADIUS + 1)
             val shapeCoords = linkedSetOf<TileCoord>()
             for (x in -radius..radius) {
@@ -459,7 +459,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 }
             }
             val dummyCandidates = shapeCoords.associateWith { coord ->
-                TilePlan(coord, BlockPos.ZERO, TileType.DECOR, TileZone.GRAVE_FIELD, emptySet())
+                TilePlan(coord, BlockPos.ZERO, TileType.CULTIVATION_DECOR, TileZone.CULTIVATION_FIELD, emptySet())
             }
             val paths = linkedSetOf(TileCoord(0, 0))
             terrainTargets(dummyCandidates, TileCoord(0, 0), random).take(5).forEach { target ->
@@ -504,12 +504,12 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 val zone = when {
                     coord == TileCoord(0, 0) -> TileZone.APPROACH_PATH
                     coord in paths -> TileZone.APPROACH_PATH
-                    coord in focalTiles -> TileZone.FOCAL_RUIN
-                    coord in trophyTiles -> TileZone.TROPHY_DISPLAY
-                    nearestDistance(coord, denseCenters) <= 2 -> TileZone.DENSE_CLUSTER
-                    nearestDistance(coord, quietCenters) <= 2 -> TileZone.QUIET_EDGE
-                    manhattan(coord) > radius - 4 && random.nextInt(100) < 22 -> TileZone.TREE_BREAK
-                    else -> TileZone.GRAVE_FIELD
+                    coord in focalTiles -> TileZone.PROCESSING_RUIN
+                    coord in trophyTiles -> TileZone.SPECIMEN_DISPLAY
+                    nearestDistance(coord, denseCenters) <= 2 -> TileZone.GROWING_CLUSTER
+                    nearestDistance(coord, quietCenters) <= 2 -> TileZone.FALLOW_EDGE
+                    manhattan(coord) > radius - 4 && random.nextInt(100) < 22 -> TileZone.OVERGROWN_BREAK
+                    else -> TileZone.CULTIVATION_FIELD
                 }
                 planned[coord] = TilePlan(coord, ground, typeForZone(zone, coord, paths, palette, random), zone, exitsForTile)
             }
@@ -817,34 +817,34 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             return turnTowardTarget + climbCost + contourBonus
         }
 
-        private fun typeForZone(zone: TileZone, coord: TileCoord, paths: Set<TileCoord>, palette: GraveyardPalette, random: RandomSource): TileType {
+        private fun typeForZone(zone: TileZone, coord: TileCoord, paths: Set<TileCoord>, palette: CultivationPalette, random: RandomSource): TileType {
             if (coord == TileCoord(0, 0)) return TileType.FONT_PEDESTAL
             if (zone == TileZone.APPROACH_PATH) return TileType.PATH
             return when (zone) {
-                TileZone.FOCAL_RUIN -> palette.focalStructure(random)
-                TileZone.TROPHY_DISPLAY -> TileType.TROPHY_DISPLAY
-                TileZone.DENSE_CLUSTER -> when (random.nextInt(100)) {
-                    in 0..27 -> TileType.GRAVE_DOUBLE
-                    in 28..45 -> TileType.GRAVE_SINGLE
+                TileZone.PROCESSING_RUIN -> palette.focalStructure(random)
+                TileZone.SPECIMEN_DISPLAY -> TileType.SPECIMEN_DISPLAY
+                TileZone.GROWING_CLUSTER -> when (random.nextInt(100)) {
+                    in 0..27 -> TileType.EXTRACTOR_COURT
+                    in 28..45 -> TileType.CULTIVATION_BED
                     else -> palette.clusterStructure(random)
                 }
-                TileZone.QUIET_EDGE -> when (random.nextInt(100)) {
-                    in 0..19 -> TileType.DECOR
-                    in 20..29 -> TileType.DECOR
-                    in 30..57 -> TileType.GRAVE_SINGLE
+                TileZone.FALLOW_EDGE -> when (random.nextInt(100)) {
+                    in 0..19 -> TileType.CULTIVATION_DECOR
+                    in 20..29 -> TileType.CULTIVATION_DECOR
+                    in 30..57 -> TileType.CULTIVATION_BED
                     else -> palette.edgeStructure(random)
                 }
-                TileZone.TREE_BREAK -> TileType.DECOR
-                TileZone.GRAVE_FIELD -> {
+                TileZone.OVERGROWN_BREAK -> TileType.CULTIVATION_DECOR
+                TileZone.CULTIVATION_FIELD -> {
                     val nearPath = paths.any { chebyshevDistance(coord, it) <= 2 }
                     val roll = random.nextInt(100)
                     when {
-                        nearPath && roll < 30 -> TileType.GRAVE_DOUBLE
-                        roll < 28 -> TileType.GRAVE_SINGLE
-                        roll < 46 -> TileType.GRAVE_DOUBLE
+                        nearPath && roll < 30 -> TileType.EXTRACTOR_COURT
+                        roll < 28 -> TileType.CULTIVATION_BED
+                        roll < 46 -> TileType.EXTRACTOR_COURT
                         roll < 95 -> palette.fieldStructure(random)
-                        roll < 99 -> TileType.DECOR
-                        else -> TileType.DECOR
+                        roll < 99 -> TileType.CULTIVATION_DECOR
+                        else -> TileType.CULTIVATION_DECOR
                     }
                 }
                 TileZone.APPROACH_PATH -> TileType.PATH
@@ -911,7 +911,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             setBlock: (BlockPos, BlockState, Int) -> Boolean,
             tile: TilePlan,
             tiles: Map<TileCoord, TilePlan>,
-            palette: GraveyardPalette,
+            palette: CultivationPalette,
             pathColumns: Set<Long>,
             random: RandomSource
         ) {
@@ -927,21 +927,21 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     placeStepForRaisedNeighbors(level, setBlock, tile, tiles)
                     scatterTileDetails(level, setBlock, tile.groundPos, palette, random, 2)
                 }
-                TileType.GRAVE_SINGLE -> buildDecor(level, setBlock, tile.groundPos, palette, pathColumns, random)
-                TileType.GRAVE_DOUBLE -> buildTrophyCourt(level, setBlock, tile.groundPos, palette, pathColumns, random)
-                TileType.MAUSOLEUM_SMALL -> buildMausoleum(level, setBlock, tile.groundPos, palette, random)
+                TileType.CULTIVATION_BED -> buildCultivationBed(level, setBlock, tile.groundPos, palette, pathColumns, random)
+                TileType.EXTRACTOR_COURT -> buildSpecimenCourt(level, setBlock, tile.groundPos, palette, pathColumns, random)
+                TileType.SEED_VAULT -> buildMausoleum(level, setBlock, tile.groundPos, palette, random)
                 TileType.SHRINE -> buildShrine(level, setBlock, tile.groundPos, palette, random)
-                TileType.STATUE_RUIN -> buildRuin(level, setBlock, tile.groundPos, palette, random)
-                TileType.CRYPT_ENTRY -> buildCryptEntry(level, setBlock, tile.groundPos, palette, random)
-                TileType.BROKEN_ARCH -> buildBrokenArch(level, setBlock, tile.groundPos, palette, random)
-                TileType.MEMORIAL_COURT -> buildMemorialCourt(level, setBlock, tile.groundPos, palette, pathColumns, random)
-                TileType.OSSUARY -> buildOssuary(level, setBlock, tile.groundPos, palette, random)
-                TileType.TREE_STUMP -> buildStump(level, setBlock, tile.groundPos, random)
-                TileType.TROPHY_DISPLAY -> buildTrophyCourt(level, setBlock, tile.groundPos, palette, pathColumns, random)
-                TileType.DECOR -> buildDecor(level, setBlock, tile.groundPos, palette, pathColumns, random)
+                TileType.TRELLIS_RUIN -> buildRuin(level, setBlock, tile.groundPos, palette, random)
+                TileType.IRRIGATION_GATE -> buildCryptEntry(level, setBlock, tile.groundPos, palette, random)
+                TileType.BROKEN_TRELLIS -> buildBrokenArch(level, setBlock, tile.groundPos, palette, random)
+                TileType.CULTIVATION_COURT -> buildMemorialCourt(level, setBlock, tile.groundPos, palette, pathColumns, random)
+                TileType.COMPOSTER_RUIN -> buildOssuary(level, setBlock, tile.groundPos, palette, random)
+                TileType.ROOT_STOCK -> buildStump(level, setBlock, tile.groundPos, random)
+                TileType.SPECIMEN_DISPLAY -> buildSpecimenCourt(level, setBlock, tile.groundPos, palette, pathColumns, random)
+                TileType.CULTIVATION_DECOR -> buildCultivationBed(level, setBlock, tile.groundPos, palette, pathColumns, random)
             }
-            if (tile.zone == TileZone.DENSE_CLUSTER && tile.type != TileType.PATH && tile.type != TileType.FONT_PEDESTAL) {
-                reinforceDenseCluster(level, setBlock, tile.groundPos, palette, Blocks.COPPER_BLOCK, random)
+            if (tile.zone == TileZone.GROWING_CLUSTER && tile.type != TileType.PATH && tile.type != TileType.FONT_PEDESTAL) {
+                reinforceDenseCluster(level, setBlock, tile.groundPos, palette, random)
             }
         }
 
@@ -949,8 +949,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             level: LevelAccessor,
             setBlock: (BlockPos, BlockState, Int) -> Boolean,
             base: BlockPos,
-            palette: GraveyardPalette,
-            graveHeadstone: Block,
+            palette: CultivationPalette,
             random: RandomSource
         ) {
             val directions = Direction.Plane.HORIZONTAL.toList().shuffled(random)
@@ -960,9 +959,9 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 if (!canUseTileGround(level, pos, 2)) return@forEachIndexed
                 placeGround(level, setBlock, pos, if (index == 0 || random.nextBoolean()) palette.structure(random) else palette.path(random))
                 when (index) {
-                    0 -> placeSupportedAbove(level, setBlock, pos.above(), graveHeadstone)
+                    0 -> placeSupportedAbove(level, setBlock, pos.above(), palette.marker)
                     1 -> {
-                        placeSupportedAbove(level, setBlock, pos.above(), graveHeadstone)
+                        placeSupportedAbove(level, setBlock, pos.above(), cultivationPlantBlock(pos, random))
                         if (random.nextBoolean()) {
                             placeSupportedAbove(
                                 level,
@@ -977,7 +976,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
         }
 
-        private fun placePathArm(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, tile: TilePlan, neighbor: TilePlan?, direction: Direction, palette: GraveyardPalette, random: RandomSource) {
+        private fun placePathArm(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, tile: TilePlan, neighbor: TilePlan?, direction: Direction, palette: CultivationPalette, random: RandomSource) {
             val maxScanY = maxOf(tile.groundPos.y, neighbor?.groundPos?.y ?: tile.groundPos.y) + 5
             var previous = tile.groundPos
             for (step in 1 until TILE_SIZE) {
@@ -1040,7 +1039,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
         private fun columnZ(key: Long): Int = key.toInt()
 
-        private fun buildMausoleum(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
+        private fun buildMausoleum(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: CultivationPalette, random: RandomSource) {
             if (buildLargeCrypt(level, setBlock, base, palette, random)) return
             val door = Direction.Plane.HORIZONTAL.toList().shuffled(random).first()
             for (dx in -1..1) {
@@ -1063,12 +1062,12 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     }
                 }
             }
-            placeSupportedAbove(level, setBlock, base.above(), palette.headstone)
+            placeSupportedAbove(level, setBlock, base.above(), palette.marker)
             placeSupportedAbove(level, setBlock, base.above(2), if (random.nextBoolean()) Blocks.SMOOTH_STONE_SLAB else palette.structure(random))
             scatterTileDetails(level, setBlock, base, palette, random, 3)
         }
 
-        private fun buildLargeCrypt(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource): Boolean {
+        private fun buildLargeCrypt(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: CultivationPalette, random: RandomSource): Boolean {
             val door = Direction.Plane.HORIZONTAL.toList().shuffled(random).first()
             val surfaces = linkedMapOf<Pair<Int, Int>, BlockPos>()
             for (dx in -2..2) {
@@ -1093,14 +1092,14 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 }
             }
             surfaces[0 to 0]?.let { center ->
-                placeSupportedAbove(level, setBlock, center.above(), palette.headstone)
+                placeSupportedAbove(level, setBlock, center.above(), palette.marker)
                 placeSupportedAbove(level, setBlock, center.above(2), if (random.nextBoolean()) occultTorchBlock() else occultCandleBlock(random))
             }
             scatterTileDetails(level, setBlock, base, palette, random, 6)
             return true
         }
 
-        private fun buildShrine(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
+        private fun buildShrine(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: CultivationPalette, random: RandomSource) {
             for (dx in -1..1) {
                 for (dz in -1..1) {
                     val pos = base.offset(dx, 0, dz)
@@ -1114,12 +1113,12 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 val corner = base.relative(direction).relative(if (direction.axis == Direction.Axis.X) Direction.NORTH else Direction.EAST)
                 if (canUseTileGround(level, corner, 2)) placeSupportedAbove(level, setBlock, corner.above(), Blocks.STRIPPED_WARPED_STEM)
             }
-            placeSupportedAbove(level, setBlock, base.above(), palette.headstone)
+            placeSupportedAbove(level, setBlock, base.above(), palette.marker)
             placeSupportedAbove(level, setBlock, base.above(2), if (random.nextBoolean()) occultTorchBlock() else occultCandleBlock(random))
             scatterTileDetails(level, setBlock, base, palette, random, 4)
         }
 
-        private fun buildRuin(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
+        private fun buildRuin(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: CultivationPalette, random: RandomSource) {
             if (!canUseTileGround(level, base, 2)) return
             placeGround(level, setBlock, base, palette.structure(random))
             Direction.Plane.HORIZONTAL.toList().shuffled(random).take(3).forEach { direction ->
@@ -1127,7 +1126,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     val pos = terrainGroundNear(level, base.relative(direction, step), base.y + 5, 2) ?: continue
                     if (canUseTileGround(level, pos, 2)) {
                         if (random.nextBoolean()) placeGround(level, setBlock, pos, palette.structure(random))
-                        placeSupportedAbove(level, setBlock, pos.above(), if (random.nextInt(4) == 0) palette.headstone else Blocks.STRIPPED_WARPED_STEM)
+                        placeSupportedAbove(level, setBlock, pos.above(), if (random.nextInt(4) == 0) palette.marker else Blocks.STRIPPED_WARPED_STEM)
                         if (random.nextInt(3) == 0) placeSupportedAbove(level, setBlock, pos.above(2), Blocks.STRIPPED_WARPED_STEM)
                     }
                 }
@@ -1135,7 +1134,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             scatterTileDetails(level, setBlock, base, palette, random, 3)
         }
 
-        private fun buildCryptEntry(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
+        private fun buildCryptEntry(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: CultivationPalette, random: RandomSource) {
             val facing = Direction.Plane.HORIZONTAL.toList().shuffled(random).first()
             val side = if (facing.axis == Direction.Axis.X) Direction.NORTH else Direction.EAST
             val apron = listOf(base, base.relative(facing.opposite), base.relative(facing.opposite, 2))
@@ -1153,7 +1152,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val lintelLeft = base.relative(side).above(2)
             val lintelRight = base.relative(side.opposite).above(2)
             val lintelCenter = base.above(3)
-            placeSupportedAbove(level, setBlock, base.above(), palette.headstone)
+            placeSupportedAbove(level, setBlock, base.above(), palette.marker)
             if (canReplaceDecoration(level, lintelLeft) && canReplaceDecoration(level, lintelRight) && canReplaceDecoration(level, lintelCenter)) {
                 setBlock(lintelLeft, generatedState(Blocks.STRIPPED_WARPED_STEM, lintelLeft), 3)
                 setBlock(lintelRight, generatedState(Blocks.STRIPPED_WARPED_STEM, lintelRight), 3)
@@ -1162,7 +1161,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             scatterTileDetails(level, setBlock, base, palette, random, 4)
         }
 
-        private fun buildBrokenArch(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
+        private fun buildBrokenArch(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: CultivationPalette, random: RandomSource) {
             val axis = if (random.nextBoolean()) Direction.EAST else Direction.NORTH
             val side = if (axis.axis == Direction.Axis.X) Direction.NORTH else Direction.EAST
             val piers = listOf(base.relative(axis, 2), base.relative(axis.opposite, 2))
@@ -1186,13 +1185,13 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
             listOf(base.relative(side), base.relative(side.opposite)).forEach { flank ->
                 if (canUseTileGround(level, flank, 1) && random.nextBoolean()) {
-                    placeSupportedAbove(level, setBlock, flank.above(), palette.headstone)
+                    placeSupportedAbove(level, setBlock, flank.above(), palette.marker)
                 }
             }
             scatterTileDetails(level, setBlock, base, palette, random, 3)
         }
 
-        private fun buildMemorialCourt(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, pathColumns: Set<Long>, random: RandomSource) {
+        private fun buildMemorialCourt(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: CultivationPalette, pathColumns: Set<Long>, random: RandomSource) {
             for (dx in -1..1) {
                 for (dz in -1..1) {
                     val pos = base.offset(dx, 0, dz)
@@ -1209,7 +1208,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     }
                 }
             }
-            placeSupportedAbove(level, setBlock, base.above(), palette.headstone)
+            placeSupportedAbove(level, setBlock, base.above(), palette.marker)
             if (random.nextBoolean()) {
                 placeSupportedAbove(level, setBlock, base.above(2), palette.decoration(random))
             }
@@ -1221,7 +1220,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
         }
 
-        private fun buildOssuary(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource) {
+        private fun buildOssuary(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: CultivationPalette, random: RandomSource) {
             if (!canUseTileGround(level, base, 2)) return
             placeGround(level, setBlock, base, palette.structure(random))
             val pile = listOf(
@@ -1232,7 +1231,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             pile.forEachIndexed { index, pos ->
                 if (canReplaceDecoration(level, pos)) {
                     val block = when {
-                        index == 1 && random.nextBoolean() -> palette.headstone
+                        index == 1 && random.nextBoolean() -> palette.marker
                         random.nextBoolean() -> palette.decoration(random)
                         else -> palette.wall(random)
                     }
@@ -1243,12 +1242,12 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 val scatter = base.relative(direction)
                 if (canUseTileGround(level, scatter, 1)) {
                     placeGround(level, setBlock, scatter, if (random.nextBoolean()) palette.structure(random) else palette.path(random))
-                    if (random.nextBoolean()) placeSupportedAbove(level, setBlock, scatter.above(), palette.headstone)
+                    if (random.nextBoolean()) placeSupportedAbove(level, setBlock, scatter.above(), palette.marker)
                 }
             }
         }
 
-        private fun buildTrophyCourt(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, pathColumns: Set<Long>, random: RandomSource) {
+        private fun buildSpecimenCourt(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: CultivationPalette, pathColumns: Set<Long>, random: RandomSource) {
             if (!canUseTileGround(level, base, 2)) return
             placeTrophyDisplay(level, setBlock, base, palette, pathColumns, random)
             Direction.Plane.HORIZONTAL.toList().shuffled(random).take(3).forEach { direction ->
@@ -1279,43 +1278,65 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
         }
 
-        private fun buildDecor(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, pathColumns: Set<Long>, random: RandomSource) {
+        private fun cultivationBedBlock(random: RandomSource): Block =
+            when (random.nextInt(6)) {
+                0 -> Blocks.MOSS_BLOCK
+                1 -> Blocks.ROOTED_DIRT
+                2 -> Blocks.PODZOL
+                3 -> Blocks.MYCELIUM
+                4 -> Blocks.MUD
+                else -> Blocks.PACKED_MUD
+            }
+
+        private fun cultivationPlantBlock(pos: BlockPos, random: RandomSource): Block =
+            when (Math.floorMod(pos.x * 37 + pos.z * 19 + pos.y * 7 + random.nextInt(17), 8)) {
+                0 -> Blocks.POTTED_FERN
+                1 -> Blocks.POTTED_AZALEA
+                2 -> Blocks.POTTED_FLOWERING_AZALEA
+                3 -> Blocks.BROWN_MUSHROOM
+                4 -> Blocks.RED_MUSHROOM
+                5 -> Blocks.CRIMSON_ROOTS
+                6 -> Blocks.WARPED_ROOTS
+                else -> occultCandleBlock(random)
+            }
+
+        private fun buildCultivationBed(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: CultivationPalette, pathColumns: Set<Long>, random: RandomSource) {
             if (!canUseTileGround(level, base, 1)) return
-            placeGround(level, setBlock, base, if (random.nextInt(4) == 0) palette.structure(random) else palette.path(random))
-            val placedHeadstone = if (random.nextInt(100) < 42) {
-                placeSupportedAbove(level, setBlock, base.above(), palette.headstone)
+            placeGround(level, setBlock, base, if (random.nextInt(3) == 0) palette.structure(random) else cultivationBedBlock(random))
+            val placedAnchor = if (random.nextInt(100) < 42) {
+                placeSupportedAbove(level, setBlock, base.above(), cultivationPlantBlock(base, random))
             } else if (random.nextInt(3) == 0) {
                 placeTrophyDisplay(level, setBlock, base, palette, pathColumns, random)
             } else {
                 placeSupportedAbove(level, setBlock, base.above(), palette.decoration(random))
             }
-            if (placedHeadstone) {
+            if (placedAnchor) {
                 Direction.Plane.HORIZONTAL.toList().shuffled(random).take(2).forEach { direction ->
                     val flank = base.relative(direction)
                     if (canUseTileGround(level, flank, 1)) {
-                        placeGround(level, setBlock, flank, if (random.nextBoolean()) palette.path(random) else palette.structure(random))
-                        placeSupportedAbove(level, setBlock, flank.above(), if (random.nextBoolean()) palette.decoration(random) else palette.headstone)
+                        placeGround(level, setBlock, flank, if (random.nextBoolean()) palette.path(random) else cultivationBedBlock(random))
+                        placeSupportedAbove(level, setBlock, flank.above(), if (random.nextBoolean()) palette.decoration(random) else cultivationPlantBlock(flank, random))
                     }
                 }
             }
             scatterTileDetails(level, setBlock, base, palette, random, 5)
         }
 
-        private fun scatterTileDetails(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, random: RandomSource, attempts: Int) {
+        private fun scatterTileDetails(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: CultivationPalette, random: RandomSource, attempts: Int) {
             repeat(attempts) {
                 val rough = base.offset(random.nextInt(5) - 2, 0, random.nextInt(5) - 2)
                 val pos = terrainGroundNear(level, rough, base.y + 4, 1) ?: return@repeat
                 if (canUseTileGround(level, pos, 1)) {
                     if (random.nextInt(4) == 0) placeGround(level, setBlock, pos, palette.path(random))
                     when (random.nextInt(6)) {
-                        1, 2 -> placeSupportedAbove(level, setBlock, pos.above(), palette.headstone)
+                        1, 2 -> placeSupportedAbove(level, setBlock, pos.above(), cultivationPlantBlock(pos, random))
                         3, 4 -> placeSupportedAbove(level, setBlock, pos.above(), palette.decoration(random))
                     }
                 }
             }
         }
 
-        private fun placeIntersectionTrophies(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, tiles: Map<TileCoord, TilePlan>, palette: GraveyardPalette, random: RandomSource) {
+        private fun placeIntersectionTrophies(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, tiles: Map<TileCoord, TilePlan>, palette: CultivationPalette, random: RandomSource) {
             val pathCoords = tiles.values.filter { it.type == TileType.PATH }.map { it.coord }.toSet()
             val pathColumns = plannedPathColumns(tiles)
             val candidateTiles = tiles.values
@@ -1333,7 +1354,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
         }
 
-        private fun placeBoundaryAccents(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, tiles: Map<TileCoord, TilePlan>, palette: GraveyardPalette, random: RandomSource) {
+        private fun placeBoundaryAccents(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, tiles: Map<TileCoord, TilePlan>, palette: CultivationPalette, random: RandomSource) {
             val pathColumns = plannedPathColumns(tiles)
             tiles.values.forEach { tile ->
                 for (direction in Direction.Plane.HORIZONTAL) {
@@ -1343,7 +1364,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                         if (random.nextInt(100) < 45) {
                             placeValveShrine(level, setBlock, pos, direction.opposite, random) || placeTrophyDisplay(level, setBlock, pos, palette, pathColumns, random)
                         } else {
-                            placeSupportedAbove(level, setBlock, pos.above(), if (random.nextInt(4) == 0) palette.headstone else palette.wall(random))
+                            placeSupportedAbove(level, setBlock, pos.above(), if (random.nextInt(4) == 0) cultivationPlantBlock(pos, random) else palette.wall(random))
                         }
                     }
                 }
@@ -1354,7 +1375,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             level: LevelAccessor,
             setBlock: (BlockPos, BlockState, Int) -> Boolean,
             center: BlockPos,
-            palette: GraveyardPalette,
+            palette: CultivationPalette,
             pathColumns: Set<Long>,
             random: RandomSource,
             locateGround: (BlockPos) -> BlockPos?
@@ -1379,7 +1400,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             setBlock: (BlockPos, BlockState, Int) -> Boolean,
             altarCenter: BlockPos,
             layout: CourtLayout,
-            palette: GraveyardPalette,
+            palette: CultivationPalette,
             pathColumns: Set<Long>,
             random: RandomSource
         ) {
@@ -1413,7 +1434,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private fun placeFallbackCourtTrophy(
             setBlock: (BlockPos, BlockState, Int) -> Boolean,
             altarCenter: BlockPos,
-            palette: GraveyardPalette,
+            palette: CultivationPalette,
             random: RandomSource
         ): Boolean {
             val trophy = palette.trophy(random) ?: return false
@@ -1630,7 +1651,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 path.contains("azalea")
         }
 
-        private fun placeTrophyDisplay(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: GraveyardPalette, pathColumns: Set<Long>, random: RandomSource): Boolean {
+        private fun placeTrophyDisplay(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: CultivationPalette, pathColumns: Set<Long>, random: RandomSource): Boolean {
             val trophy = palette.trophy(random) ?: return false
             if (!canUseTileGround(level, base, 3)) return false
             if (columnKey(base) in pathColumns) return false
@@ -1806,9 +1827,9 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private fun isPottablePlantDisplayBlock(block: Block): Boolean {
             val path = BuiltInRegistries.BLOCK.getKey(block).path
             if (path.startsWith("potted_")) return false
+            if (path == "dead_bush") return false
             if (block is BushBlock) return true
-            return path == "dead_bush" ||
-                path == "chorus_flower" ||
+            return path == "chorus_flower" ||
                 path.endsWith("_flower") ||
                 path.endsWith("_flowers") ||
                 path.endsWith("_mushroom") ||
@@ -1906,7 +1927,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             level: LevelAccessor,
             setBlock: (BlockPos, BlockState, Int) -> Boolean,
             base: BlockPos,
-            palette: GraveyardPalette,
+            palette: CultivationPalette,
             pathColumns: Set<Long>,
             random: RandomSource
         ): Boolean {
@@ -1931,7 +1952,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             setBlock: (BlockPos, BlockState, Int) -> Boolean,
             chunk: ChunkPos,
             center: BlockPos,
-            palette: GraveyardPalette,
+            palette: CultivationPalette,
             random: RandomSource,
             pathPlan: MinimalReliquaryPathPlan = planMinimalReliquaryPaths(center, random)
         ) {
@@ -2071,7 +2092,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             setBlock: (BlockPos, BlockState, Int) -> Boolean,
             center: BlockPos,
             surfaceByOffset: Map<Pair<Int, Int>, Int>,
-            palette: GraveyardPalette,
+            palette: CultivationPalette,
             courtLayout: CourtLayout,
             random: RandomSource,
             allowed: ((BlockPos) -> Boolean)? = null
@@ -2111,7 +2132,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             level: LevelAccessor,
             setBlock: (BlockPos, BlockState, Int) -> Boolean,
             altarCenter: BlockPos,
-            palette: GraveyardPalette,
+            palette: CultivationPalette,
             pathColumns: Set<Long>,
             allowed: (BlockPos) -> Boolean = { true }
         ): CourtLayout {
@@ -2369,7 +2390,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             return isDisplayDetailBlock(state.block)
         }
 
-        private fun courtFloorBlock(pos: BlockPos, palette: GraveyardPalette, zone: CourtZone): Block =
+        private fun courtFloorBlock(pos: BlockPos, palette: CultivationPalette, zone: CourtZone): Block =
             when (zone) {
                 CourtZone.CORNER -> palette.courtAnchorBlock(pos)
                 CourtZone.EDGE -> palette.courtSupportBlock(pos)
@@ -2446,7 +2467,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             level: LevelAccessor,
             setBlock: (BlockPos, BlockState, Int) -> Boolean,
             center: BlockPos,
-            palette: GraveyardPalette,
+            palette: CultivationPalette,
             courtLayout: CourtLayout,
             allowed: ((BlockPos) -> Boolean)? = null
         ) {
@@ -2469,7 +2490,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             outerPos: BlockPos,
             direction: Direction,
             isActiveEntry: Boolean,
-            palette: GraveyardPalette,
+            palette: CultivationPalette,
             allowed: ((BlockPos) -> Boolean)? = null
         ): BlockState {
             if (!isActiveEntry) {
@@ -2500,11 +2521,11 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             listOf(-2 to -2, -2 to 2, 2 to -2, 2 to 2).forEach { (dx, dz) ->
                 for (y in center.y + ALTAR_HEIGHT + 1..supportTopY) {
                     val pos = BlockPos(center.x + dx, y, center.z + dz)
-                    val state = generatedState(Blocks.BONE_BLOCK, pos).let { bone ->
-                        if (bone.hasProperty(BlockStateProperties.AXIS)) {
-                            bone.setValue(BlockStateProperties.AXIS, Direction.Axis.Y)
+                    val state = generatedState(Blocks.STRIPPED_WARPED_STEM, pos).let { support ->
+                        if (support.hasProperty(BlockStateProperties.AXIS)) {
+                            support.setValue(BlockStateProperties.AXIS, Direction.Axis.Y)
                         } else {
-                            bone
+                            support
                         }
                     }
                     setBlock(pos, state, 3)
@@ -2793,6 +2814,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private fun isDisplayDetailBlock(block: Block): Boolean {
             val path = BuiltInRegistries.BLOCK.getKey(block).path
             if (path == "dragon_head" || path == "dragon_wall_head") return false
+            if (path == "dead_bush" || path == "potted_dead_bush") return false
+            if (path.endsWith("_skull") || path.endsWith("_head")) return false
             if (path.contains("sculk_sensor") || path.contains("sculk_shrieker")) return false
             if (path.endsWith("_wall") || path.endsWith("_fence") || path.endsWith("_fence_gate")) return false
             if (path.endsWith("_slab") || path.endsWith("_stairs") || path.endsWith("_pillar")) return false
@@ -2810,12 +2833,9 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 path == "lantern" ||
                 path == "iridescent_ether_torch" ||
                 path == "iridescent_wall_ether_torch" ||
-                path.endsWith("_skull") ||
-                path.endsWith("_head") ||
                 path == "chorus_flower" ||
                 path == "flower_pot" ||
                 path.startsWith("potted_") ||
-                path == "dead_bush" ||
                 path.endsWith("_mushroom") ||
                 path.endsWith("_roots") ||
                 path.endsWith("_fern") ||
@@ -2843,24 +2863,24 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             return copy
         }
 
-        private fun graveyardGraveDirection(center: BlockPos, definitionId: String): Direction {
+        private fun cultivationRowDirection(center: BlockPos, definitionId: String): Direction {
             val hash = center.x * 91815541 xor center.z * 689287499 xor definitionId.hashCode()
             return if ((hash and 1) == 0) Direction.NORTH else Direction.EAST
         }
 
-        private fun graveyardHeadstone(center: BlockPos, definitionId: String, headstones: List<Block>): Block {
+        private fun cultivationMarker(center: BlockPos, definitionId: String, markers: List<Block>): Block {
             val hash = center.x * 19349663 xor center.y * 83492791 xor center.z * 297121507 xor definitionId.hashCode()
-            return headstones[Math.floorMod(hash, headstones.size)]
+            return markers[Math.floorMod(hash, markers.size)]
         }
 
-        private data class GraveyardPalette(
+        private data class CultivationPalette(
             val pedestal: Block,
             val path: List<Block>,
             val structure: List<Block>,
             val decorations: List<Block>,
             val trophies: List<Block>,
             val walls: List<Block>,
-            val headstone: Block,
+            val marker: Block,
             val focalStructures: List<TileType>,
             val clusterStructures: List<TileType>,
             val edgeStructures: List<TileType>,
@@ -2887,76 +2907,76 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
             companion object {
                 private val THEMES = listOf(
-                    GraveyardTheme(
+                    CultivationTheme(
                         path = listOf(Blocks.PACKED_MUD),
                         structure = listOf(Blocks.RAW_COPPER_BLOCK, Blocks.COPPER_BLOCK, Blocks.CUT_COPPER, Blocks.EXPOSED_CUT_COPPER),
                         decorations = listOf(Blocks.WHITE_CANDLE, Blocks.LIME_CANDLE),
                         walls = listOf(Blocks.CUT_COPPER, Blocks.RAW_COPPER_BLOCK),
-                        headstones = listOf(Blocks.COPPER_BLOCK),
-                        focalStructures = listOf(TileType.SHRINE, TileType.STATUE_RUIN, TileType.BROKEN_ARCH, TileType.MEMORIAL_COURT),
-                        clusterStructures = listOf(TileType.STATUE_RUIN, TileType.MEMORIAL_COURT, TileType.SHRINE, TileType.BROKEN_ARCH),
-                        edgeStructures = listOf(TileType.BROKEN_ARCH, TileType.STATUE_RUIN, TileType.SHRINE, TileType.TROPHY_DISPLAY),
-                        fieldStructures = listOf(TileType.STATUE_RUIN, TileType.MEMORIAL_COURT, TileType.SHRINE, TileType.DECOR)
+                        markers = listOf(Blocks.COPPER_BLOCK),
+                        focalStructures = listOf(TileType.SHRINE, TileType.TRELLIS_RUIN, TileType.BROKEN_TRELLIS, TileType.CULTIVATION_COURT),
+                        clusterStructures = listOf(TileType.TRELLIS_RUIN, TileType.CULTIVATION_COURT, TileType.SHRINE, TileType.BROKEN_TRELLIS),
+                        edgeStructures = listOf(TileType.BROKEN_TRELLIS, TileType.TRELLIS_RUIN, TileType.SHRINE, TileType.SPECIMEN_DISPLAY),
+                        fieldStructures = listOf(TileType.TRELLIS_RUIN, TileType.CULTIVATION_COURT, TileType.SHRINE, TileType.CULTIVATION_DECOR)
                     ),
-                    GraveyardTheme(
+                    CultivationTheme(
                         path = listOf(Blocks.PACKED_MUD),
                         structure = listOf(Blocks.RAW_COPPER_BLOCK, Blocks.COPPER_BLOCK, Blocks.CUT_COPPER, Blocks.WEATHERED_CUT_COPPER),
                         decorations = listOf(Blocks.WHITE_CANDLE, Blocks.LIME_CANDLE),
                         walls = listOf(Blocks.CUT_COPPER, Blocks.RAW_COPPER_BLOCK),
-                        headstones = listOf(Blocks.COPPER_BLOCK),
-                        focalStructures = listOf(TileType.BROKEN_ARCH, TileType.MEMORIAL_COURT, TileType.STATUE_RUIN, TileType.SHRINE),
-                        clusterStructures = listOf(TileType.BROKEN_ARCH, TileType.MEMORIAL_COURT, TileType.STATUE_RUIN, TileType.TROPHY_DISPLAY),
-                        edgeStructures = listOf(TileType.BROKEN_ARCH, TileType.STATUE_RUIN, TileType.TROPHY_DISPLAY, TileType.SHRINE),
-                        fieldStructures = listOf(TileType.MEMORIAL_COURT, TileType.BROKEN_ARCH, TileType.STATUE_RUIN, TileType.SHRINE)
+                        markers = listOf(Blocks.COPPER_BLOCK),
+                        focalStructures = listOf(TileType.BROKEN_TRELLIS, TileType.CULTIVATION_COURT, TileType.TRELLIS_RUIN, TileType.SHRINE),
+                        clusterStructures = listOf(TileType.BROKEN_TRELLIS, TileType.CULTIVATION_COURT, TileType.TRELLIS_RUIN, TileType.SPECIMEN_DISPLAY),
+                        edgeStructures = listOf(TileType.BROKEN_TRELLIS, TileType.TRELLIS_RUIN, TileType.SPECIMEN_DISPLAY, TileType.SHRINE),
+                        fieldStructures = listOf(TileType.CULTIVATION_COURT, TileType.BROKEN_TRELLIS, TileType.TRELLIS_RUIN, TileType.SHRINE)
                     ),
-                    GraveyardTheme(
+                    CultivationTheme(
                         path = listOf(Blocks.PACKED_MUD),
                         structure = listOf(Blocks.RAW_COPPER_BLOCK, Blocks.COPPER_BLOCK, Blocks.CUT_COPPER, Blocks.EXPOSED_COPPER),
                         decorations = listOf(Blocks.WHITE_CANDLE, Blocks.LIME_CANDLE),
                         walls = listOf(Blocks.CUT_COPPER, Blocks.RAW_COPPER_BLOCK),
-                        headstones = listOf(Blocks.COPPER_BLOCK),
-                        focalStructures = listOf(TileType.SHRINE, TileType.MEMORIAL_COURT, TileType.BROKEN_ARCH, TileType.STATUE_RUIN),
-                        clusterStructures = listOf(TileType.SHRINE, TileType.MEMORIAL_COURT, TileType.TROPHY_DISPLAY, TileType.STATUE_RUIN),
-                        edgeStructures = listOf(TileType.BROKEN_ARCH, TileType.STATUE_RUIN, TileType.SHRINE, TileType.TROPHY_DISPLAY),
-                        fieldStructures = listOf(TileType.MEMORIAL_COURT, TileType.SHRINE, TileType.BROKEN_ARCH, TileType.STATUE_RUIN)
+                        markers = listOf(Blocks.COPPER_BLOCK),
+                        focalStructures = listOf(TileType.SHRINE, TileType.CULTIVATION_COURT, TileType.BROKEN_TRELLIS, TileType.TRELLIS_RUIN),
+                        clusterStructures = listOf(TileType.SHRINE, TileType.CULTIVATION_COURT, TileType.SPECIMEN_DISPLAY, TileType.TRELLIS_RUIN),
+                        edgeStructures = listOf(TileType.BROKEN_TRELLIS, TileType.TRELLIS_RUIN, TileType.SHRINE, TileType.SPECIMEN_DISPLAY),
+                        fieldStructures = listOf(TileType.CULTIVATION_COURT, TileType.SHRINE, TileType.BROKEN_TRELLIS, TileType.TRELLIS_RUIN)
                     ),
-                    GraveyardTheme(
+                    CultivationTheme(
                         path = listOf(Blocks.PACKED_MUD),
                         structure = listOf(Blocks.RAW_COPPER_BLOCK, Blocks.COPPER_BLOCK, Blocks.CUT_COPPER, Blocks.WEATHERED_COPPER),
                         decorations = listOf(Blocks.WHITE_CANDLE, Blocks.LIME_CANDLE, Blocks.CRIMSON_ROOTS),
                         walls = listOf(Blocks.CUT_COPPER, Blocks.RAW_COPPER_BLOCK),
-                        headstones = listOf(Blocks.COPPER_BLOCK),
-                        focalStructures = listOf(TileType.SHRINE, TileType.MEMORIAL_COURT, TileType.BROKEN_ARCH, TileType.STATUE_RUIN),
-                        clusterStructures = listOf(TileType.SHRINE, TileType.MEMORIAL_COURT, TileType.BROKEN_ARCH, TileType.TROPHY_DISPLAY),
-                        edgeStructures = listOf(TileType.BROKEN_ARCH, TileType.SHRINE, TileType.STATUE_RUIN, TileType.TROPHY_DISPLAY),
-                        fieldStructures = listOf(TileType.SHRINE, TileType.MEMORIAL_COURT, TileType.STATUE_RUIN, TileType.DECOR)
+                        markers = listOf(Blocks.COPPER_BLOCK),
+                        focalStructures = listOf(TileType.SHRINE, TileType.CULTIVATION_COURT, TileType.BROKEN_TRELLIS, TileType.TRELLIS_RUIN),
+                        clusterStructures = listOf(TileType.SHRINE, TileType.CULTIVATION_COURT, TileType.BROKEN_TRELLIS, TileType.SPECIMEN_DISPLAY),
+                        edgeStructures = listOf(TileType.BROKEN_TRELLIS, TileType.SHRINE, TileType.TRELLIS_RUIN, TileType.SPECIMEN_DISPLAY),
+                        fieldStructures = listOf(TileType.SHRINE, TileType.CULTIVATION_COURT, TileType.TRELLIS_RUIN, TileType.CULTIVATION_DECOR)
                     ),
-                    GraveyardTheme(
+                    CultivationTheme(
                         path = listOf(Blocks.PACKED_MUD),
                         structure = listOf(Blocks.RAW_COPPER_BLOCK, Blocks.COPPER_BLOCK, Blocks.CUT_COPPER, Blocks.EXPOSED_CUT_COPPER),
                         decorations = listOf(Blocks.FLOWER_POT, Blocks.WHITE_CANDLE, Blocks.LIME_CANDLE),
                         walls = listOf(Blocks.CUT_COPPER, Blocks.RAW_COPPER_BLOCK),
-                        headstones = listOf(Blocks.COPPER_BLOCK),
-                        focalStructures = listOf(TileType.MEMORIAL_COURT, TileType.BROKEN_ARCH, TileType.SHRINE, TileType.STATUE_RUIN),
-                        clusterStructures = listOf(TileType.MEMORIAL_COURT, TileType.BROKEN_ARCH, TileType.STATUE_RUIN, TileType.TROPHY_DISPLAY),
-                        edgeStructures = listOf(TileType.BROKEN_ARCH, TileType.SHRINE, TileType.STATUE_RUIN, TileType.TROPHY_DISPLAY),
-                        fieldStructures = listOf(TileType.MEMORIAL_COURT, TileType.BROKEN_ARCH, TileType.SHRINE, TileType.DECOR)
+                        markers = listOf(Blocks.COPPER_BLOCK),
+                        focalStructures = listOf(TileType.CULTIVATION_COURT, TileType.BROKEN_TRELLIS, TileType.SHRINE, TileType.TRELLIS_RUIN),
+                        clusterStructures = listOf(TileType.CULTIVATION_COURT, TileType.BROKEN_TRELLIS, TileType.TRELLIS_RUIN, TileType.SPECIMEN_DISPLAY),
+                        edgeStructures = listOf(TileType.BROKEN_TRELLIS, TileType.SHRINE, TileType.TRELLIS_RUIN, TileType.SPECIMEN_DISPLAY),
+                        fieldStructures = listOf(TileType.CULTIVATION_COURT, TileType.BROKEN_TRELLIS, TileType.SHRINE, TileType.CULTIVATION_DECOR)
                     ),
-                    GraveyardTheme(
+                    CultivationTheme(
                         path = listOf(Blocks.PACKED_MUD),
                         structure = listOf(Blocks.RAW_COPPER_BLOCK, Blocks.COPPER_BLOCK, Blocks.CUT_COPPER, Blocks.WEATHERED_CUT_COPPER),
                         decorations = listOf(Blocks.BROWN_MUSHROOM, Blocks.WHITE_CANDLE, Blocks.LIME_CANDLE),
                         walls = listOf(Blocks.CUT_COPPER, Blocks.RAW_COPPER_BLOCK),
-                        headstones = listOf(Blocks.COPPER_BLOCK),
-                        focalStructures = listOf(TileType.MEMORIAL_COURT, TileType.SHRINE, TileType.BROKEN_ARCH, TileType.STATUE_RUIN),
-                        clusterStructures = listOf(TileType.MEMORIAL_COURT, TileType.SHRINE, TileType.BROKEN_ARCH, TileType.STATUE_RUIN),
-                        edgeStructures = listOf(TileType.BROKEN_ARCH, TileType.SHRINE, TileType.TROPHY_DISPLAY, TileType.STATUE_RUIN),
-                        fieldStructures = listOf(TileType.MEMORIAL_COURT, TileType.SHRINE, TileType.BROKEN_ARCH, TileType.DECOR)
+                        markers = listOf(Blocks.COPPER_BLOCK),
+                        focalStructures = listOf(TileType.CULTIVATION_COURT, TileType.SHRINE, TileType.BROKEN_TRELLIS, TileType.TRELLIS_RUIN),
+                        clusterStructures = listOf(TileType.CULTIVATION_COURT, TileType.SHRINE, TileType.BROKEN_TRELLIS, TileType.TRELLIS_RUIN),
+                        edgeStructures = listOf(TileType.BROKEN_TRELLIS, TileType.SHRINE, TileType.SPECIMEN_DISPLAY, TileType.TRELLIS_RUIN),
+                        fieldStructures = listOf(TileType.CULTIVATION_COURT, TileType.SHRINE, TileType.BROKEN_TRELLIS, TileType.CULTIVATION_DECOR)
                     )
                 )
 
-                fun from(definition: ObeliskDefinition, center: BlockPos): GraveyardPalette {
-                    val configured = definition.graveyardPalette
+                fun from(definition: ObeliskDefinition, center: BlockPos): CultivationPalette {
+                    val configured = definition.cultivationPalette ?: definition.graveyardPalette
                     val trophyIds = configured?.trophyBlocks ?: definition.trophyBlocks
                     val hash = center.x * 73428767 xor center.y * 912271 xor center.z * 4235437 xor definition.id.hashCode()
                     val theme = THEMES[Math.floorMod(hash, THEMES.size)]
@@ -2966,14 +2986,18 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     val configuredPaths = pathBlocks(configured?.pathBlocks ?: definition.pathBlocks, vanillaPath)
                     val configuredStructures = blocks(configured?.structureBlocks ?: definition.structureBlocks, vanillaStructure)
                     val configuredDecorations = detailBlocks(configured?.decorations ?: definition.decorations, vanillaDecorations)
-                    return GraveyardPalette(
+                    val configuredMarkers = blocks(
+                        configured?.cultivationBlocks ?: configured?.graveBlocks ?: definition.cultivationBlocks ?: definition.graveBlocks,
+                        listOf(Blocks.COPPER_BLOCK)
+                    )
+                    return CultivationPalette(
                         pedestal = Blocks.RAW_COPPER_BLOCK,
                         path = configuredPaths.distinct(),
                         structure = configuredStructures.distinct(),
                         decorations = configuredDecorations.distinct(),
                         trophies = trophyBlocks(trophyIds),
                         walls = listOf(Blocks.CUT_COPPER, Blocks.RAW_COPPER_BLOCK),
-                        headstone = Blocks.COPPER_BLOCK,
+                        marker = configuredMarkers.first(),
                         focalStructures = theme.focalStructures,
                         clusterStructures = theme.clusterStructures,
                         edgeStructures = theme.edgeStructures,
@@ -2983,12 +3007,12 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
         }
 
-        private data class GraveyardTheme(
+        private data class CultivationTheme(
             val path: List<Block>,
             val structure: List<Block>,
             val decorations: List<Block>,
             val walls: List<Block>,
-            val headstones: List<Block>,
+            val markers: List<Block>,
             val focalStructures: List<TileType>,
             val clusterStructures: List<TileType>,
             val edgeStructures: List<TileType>,
@@ -3016,28 +3040,28 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private enum class TileType {
             FONT_PEDESTAL,
             PATH,
-            GRAVE_SINGLE,
-            GRAVE_DOUBLE,
-            MAUSOLEUM_SMALL,
+            CULTIVATION_BED,
+            EXTRACTOR_COURT,
+            SEED_VAULT,
             SHRINE,
-            STATUE_RUIN,
-            CRYPT_ENTRY,
-            BROKEN_ARCH,
-            MEMORIAL_COURT,
-            OSSUARY,
-            TREE_STUMP,
-            TROPHY_DISPLAY,
-            DECOR
+            TRELLIS_RUIN,
+            IRRIGATION_GATE,
+            BROKEN_TRELLIS,
+            CULTIVATION_COURT,
+            COMPOSTER_RUIN,
+            ROOT_STOCK,
+            SPECIMEN_DISPLAY,
+            CULTIVATION_DECOR
         }
 
         private enum class TileZone {
             APPROACH_PATH,
-            GRAVE_FIELD,
-            DENSE_CLUSTER,
-            QUIET_EDGE,
-            FOCAL_RUIN,
-            TROPHY_DISPLAY,
-            TREE_BREAK
+            CULTIVATION_FIELD,
+            GROWING_CLUSTER,
+            FALLOW_EDGE,
+            PROCESSING_RUIN,
+            SPECIMEN_DISPLAY,
+            OVERGROWN_BREAK
         }
 
         private data class TileCoord(val x: Int, val z: Int) {
@@ -3217,7 +3241,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
     }
 
         private fun planSite(level: LevelAccessor, center: BlockPos, definition: ObeliskDefinition, siteSeed: Long): PlannedSite? {
-            val palette = GraveyardPalette.from(definition, center)
+            val palette = CultivationPalette.from(definition, center)
             val fullPlan = planTiles(level, center, palette, RandomSource.create(siteSeed xor SITE_LAYOUT_SALT))
             val centerGround = tileGround(level, center, TileCoord(0, 0)) ?: return null
             val altarCenter = findNearestViableAltarCenter(level, centerGround, centerGround.y + ALTAR_MAX_FOUNDATION_DROP) { true } ?: return null
@@ -3268,7 +3292,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             if (!siteMayIntersectChunk(center, chunk)) return null
             val centerChunk = ChunkPos(center)
 
-            val palette = GraveyardPalette.from(definition, center)
+            val palette = CultivationPalette.from(definition, center)
             var placedInChunk = false
             val chunkLocalSetBlock = { pos: BlockPos, state: BlockState, flags: Int ->
                 if (isInsideChunkBounds(pos, chunk)) {

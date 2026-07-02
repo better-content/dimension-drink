@@ -25,7 +25,7 @@ class DimensionalFontWorldgenPlacementTest {
         )
         assertTrue(
             Regex(""""separation"\s*:\s*12\b""").containsMatchIn(structureSet),
-            "Dimensional font structures should keep enough separation to avoid overlapping graveyards"
+            "Dimensional font structures should keep enough separation to avoid overlapping cultivation centers"
         )
         assertTrue(
             Regex(""""type"\s*:\s*"dimensionalfonts:dimensional_font"""").containsMatchIn(structure),

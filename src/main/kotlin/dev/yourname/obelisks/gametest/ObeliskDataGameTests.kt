@@ -41,8 +41,8 @@ class ObeliskDataGameTests {
     }
 
     @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data_overworld_presence", timeoutTicks = 1600)
-    fun generated_overworld_chunks_produce_graveyard_altar_sites(helper: GameTestHelper) {
-        ObeliskGameTestSupport.generatedOverworldChunksProduceGraveyardAltarSites(helper)
+    fun generated_overworld_chunks_produce_cultivation_centers(helper: GameTestHelper) {
+        ObeliskGameTestSupport.generatedOverworldChunksProduceCultivationCenters(helper)
     }
 
     @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
