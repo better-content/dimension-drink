@@ -8,9 +8,14 @@ import kotlin.test.assertTrue
 
 class ObeliskFeatureCourtTest {
     @Test
-    fun dryCourtDecorationStaysDeadAndPotted() {
+    fun courtDecorationStaysContainedAndPotted() {
         val blockId = pickCourtPotBlockId(false, BlockPos(0, 64, 0))
-        assertEquals("minecraft:potted_dead_bush", blockId, "Dry reliquary court dressing should stay in dead potted form")
+        assertTrue(
+            blockId == "minecraft:potted_fern" ||
+                blockId == "minecraft:potted_azalea_bush" ||
+                blockId == "minecraft:potted_flowering_azalea_bush",
+            "Reliquary court dressing should stay in restrained contained growth variants"
+        )
     }
 
     @Test
@@ -24,8 +29,7 @@ class ObeliskFeatureCourtTest {
         assertTrue(variants.all {
             it == "minecraft:potted_fern" ||
                 it == "minecraft:potted_azalea_bush" ||
-                it == "minecraft:potted_flowering_azalea_bush" ||
-                it == "minecraft:potted_mangrove_propagule"
+                it == "minecraft:potted_flowering_azalea_bush"
         })
     }
 

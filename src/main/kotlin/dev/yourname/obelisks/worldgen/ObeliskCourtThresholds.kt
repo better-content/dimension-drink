@@ -10,22 +10,16 @@ internal fun shouldUseAltarThresholdStair(altarY: Int, outerGroundY: Int?, isAct
 }
 
 internal fun pickCourtPotBlockId(wet: Boolean, pos: BlockPos): String =
-    if (!wet) {
-        "minecraft:potted_dead_bush"
-    } else {
-        when (Math.floorMod(pos.x * 37 + pos.z * 19 + pos.y * 7, 4)) {
-            0 -> "minecraft:potted_fern"
-            1 -> "minecraft:potted_azalea_bush"
-            2 -> "minecraft:potted_flowering_azalea_bush"
-            else -> "minecraft:potted_mangrove_propagule"
-        }
+    when (Math.floorMod(pos.x * 37 + pos.z * 19 + pos.y * 7 + if (wet) 1 else 0, 3)) {
+        0 -> "minecraft:potted_fern"
+        1 -> "minecraft:potted_azalea_bush"
+        else -> "minecraft:potted_flowering_azalea_bush"
     }
 
 internal fun pickCourtPotBlock(wet: Boolean, pos: BlockPos): Block =
     when (pickCourtPotBlockId(wet, pos)) {
-        "minecraft:potted_dead_bush" -> Blocks.POTTED_DEAD_BUSH
         "minecraft:potted_fern" -> Blocks.POTTED_FERN
         "minecraft:potted_azalea_bush" -> Blocks.POTTED_AZALEA
         "minecraft:potted_flowering_azalea_bush" -> Blocks.POTTED_FLOWERING_AZALEA
-        else -> Blocks.POTTED_MANGROVE_PROPAGULE
+        else -> Blocks.POTTED_FERN
     }

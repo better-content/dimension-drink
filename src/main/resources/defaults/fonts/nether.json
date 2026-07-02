@@ -14,8 +14,8 @@
     "pathBlocks": ["minecraft:cut_copper", "minecraft:copper_block", "minecraft:raw_copper_block"],
     "graveBlocks": ["minecraft:copper_block"],
     "structureBlocks": ["minecraft:raw_copper_block", "minecraft:copper_block", "minecraft:cut_copper"],
-    "trophyBlocks": ["minecraft:wither_skeleton_skull", "minecraft:soul_lantern", "minecraft:soul_torch", "minecraft:crimson_roots", "minecraft:warped_roots"],
-    "decorations": ["minecraft:orange_candle", "minecraft:red_candle", "minecraft:soul_torch", "minecraft:potted_dead_bush"]
+    "trophyBlocks": ["malum:iridescent_ether_torch", "minecraft:white_candle", "minecraft:crimson_roots", "minecraft:warped_roots"],
+    "decorations": ["malum:iridescent_ether_torch", "minecraft:lime_candle", "minecraft:white_candle"]
   },
   "rewardTableId": "nether",
   "maxBlood": 15000,

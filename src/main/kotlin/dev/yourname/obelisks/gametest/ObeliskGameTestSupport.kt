@@ -705,14 +705,14 @@ object ObeliskGameTestSupport {
             displayName = "Test End Visual",
             instanceTemplateId = "end",
             rewardTableId = "end",
-            graveyardPalette = GraveyardPaletteDefinition(trophyBlocks = listOf("minecraft:end_rod"))
+            graveyardPalette = GraveyardPaletteDefinition(trophyBlocks = listOf("minecraft:white_candle"))
         )
         val netherDefinition = ObeliskDefinition(
             id = "test_nether_visual_definition",
             displayName = "Test Nether Visual",
             instanceTemplateId = "nether",
             rewardTableId = "nether",
-            graveyardPalette = GraveyardPaletteDefinition(trophyBlocks = listOf("minecraft:soul_lantern"))
+            graveyardPalette = GraveyardPaletteDefinition(trophyBlocks = listOf("malum:iridescent_ether_torch"))
         )
         val moddedDefinition = ObeliskDefinition(
             id = "test_modded_visual_definition",
@@ -807,7 +807,7 @@ object ObeliskGameTestSupport {
             instanceTemplateId = "blue_skies:everbright",
             targetDimension = "blue_skies:everbright",
             rewardTableId = "default",
-            graveyardPalette = GraveyardPaletteDefinition(trophyBlocks = listOf("minecraft:end_rod"))
+            graveyardPalette = GraveyardPaletteDefinition(trophyBlocks = listOf("minecraft:white_candle"))
         )
         writeDefinition(definition)
         reloadData()
@@ -1529,6 +1529,12 @@ object ObeliskGameTestSupport {
             helper.assertTrue(helper.level.getBlockState(fontPos.above(dy)).isAir, "Expected $label font to keep clear space above it")
         }
         val altarCenter = middleTierCenter
+        val iridescentWallTorch = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+            net.minecraft.resources.ResourceLocation("malum", "iridescent_wall_ether_torch")
+        )
+        val iridescentTorch = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+            net.minecraft.resources.ResourceLocation("malum", "iridescent_ether_torch")
+        )
         fun isLantern(state: net.minecraft.world.level.block.state.BlockState): Boolean =
             state.`is`(Blocks.SOUL_LANTERN) || state.`is`(Blocks.LANTERN)
         listOf(2 to 0, -2 to 0, 0 to 2, 0 to -2).forEach { (dx, dz) ->
@@ -1545,22 +1551,22 @@ object ObeliskGameTestSupport {
                 "Expected $label altar corner supports to use vertical bone blocks at $supportPos"
             )
         }
-        var sideSoulTorches = 0
+        var sideOccultTorches = 0
         listOf(-2 to -2, -2 to 2, 2 to -2, 2 to 2).forEach { (dx, dz) ->
             val outwardX = if (dx < 0) -1 else 1
             val outwardZ = if (dz < 0) -1 else 1
             val xFace = helper.level.getBlockState(altarCenter.offset(dx + outwardX, 3, dz))
             val zFace = helper.level.getBlockState(altarCenter.offset(dx, 3, dz + outwardZ))
-            if (xFace.`is`(Blocks.SOUL_WALL_TORCH)) {
-                sideSoulTorches++
+            if (xFace.`is`(iridescentWallTorch)) {
+                sideOccultTorches++
             }
-            if (zFace.`is`(Blocks.SOUL_WALL_TORCH)) {
-                sideSoulTorches++
+            if (zFace.`is`(iridescentWallTorch)) {
+                sideOccultTorches++
             }
         }
         helper.assertTrue(
-            sideSoulTorches >= 8,
-            "Expected $label altar to mount 8 soul torches on the outer faces of the top bone supports"
+            sideOccultTorches >= 8,
+            "Expected $label altar to mount 8 occult torches on the outer faces of the top bone supports"
         )
         var graveSignals = 0
         var pathSignals = 0
@@ -1575,8 +1581,8 @@ object ObeliskGameTestSupport {
         val generatedFootprint = mutableSetOf<Pair<Int, Int>>()
         val generatedTerrainLevels = mutableSetOf<Int>()
         val expectedTrophy = when (label) {
-            "end" -> Blocks.END_ROD
-            "nether" -> Blocks.SOUL_LANTERN
+            "end" -> Blocks.WHITE_CANDLE
+            "nether" -> iridescentTorch
             "modded" -> Blocks.MAGENTA_CANDLE
             else -> null
         }
@@ -1637,17 +1643,14 @@ object ObeliskGameTestSupport {
         fun isLivingCourtPot(state: net.minecraft.world.level.block.state.BlockState): Boolean =
             state.`is`(Blocks.POTTED_FERN) ||
                 state.`is`(Blocks.POTTED_AZALEA) ||
-                state.`is`(Blocks.POTTED_FLOWERING_AZALEA) ||
-                state.`is`(Blocks.POTTED_MANGROVE_PROPAGULE)
-        fun isDeadCourtPot(state: net.minecraft.world.level.block.state.BlockState): Boolean =
-            state.`is`(Blocks.POTTED_DEAD_BUSH)
+                state.`is`(Blocks.POTTED_FLOWERING_AZALEA)
         fun columnHas(dx: Int, dz: Int, minDy: Int, maxDy: Int, predicate: (net.minecraft.world.level.block.state.BlockState) -> Boolean): Boolean =
             (minDy..maxDy).any { dy -> predicate(helper.level.getBlockState(graveyardFloorCenter.offset(dx, dy, dz))) }
         fun detailWeight(pos: BlockPos): Int {
             val state = helper.level.getBlockState(pos)
             var weight = 0
             if (isGeneratedGraveMarker(state)) weight++
-            if (state.`is`(Blocks.ORANGE_CANDLE) || state.`is`(Blocks.SOUL_LANTERN) || state.`is`(Blocks.SKELETON_SKULL) || state.`is`(Blocks.OAK_LOG) || state.`is`(Blocks.SPRUCE_LOG)) weight++
+            if (state.`is`(Blocks.WHITE_CANDLE) || state.`is`(Blocks.LIME_CANDLE) || state.`is`(iridescentTorch) || state.`is`(Blocks.OAK_LOG) || state.`is`(Blocks.SPRUCE_LOG)) weight++
             if (expectedTrophy != null && state.`is`(expectedTrophy)) weight += 2
             return weight
         }
@@ -1696,7 +1699,7 @@ object ObeliskGameTestSupport {
                     if (state.`is`(Blocks.WITHER_ROSE)) {
                         forbiddenSignals++
                     }
-                    if ((state.`is`(Blocks.RED_CANDLE) || state.`is`(Blocks.YELLOW_CANDLE) || state.`is`(Blocks.ORANGE_CANDLE)) && !state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.LIT)) {
+                    if ((state.`is`(Blocks.WHITE_CANDLE) || state.`is`(Blocks.LIME_CANDLE) || state.`is`(Blocks.CANDLE)) && !state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.LIT)) {
                         unlitCandleSignals++
                     }
                 }
@@ -1723,7 +1726,6 @@ object ObeliskGameTestSupport {
         var perimeterPotSignals = 0
         var centralPotSignals = 0
         var livingPotSignals = 0
-        var deadPotSignals = 0
         for (dx in -6..6) {
             for (dz in -6..6) {
                 if (maxOf(abs(dx), abs(dz)) <= 5) {
@@ -1733,14 +1735,13 @@ object ObeliskGameTestSupport {
                 if (abs(dx) == 5 && abs(dz) == 5 && columnHas(dx, dz, -1, 4, ::isCopperCourtFloor)) {
                     courtCornerSignals++
                 }
-                if (maxOf(abs(dx), abs(dz)) <= 2 && columnHas(dx, dz, 0, 4) { isLivingCourtPot(it) || isDeadCourtPot(it) }) {
+                if (maxOf(abs(dx), abs(dz)) <= 2 && columnHas(dx, dz, 0, 4, ::isLivingCourtPot)) {
                     centralPotSignals++
                 }
-                if (maxOf(abs(dx), abs(dz)) in 4..6 && columnHas(dx, dz, 0, 4) { isLivingCourtPot(it) || isDeadCourtPot(it) }) {
+                if (maxOf(abs(dx), abs(dz)) in 4..6 && columnHas(dx, dz, 0, 4, ::isLivingCourtPot)) {
                     perimeterPotSignals++
                 }
                 if (columnHas(dx, dz, 0, 4, ::isLivingCourtPot)) livingPotSignals++
-                if (columnHas(dx, dz, 0, 4, ::isDeadCourtPot)) deadPotSignals++
             }
         }
         Direction.Plane.HORIZONTAL.forEach { direction ->
@@ -1783,9 +1784,6 @@ object ObeliskGameTestSupport {
             helper.assertTrue(perimeterPotSignals >= 1, "Expected $label reliquary court to reserve decorative pots for perimeter pockets")
         }
         helper.assertTrue(centralPotSignals == 0, "Expected $label reliquary court center to stay clear of decorative pots")
-        if (label != "modded") {
-            helper.assertTrue(deadPotSignals >= 1, "Expected $label dry reliquary court dressing to use dead potted decoration")
-        }
         if (label == "modded") {
             helper.assertTrue(generatedTerrainLevels.size >= 1, "Expected modded reliquary to occupy generated terrain")
         }

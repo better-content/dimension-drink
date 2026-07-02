@@ -14,8 +14,8 @@
     "pathBlocks": ["minecraft:cut_copper", "minecraft:copper_block", "minecraft:raw_copper_block"],
     "graveBlocks": ["minecraft:copper_block"],
     "structureBlocks": ["minecraft:raw_copper_block", "minecraft:copper_block", "minecraft:cut_copper"],
-    "trophyBlocks": ["minecraft:soul_lantern", "minecraft:skeleton_skull", "minecraft:candle", "minecraft:cobweb"],
-    "decorations": ["minecraft:orange_candle", "minecraft:red_candle", "minecraft:soul_torch", "minecraft:potted_dead_bush"]
+    "trophyBlocks": ["minecraft:lantern", "minecraft:candle", "minecraft:white_candle", "minecraft:flower_pot"],
+    "decorations": ["malum:iridescent_ether_torch", "minecraft:lime_candle", "minecraft:white_candle"]
   },
   "rewardTableId": "default",
   "maxBlood": 15000,

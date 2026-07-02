@@ -26,11 +26,11 @@ class ObeliskBlockEntityRenderer(
         packedLight: Int,
         packedOverlay: Int
     ) {
-        renderBlood(obelisk, poseStack, bufferSource, packedLight)
+        renderReservoir(obelisk, poseStack, bufferSource, packedLight)
         renderHeart(obelisk, partialTick, poseStack, bufferSource, packedLight)
     }
 
-    private fun renderBlood(
+    private fun renderReservoir(
         obelisk: ObeliskBlockEntity,
         poseStack: PoseStack,
         bufferSource: MultiBufferSource,
@@ -183,7 +183,7 @@ class ObeliskBlockEntityRenderer(
         normalZ: Float
     ) {
         consumer.vertex(pose.pose(), x, y, z)
-            .color(112, 0, 8, alpha)
+            .color(38, 92, 78, alpha)
             .uv(sprite.getU((u * 16.0f).toDouble()), sprite.getV((v * 16.0f).toDouble()))
             .overlayCoords(OverlayTexture.NO_OVERLAY)
             .uv2(packedLight)

@@ -840,12 +840,12 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     else -> palette.clusterStructure(random)
                 }
                 TileZone.QUIET_EDGE -> when (random.nextInt(100)) {
-                    in 0..19 -> TileType.TREE_STUMP
+                    in 0..19 -> TileType.DECOR
                     in 20..29 -> TileType.DECOR
                     in 30..57 -> TileType.GRAVE_SINGLE
                     else -> palette.edgeStructure(random)
                 }
-                TileZone.TREE_BREAK -> if (random.nextInt(4) == 0) TileType.DECOR else TileType.TREE_STUMP
+                TileZone.TREE_BREAK -> TileType.DECOR
                 TileZone.GRAVE_FIELD -> {
                     val nearPath = paths.any { chebyshevDistance(coord, it) <= 2 }
                     val roll = random.nextInt(100)
@@ -854,7 +854,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                         roll < 28 -> TileType.GRAVE_SINGLE
                         roll < 46 -> TileType.GRAVE_DOUBLE
                         roll < 95 -> palette.fieldStructure(random)
-                        roll < 99 -> TileType.TREE_STUMP
+                        roll < 99 -> TileType.DECOR
                         else -> TileType.DECOR
                     }
                 }
@@ -979,7 +979,12 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     1 -> {
                         placeSupportedAbove(level, setBlock, pos.above(), graveHeadstone)
                         if (random.nextBoolean()) {
-                            placeSupportedAbove(level, setBlock, pos.above(2), if (random.nextBoolean()) Blocks.SOUL_TORCH else Blocks.RED_CANDLE)
+                            placeSupportedAbove(
+                                level,
+                                setBlock,
+                                pos.above(2),
+                                if (random.nextBoolean()) occultTorchBlock() else occultCandleBlock(random)
+                            )
                         }
                     }
                     else -> placeSupportedAbove(level, setBlock, pos.above(), if (random.nextBoolean()) palette.decoration(random) else palette.wall(random))
@@ -1363,7 +1368,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
             surfaces[0 to 0]?.let { center ->
                 placeSupportedAbove(level, setBlock, center.above(), palette.headstone)
-                placeSupportedAbove(level, setBlock, center.above(2), if (random.nextBoolean()) Blocks.SOUL_TORCH else Blocks.SKELETON_SKULL)
+                placeSupportedAbove(level, setBlock, center.above(2), if (random.nextBoolean()) occultTorchBlock() else occultCandleBlock(random))
             }
             scatterTileDetails(level, setBlock, base, palette, random, 6)
             return true
@@ -1384,7 +1389,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 if (canUseTileGround(level, corner, 2)) placeSupportedAbove(level, setBlock, corner.above(), Blocks.STRIPPED_WARPED_STEM)
             }
             placeSupportedAbove(level, setBlock, base.above(), palette.headstone)
-            placeSupportedAbove(level, setBlock, base.above(2), if (random.nextBoolean()) Blocks.SOUL_TORCH else Blocks.SKELETON_SKULL)
+            placeSupportedAbove(level, setBlock, base.above(2), if (random.nextBoolean()) occultTorchBlock() else occultCandleBlock(random))
             scatterTileDetails(level, setBlock, base, palette, random, 4)
         }
 
@@ -2492,7 +2497,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 if (maxOf(abs(ground.x - altarCenter.x), abs(ground.z - altarCenter.z)) !in 4..6) continue
                 if (level.getBlockState(potPos).`is`(ModBlocks.OBELISK.get())) continue
                 setBlock(potPos.below(), generatedState(Blocks.CUT_COPPER, potPos.below()), 3)
-                setBlock(potPos, generatedState(Blocks.POTTED_DEAD_BUSH, potPos), 3)
+                setBlock(potPos, generatedState(pickCourtPotBlock(false, potPos), potPos), 3)
                 return
             }
         }
@@ -2853,7 +2858,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 BlockPos(center.x + 3, supportTopY, center.z + 2) to Direction.EAST
             ).forEach { (pos, facing) ->
                 if (!canReplaceDecoration(level, pos)) return@forEach
-                val state = directionalState(Blocks.SOUL_WALL_TORCH, pos, facing)
+                val state = directionalState(occultWallTorchBlock(), pos, facing)
                 setBlock(pos, state, 3)
             }
         }
@@ -3081,7 +3086,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         }
 
         private fun detailBlocks(ids: List<String>?, fallback: List<Block>): List<Block> {
-            val safeFallback = fallback.filter(::isDisplayDetailBlock).takeIf { it.isNotEmpty() } ?: listOf(Blocks.RED_CANDLE, Blocks.ORANGE_CANDLE, Blocks.SOUL_TORCH, Blocks.POTTED_DEAD_BUSH)
+            val safeFallback = fallback.filter(::isDisplayDetailBlock).takeIf { it.isNotEmpty() }
+                ?: listOf(occultTorchBlock(), Blocks.LIME_CANDLE, Blocks.WHITE_CANDLE)
             return blocks(ids, safeFallback).filter(::isDisplayDetailBlock).takeIf { it.isNotEmpty() } ?: safeFallback
         }
 
@@ -3102,18 +3108,18 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 path == "copper_rail" ||
                 path == "copper_button" ||
                 path == "copper_pressure_plate" ||
-                path.contains("candle") ||
-                path.contains("lantern") ||
-                path.endsWith("_torch") ||
+                path == "lime_candle" ||
+                path == "white_candle" ||
+                path == "candle" ||
+                path == "lantern" ||
+                path == "iridescent_ether_torch" ||
+                path == "iridescent_wall_ether_torch" ||
                 path.endsWith("_skull") ||
                 path.endsWith("_head") ||
-                path == "end_rod" ||
                 path == "chorus_flower" ||
                 path == "flower_pot" ||
                 path.startsWith("potted_") ||
-                path == "cobweb" ||
                 path == "dead_bush" ||
-                path == "potted_dead_bush" ||
                 path.endsWith("_mushroom") ||
                 path.endsWith("_roots") ||
                 path.endsWith("_fern") ||
@@ -3188,68 +3194,68 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     GraveyardTheme(
                         path = listOf(Blocks.PACKED_MUD),
                         structure = listOf(Blocks.RAW_COPPER_BLOCK, Blocks.COPPER_BLOCK, Blocks.CUT_COPPER, Blocks.EXPOSED_CUT_COPPER),
-                        decorations = listOf(Blocks.ORANGE_CANDLE, Blocks.RED_CANDLE, Blocks.SOUL_TORCH, Blocks.POTTED_DEAD_BUSH, Blocks.COBWEB),
+                        decorations = listOf(Blocks.WHITE_CANDLE, Blocks.LIME_CANDLE),
                         walls = listOf(Blocks.CUT_COPPER, Blocks.RAW_COPPER_BLOCK),
                         headstones = listOf(Blocks.COPPER_BLOCK),
-                        focalStructures = listOf(TileType.MAUSOLEUM_SMALL, TileType.SHRINE, TileType.STATUE_RUIN, TileType.BROKEN_ARCH),
-                        clusterStructures = listOf(TileType.MAUSOLEUM_SMALL, TileType.STATUE_RUIN, TileType.MEMORIAL_COURT, TileType.SHRINE),
-                        edgeStructures = listOf(TileType.BROKEN_ARCH, TileType.OSSUARY, TileType.STATUE_RUIN, TileType.SHRINE),
-                        fieldStructures = listOf(TileType.MAUSOLEUM_SMALL, TileType.STATUE_RUIN, TileType.MEMORIAL_COURT, TileType.CRYPT_ENTRY)
+                        focalStructures = listOf(TileType.SHRINE, TileType.STATUE_RUIN, TileType.BROKEN_ARCH, TileType.MEMORIAL_COURT),
+                        clusterStructures = listOf(TileType.STATUE_RUIN, TileType.MEMORIAL_COURT, TileType.SHRINE, TileType.BROKEN_ARCH),
+                        edgeStructures = listOf(TileType.BROKEN_ARCH, TileType.STATUE_RUIN, TileType.SHRINE, TileType.TROPHY_DISPLAY),
+                        fieldStructures = listOf(TileType.STATUE_RUIN, TileType.MEMORIAL_COURT, TileType.SHRINE, TileType.DECOR)
                     ),
                     GraveyardTheme(
                         path = listOf(Blocks.PACKED_MUD),
                         structure = listOf(Blocks.RAW_COPPER_BLOCK, Blocks.COPPER_BLOCK, Blocks.CUT_COPPER, Blocks.WEATHERED_CUT_COPPER),
-                        decorations = listOf(Blocks.ORANGE_CANDLE, Blocks.RED_CANDLE, Blocks.POTTED_DEAD_BUSH, Blocks.SOUL_TORCH),
+                        decorations = listOf(Blocks.WHITE_CANDLE, Blocks.LIME_CANDLE),
                         walls = listOf(Blocks.CUT_COPPER, Blocks.RAW_COPPER_BLOCK),
                         headstones = listOf(Blocks.COPPER_BLOCK),
                         focalStructures = listOf(TileType.BROKEN_ARCH, TileType.MEMORIAL_COURT, TileType.STATUE_RUIN, TileType.SHRINE),
-                        clusterStructures = listOf(TileType.BROKEN_ARCH, TileType.MEMORIAL_COURT, TileType.STATUE_RUIN, TileType.OSSUARY),
-                        edgeStructures = listOf(TileType.OSSUARY, TileType.BROKEN_ARCH, TileType.STATUE_RUIN, TileType.TREE_STUMP),
+                        clusterStructures = listOf(TileType.BROKEN_ARCH, TileType.MEMORIAL_COURT, TileType.STATUE_RUIN, TileType.TROPHY_DISPLAY),
+                        edgeStructures = listOf(TileType.BROKEN_ARCH, TileType.STATUE_RUIN, TileType.TROPHY_DISPLAY, TileType.SHRINE),
                         fieldStructures = listOf(TileType.MEMORIAL_COURT, TileType.BROKEN_ARCH, TileType.STATUE_RUIN, TileType.SHRINE)
                     ),
                     GraveyardTheme(
                         path = listOf(Blocks.PACKED_MUD),
                         structure = listOf(Blocks.RAW_COPPER_BLOCK, Blocks.COPPER_BLOCK, Blocks.CUT_COPPER, Blocks.EXPOSED_COPPER),
-                        decorations = listOf(Blocks.SOUL_TORCH, Blocks.ORANGE_CANDLE, Blocks.COBWEB, Blocks.RED_CANDLE, Blocks.POTTED_DEAD_BUSH),
+                        decorations = listOf(Blocks.WHITE_CANDLE, Blocks.LIME_CANDLE),
                         walls = listOf(Blocks.CUT_COPPER, Blocks.RAW_COPPER_BLOCK),
                         headstones = listOf(Blocks.COPPER_BLOCK),
-                        focalStructures = listOf(TileType.CRYPT_ENTRY, TileType.MAUSOLEUM_SMALL, TileType.OSSUARY, TileType.STATUE_RUIN),
-                        clusterStructures = listOf(TileType.CRYPT_ENTRY, TileType.MAUSOLEUM_SMALL, TileType.OSSUARY, TileType.MEMORIAL_COURT),
-                        edgeStructures = listOf(TileType.OSSUARY, TileType.BROKEN_ARCH, TileType.STATUE_RUIN, TileType.SHRINE),
-                        fieldStructures = listOf(TileType.CRYPT_ENTRY, TileType.MAUSOLEUM_SMALL, TileType.OSSUARY, TileType.STATUE_RUIN)
+                        focalStructures = listOf(TileType.SHRINE, TileType.MEMORIAL_COURT, TileType.BROKEN_ARCH, TileType.STATUE_RUIN),
+                        clusterStructures = listOf(TileType.SHRINE, TileType.MEMORIAL_COURT, TileType.TROPHY_DISPLAY, TileType.STATUE_RUIN),
+                        edgeStructures = listOf(TileType.BROKEN_ARCH, TileType.STATUE_RUIN, TileType.SHRINE, TileType.TROPHY_DISPLAY),
+                        fieldStructures = listOf(TileType.MEMORIAL_COURT, TileType.SHRINE, TileType.BROKEN_ARCH, TileType.STATUE_RUIN)
                     ),
                     GraveyardTheme(
                         path = listOf(Blocks.PACKED_MUD),
                         structure = listOf(Blocks.RAW_COPPER_BLOCK, Blocks.COPPER_BLOCK, Blocks.CUT_COPPER, Blocks.WEATHERED_COPPER),
-                        decorations = listOf(Blocks.SOUL_TORCH, Blocks.ORANGE_CANDLE, Blocks.RED_CANDLE, Blocks.POTTED_DEAD_BUSH, Blocks.CRIMSON_ROOTS),
+                        decorations = listOf(Blocks.WHITE_CANDLE, Blocks.LIME_CANDLE, Blocks.CRIMSON_ROOTS),
                         walls = listOf(Blocks.CUT_COPPER, Blocks.RAW_COPPER_BLOCK),
                         headstones = listOf(Blocks.COPPER_BLOCK),
-                        focalStructures = listOf(TileType.CRYPT_ENTRY, TileType.MAUSOLEUM_SMALL, TileType.SHRINE, TileType.OSSUARY),
-                        clusterStructures = listOf(TileType.CRYPT_ENTRY, TileType.MAUSOLEUM_SMALL, TileType.SHRINE, TileType.MEMORIAL_COURT),
-                        edgeStructures = listOf(TileType.OSSUARY, TileType.BROKEN_ARCH, TileType.SHRINE, TileType.STATUE_RUIN),
-                        fieldStructures = listOf(TileType.CRYPT_ENTRY, TileType.SHRINE, TileType.MEMORIAL_COURT, TileType.OSSUARY)
+                        focalStructures = listOf(TileType.SHRINE, TileType.MEMORIAL_COURT, TileType.BROKEN_ARCH, TileType.STATUE_RUIN),
+                        clusterStructures = listOf(TileType.SHRINE, TileType.MEMORIAL_COURT, TileType.BROKEN_ARCH, TileType.TROPHY_DISPLAY),
+                        edgeStructures = listOf(TileType.BROKEN_ARCH, TileType.SHRINE, TileType.STATUE_RUIN, TileType.TROPHY_DISPLAY),
+                        fieldStructures = listOf(TileType.SHRINE, TileType.MEMORIAL_COURT, TileType.STATUE_RUIN, TileType.DECOR)
                     ),
                     GraveyardTheme(
                         path = listOf(Blocks.PACKED_MUD),
                         structure = listOf(Blocks.RAW_COPPER_BLOCK, Blocks.COPPER_BLOCK, Blocks.CUT_COPPER, Blocks.EXPOSED_CUT_COPPER),
-                        decorations = listOf(Blocks.POTTED_DEAD_BUSH, Blocks.FLOWER_POT, Blocks.ORANGE_CANDLE, Blocks.RED_CANDLE),
+                        decorations = listOf(Blocks.FLOWER_POT, Blocks.WHITE_CANDLE, Blocks.LIME_CANDLE),
                         walls = listOf(Blocks.CUT_COPPER, Blocks.RAW_COPPER_BLOCK),
                         headstones = listOf(Blocks.COPPER_BLOCK),
                         focalStructures = listOf(TileType.MEMORIAL_COURT, TileType.BROKEN_ARCH, TileType.SHRINE, TileType.STATUE_RUIN),
-                        clusterStructures = listOf(TileType.MEMORIAL_COURT, TileType.BROKEN_ARCH, TileType.STATUE_RUIN, TileType.MAUSOLEUM_SMALL),
-                        edgeStructures = listOf(TileType.BROKEN_ARCH, TileType.SHRINE, TileType.OSSUARY, TileType.STATUE_RUIN),
-                        fieldStructures = listOf(TileType.MEMORIAL_COURT, TileType.BROKEN_ARCH, TileType.SHRINE, TileType.CRYPT_ENTRY)
+                        clusterStructures = listOf(TileType.MEMORIAL_COURT, TileType.BROKEN_ARCH, TileType.STATUE_RUIN, TileType.TROPHY_DISPLAY),
+                        edgeStructures = listOf(TileType.BROKEN_ARCH, TileType.SHRINE, TileType.STATUE_RUIN, TileType.TROPHY_DISPLAY),
+                        fieldStructures = listOf(TileType.MEMORIAL_COURT, TileType.BROKEN_ARCH, TileType.SHRINE, TileType.DECOR)
                     ),
                     GraveyardTheme(
                         path = listOf(Blocks.PACKED_MUD),
                         structure = listOf(Blocks.RAW_COPPER_BLOCK, Blocks.COPPER_BLOCK, Blocks.CUT_COPPER, Blocks.WEATHERED_CUT_COPPER),
-                        decorations = listOf(Blocks.SKELETON_SKULL, Blocks.ORANGE_CANDLE, Blocks.RED_CANDLE, Blocks.POTTED_DEAD_BUSH, Blocks.BROWN_MUSHROOM),
+                        decorations = listOf(Blocks.BROWN_MUSHROOM, Blocks.WHITE_CANDLE, Blocks.LIME_CANDLE),
                         walls = listOf(Blocks.CUT_COPPER, Blocks.RAW_COPPER_BLOCK),
                         headstones = listOf(Blocks.COPPER_BLOCK),
-                        focalStructures = listOf(TileType.OSSUARY, TileType.CRYPT_ENTRY, TileType.MEMORIAL_COURT, TileType.SHRINE),
-                        clusterStructures = listOf(TileType.OSSUARY, TileType.MEMORIAL_COURT, TileType.CRYPT_ENTRY, TileType.STATUE_RUIN),
-                        edgeStructures = listOf(TileType.OSSUARY, TileType.BROKEN_ARCH, TileType.SHRINE, TileType.TREE_STUMP),
-                        fieldStructures = listOf(TileType.OSSUARY, TileType.CRYPT_ENTRY, TileType.MEMORIAL_COURT, TileType.SHRINE)
+                        focalStructures = listOf(TileType.MEMORIAL_COURT, TileType.SHRINE, TileType.BROKEN_ARCH, TileType.STATUE_RUIN),
+                        clusterStructures = listOf(TileType.MEMORIAL_COURT, TileType.SHRINE, TileType.BROKEN_ARCH, TileType.STATUE_RUIN),
+                        edgeStructures = listOf(TileType.BROKEN_ARCH, TileType.SHRINE, TileType.TROPHY_DISPLAY, TileType.STATUE_RUIN),
+                        fieldStructures = listOf(TileType.MEMORIAL_COURT, TileType.SHRINE, TileType.BROKEN_ARCH, TileType.DECOR)
                     )
                 )
 
@@ -3260,7 +3266,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     val theme = THEMES[Math.floorMod(hash, THEMES.size)]
                     val vanillaPath = listOf(Blocks.PACKED_MUD)
                     val vanillaStructure = listOf(Blocks.RAW_COPPER_BLOCK, Blocks.COPPER_BLOCK, Blocks.CUT_COPPER, Blocks.EXPOSED_CUT_COPPER, Blocks.WEATHERED_CUT_COPPER)
-                    val vanillaDecorations = listOf(Blocks.ORANGE_CANDLE, Blocks.RED_CANDLE, Blocks.SOUL_TORCH, Blocks.POTTED_DEAD_BUSH, Blocks.COBWEB)
+                    val vanillaDecorations = listOf(occultTorchBlock(), Blocks.LIME_CANDLE, Blocks.WHITE_CANDLE)
                     val configuredPaths = pathBlocks(configured?.pathBlocks ?: definition.pathBlocks, vanillaPath)
                     val configuredStructures = blocks(configured?.structureBlocks ?: definition.structureBlocks, vanillaStructure)
                     val configuredDecorations = detailBlocks(configured?.decorations ?: definition.decorations, vanillaDecorations)
@@ -3292,6 +3298,15 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val edgeStructures: List<TileType>,
             val fieldStructures: List<TileType>
         )
+
+        private fun occultTorchBlock(): Block =
+            block("malum:iridescent_ether_torch", Blocks.TORCH)
+
+        private fun occultWallTorchBlock(): Block =
+            block("malum:iridescent_wall_ether_torch", Blocks.WALL_TORCH)
+
+        private fun occultCandleBlock(random: RandomSource): Block =
+            if (random.nextBoolean()) Blocks.WHITE_CANDLE else Blocks.LIME_CANDLE
 
         private data class GravePlacement(
             val head: BlockPos,
