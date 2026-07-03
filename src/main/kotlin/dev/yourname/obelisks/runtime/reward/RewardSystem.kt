@@ -44,8 +44,10 @@ object RewardSystem {
         val obelisk = level.getBlockEntity(originPos) as? ObeliskBlockEntity ?: return false
         val rewardTableId = ObeliskDataManager.getObelisk(run.definitionId)?.rewardTableId ?: "default"
         val rewardTable = ObeliskDataManager.getRewardTable(rewardTableId)
-        val recipients = run.survivors
-            .filterNot { it in run.disqualifiedPlayers }
+        val survivorSnapshot = run.survivors.toList()
+        val disqualifiedSnapshot = run.disqualifiedPlayers.toSet()
+        val recipients = survivorSnapshot
+            .filterNot { it in disqualifiedSnapshot }
             .mapNotNull { server.playerList.getPlayer(it) }
         if (recipients.isEmpty()) {
             return false
