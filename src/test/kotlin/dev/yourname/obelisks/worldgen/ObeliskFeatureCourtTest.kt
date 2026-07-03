@@ -8,29 +8,23 @@ import kotlin.test.assertTrue
 
 class ObeliskFeatureCourtTest {
     @Test
-    fun courtDecorationStaysContainedAndPotted() {
+    fun courtDecorationUsesModdedPottedPlantsOutsideDryBiomes() {
         val blockId = pickCourtPotBlockId(false, BlockPos(0, 64, 0))
         assertTrue(
-            blockId == "minecraft:potted_fern" ||
-                blockId == "minecraft:potted_azalea_bush" ||
-                blockId == "minecraft:potted_flowering_azalea_bush",
-            "Reliquary court dressing should stay in restrained contained growth variants"
+            !blockId.startsWith("minecraft:"),
+            "Reliquary court dressing should prefer modded potted plants outside dry biomes"
         )
+        assertTrue(blockId.substringAfter(':').startsWith("potted_"))
     }
 
     @Test
-    fun wetCourtDecorationUsesLivingPottedVariants() {
+    fun dryCourtDecorationFallsBackToDeadBushes() {
         val variants = buildSet {
             for (index in 0..7) {
                 add(pickCourtPotBlockId(true, BlockPos(index, 64, index * 3)))
             }
         }
-        assertTrue(variants.isNotEmpty(), "Wet reliquary courts should choose living potted decoration")
-        assertTrue(variants.all {
-            it == "minecraft:potted_fern" ||
-                it == "minecraft:potted_azalea_bush" ||
-                it == "minecraft:potted_flowering_azalea_bush"
-        })
+        assertEquals(setOf("minecraft:potted_dead_bush"), variants)
     }
 
     @Test

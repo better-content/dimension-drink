@@ -2,6 +2,7 @@ package dev.yourname.obelisks.worldgen
 
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.BushBlock
@@ -11,19 +12,35 @@ internal fun shouldUseAltarThresholdStair(altarY: Int, outerGroundY: Int?, isAct
     return outerGroundY != null && altarY > outerGroundY
 }
 
+private val fallbackModdedCourtPotIds = listOf(
+    "hexerei:potted_mandrake_plant",
+    "malum:potted_soulwood_sapling",
+    "supplementaries:potted_flax"
+)
+
+private val moddedCourtPotIds: List<String> by lazy {
+    runCatching {
+        BuiltInRegistries.BLOCK.keySet()
+            .asSequence()
+            .filter { id -> id.namespace != "minecraft" && id.path.startsWith("potted_") }
+            .filter { id ->
+                val baseId = ResourceLocation.tryParse("${id.namespace}:${id.path.removePrefix("potted_")}")
+                    ?: return@filter false
+                val baseBlock = BuiltInRegistries.BLOCK.get(baseId)
+                baseBlock != Blocks.AIR && isCourtPottablePlant(baseBlock, baseId.path)
+            }
+            .map { it.toString() }
+            .sorted()
+            .toList()
+    }.getOrDefault(emptyList()).ifEmpty { fallbackModdedCourtPotIds }
+}
+
 private val moddedCourtPotBlocks: List<Block> by lazy {
-    BuiltInRegistries.BLOCK.keySet()
-        .asSequence()
-        .filter { id -> id.namespace != "minecraft" && id.path.startsWith("potted_") }
-        .filter { id ->
-            val baseId = net.minecraft.resources.ResourceLocation.tryParse("${id.namespace}:${id.path.removePrefix("potted_")}")
-                ?: return@filter false
-            val baseBlock = BuiltInRegistries.BLOCK.get(baseId)
-            baseBlock != Blocks.AIR && isCourtPottablePlant(baseBlock, baseId.path)
-        }
-        .sortedBy { it.toString() }
-        .map { id -> BuiltInRegistries.BLOCK.get(id) }
-        .toList()
+    moddedCourtPotIds.mapNotNull { id ->
+        ResourceLocation.tryParse(id)
+            ?.let(BuiltInRegistries.BLOCK::get)
+            ?.takeUnless { it == Blocks.AIR }
+    }
 }
 
 private fun isCourtPottablePlant(block: Block, path: String): Boolean {
@@ -44,10 +61,10 @@ private fun isCourtPottablePlant(block: Block, path: String): Boolean {
 
 internal fun pickCourtPotBlockId(dry: Boolean, pos: BlockPos): String {
     if (dry) return "minecraft:potted_dead_bush"
-    val options = moddedCourtPotBlocks
+    val options = moddedCourtPotIds
     if (options.isEmpty()) return "minecraft:potted_dead_bush"
     val index = Math.floorMod(pos.x * 37 + pos.z * 19 + pos.y * 7, options.size)
-    return BuiltInRegistries.BLOCK.getKey(options[index]).toString()
+    return options[index]
 }
 
 internal fun pickCourtPotBlock(dry: Boolean, pos: BlockPos): Block {
