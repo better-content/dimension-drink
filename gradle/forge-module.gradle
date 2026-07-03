@@ -12,6 +12,7 @@ base {
 }
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+java.withSourcesJar()
 
 repositories {
     mavenCentral()
@@ -114,6 +115,19 @@ tasks.named('jar', Jar).configure {
     finalizedBy 'reobfJar'
 }
 
+tasks.register('stageRuntimeJar', Copy) {
+    group = 'build'
+    description = 'Stages the reobfuscated runtime jar into build/libs using the canonical release filename.'
+    dependsOn tasks.named('reobfJar')
+    from layout.buildDirectory.file('reobfJar/output.jar')
+    into layout.buildDirectory.dir('libs')
+    rename { "${modId}-${rootProject.mod_version}.jar" }
+}
+
+tasks.named('assemble').configure {
+    dependsOn tasks.named('stageRuntimeJar')
+}
+
 publishing {
     publications {
         register('mavenJava', MavenPublication) {
@@ -133,6 +147,12 @@ tasks.withType(JavaCompile).configureEach {
 
 tasks.named('test', Test).configure {
     useJUnitPlatform()
+}
+
+tasks.register('headlessGameTest') {
+    group = 'verification'
+    description = 'Runs the default Forge game test server selection.'
+    dependsOn tasks.named('runGameTestServer')
 }
 
 if (file('src/gameteststructures').exists()) {
