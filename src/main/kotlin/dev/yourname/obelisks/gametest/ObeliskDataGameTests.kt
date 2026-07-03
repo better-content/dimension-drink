@@ -1,7 +1,11 @@
 package dev.yourname.obelisks.gametest
 
+import dev.yourname.obelisks.worldgen.pickCourtPotBlock
+import net.minecraft.core.BlockPos
+import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.gametest.framework.GameTest
 import net.minecraft.gametest.framework.GameTestHelper
+import net.minecraft.world.level.block.Blocks
 import net.minecraftforge.gametest.PrefixGameTestTemplate
 import java.nio.file.FileSystems
 import java.nio.file.Files
@@ -58,6 +62,26 @@ class ObeliskDataGameTests {
     @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
     fun reload_keeps_definitions_and_defers_target_validation(helper: GameTestHelper) {
         ObeliskGameTestSupport.reloadSkipsDefinitionsWithMissingInstanceTemplate(helper)
+    }
+
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 120)
+    fun court_pots_use_modded_plants_outside_dry_biomes(helper: GameTestHelper) {
+        val samples = listOf(BlockPos(1, 64, 1), BlockPos(4, 64, -3), BlockPos(-6, 70, 2))
+        samples.forEach { pos ->
+            val block = pickCourtPotBlock(false, pos)
+            val id = BuiltInRegistries.BLOCK.getKey(block)
+            helper.assertTrue(block != Blocks.POTTED_DEAD_BUSH, "Expected non-dry court pot at $pos not to resolve to dead bush")
+            helper.assertTrue(id.namespace != "minecraft", "Expected non-dry court pot at $pos to use a modded plant, found $id")
+            helper.assertTrue(id.path.startsWith("potted_"), "Expected non-dry court pot at $pos to resolve to a potted block, found $id")
+        }
+        helper.succeed()
+    }
+
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 120)
+    fun court_pots_use_dead_bushes_in_dry_biomes(helper: GameTestHelper) {
+        val block = pickCourtPotBlock(true, BlockPos(8, 64, -5))
+        helper.assertTrue(block == Blocks.POTTED_DEAD_BUSH, "Expected dry-biome court pot selection to use potted dead bushes")
+        helper.succeed()
     }
 
     private fun indexedJsonNames(resourceFolder: String): List<String> {

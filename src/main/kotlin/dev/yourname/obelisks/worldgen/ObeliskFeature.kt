@@ -1591,6 +1591,19 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             return hasLocalMoisture(level, pos, allowed)
         }
 
+        private fun isDryBiome(level: LevelAccessor, pos: BlockPos, allowed: ((BlockPos) -> Boolean)? = null): Boolean {
+            if (allowed != null && !allowed(pos)) return false
+            val biome = level.getBiome(pos)
+            if (biome.`is`(Tags.Biomes.IS_DRY) || biome.`is`(Tags.Biomes.IS_DRY_OVERWORLD)) return true
+            val biomePath = biome.unwrapKey().map { it.location().path.lowercase() }.orElse("")
+            return biomePath.contains("desert") ||
+                biomePath.contains("savanna") ||
+                biomePath.contains("badlands") ||
+                biomePath.contains("arid") ||
+                biomePath.contains("dunes") ||
+                biomePath.contains("wasteland")
+        }
+
         private fun hasLocalMoisture(level: LevelAccessor, center: BlockPos, allowed: ((BlockPos) -> Boolean)? = null): Boolean {
             var moistureScore = 0
             for (dx in -2..2) {
@@ -2229,6 +2242,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             altarCenter: BlockPos,
             allowed: (BlockPos) -> Boolean
         ) {
+            val dry = isDryBiome(level, altarCenter, allowed)
             val baseY = altarCenter.y - 2
             val candidates = listOf(
                 altarCenter.offset(5, 0, 5),
@@ -2248,7 +2262,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 if (maxOf(abs(ground.x - altarCenter.x), abs(ground.z - altarCenter.z)) !in 4..6) continue
                 if (level.getBlockState(potPos).`is`(ModBlocks.OBELISK.get())) continue
                 setBlock(potPos.below(), generatedState(Blocks.CUT_COPPER, potPos.below()), 3)
-                setBlock(potPos, generatedState(pickCourtPotBlock(false, potPos), potPos), 3)
+                setBlock(potPos, generatedState(pickCourtPotBlock(dry, potPos), potPos), 3)
                 return
             }
         }
@@ -2471,7 +2485,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             layout: CourtLayout,
             allowed: (BlockPos) -> Boolean
         ) {
-            val wet = isWetBiome(level, altarCenter, allowed)
+            val dry = isDryBiome(level, altarCenter, allowed)
             val pockets = listOf(
                 BlockPos(layout.minX + 1, altarCenter.y, layout.minZ + 1),
                 BlockPos(layout.minX + 1, altarCenter.y, layout.maxZ - 1),
@@ -2491,7 +2505,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     if (zone != CourtZone.PERIMETER_POCKET && zone != CourtZone.CORNER) return@any false
                     val ground = layout.groundByColumn[columnKey(candidate)] ?: terrainGroundAllowed(level, candidate, altarCenter.y + 5, 1, allowed) ?: return@any false
                     if (!canUseTileGround(level, ground, 1) || !canReplaceDecoration(level, ground.above())) return@any false
-                    setBlock(ground.above(), generatedState(courtPotBlock(wet, ground.above()), ground.above()), 3)
+                    setBlock(ground.above(), generatedState(courtPotBlock(dry, ground.above()), ground.above()), 3)
                 }
                 if (!placed) return@forEach
             }
@@ -2543,8 +2557,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
         }
 
-        private fun courtPotBlock(wet: Boolean, pos: BlockPos): Block =
-            pickCourtPotBlock(wet, pos)
+        private fun courtPotBlock(dry: Boolean, pos: BlockPos): Block =
+            pickCourtPotBlock(dry, pos)
 
         private fun placeAltarCopperRoof(
             level: LevelAccessor,
