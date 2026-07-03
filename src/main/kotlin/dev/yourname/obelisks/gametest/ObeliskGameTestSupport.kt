@@ -1303,6 +1303,22 @@ object ObeliskGameTestSupport {
         }
     }
 
+    fun fontPassivelyRenewsNearbyCopperOxidation(helper: GameTestHelper) {
+        val obeliskPos = helper.absolutePos(BlockPos(20, 2, 20))
+        val pedestalPos = obeliskPos.below()
+        placeChargedDefinitionObelisk(helper, obeliskPos, "end")
+        helper.level.setBlock(pedestalPos, Blocks.OXIDIZED_COPPER.defaultBlockState(), 3)
+
+        waitUntil(
+            helper,
+            220,
+            "Expected charged font to passively renew a nearby oxidized copper block",
+            condition = { helper.level.getBlockState(pedestalPos).`is`(Blocks.WEATHERED_COPPER) }
+        ) {
+            helper.succeed()
+        }
+    }
+
     fun waitUntil(
         helper: GameTestHelper,
         remainingTicks: Int,

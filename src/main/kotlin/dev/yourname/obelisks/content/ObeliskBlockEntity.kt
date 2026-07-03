@@ -9,6 +9,7 @@ import dev.yourname.obelisks.runtime.energy.FERegenerationHandler
 import dev.yourname.obelisks.runtime.ObeliskRuntimeService
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
+import net.minecraft.core.particles.DustParticleOptions
 import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket
 import net.minecraft.nbt.CompoundTag
@@ -33,6 +34,7 @@ import net.minecraftforge.items.IItemHandler
 import net.minecraftforge.items.ItemStackHandler
 import net.minecraftforge.registries.ForgeRegistries
 import net.minecraftforge.registries.ForgeRegistries.BLOCKS
+import org.joml.Vector3f
 import java.util.UUID
 import kotlin.math.floor
 import kotlin.random.Random
@@ -44,6 +46,7 @@ class ObeliskBlockEntity(
     companion object {
         private val BLOOD_MAGIC_LIFE_ESSENCE_FLUID_ID = ResourceLocation("bloodmagic", "life_essence_fluid")
         private const val BLOOD_MAGIC_LIFE_ESSENCE_DESCRIPTION_ID = "fluid.bloodmagic.life_essence_fluid"
+        private const val PASSIVE_COPPER_RENEWAL_INTERVAL = 160L
     }
 
     var modifiers: List<ObeliskModifier> = ObeliskModifier.generateModifiers()
@@ -268,6 +271,18 @@ class ObeliskBlockEntity(
     fun tick(tickLevel: Level, tickPos: BlockPos) {
         if (tickLevel.isClientSide) {
             clientAmbientTick(tickLevel, tickPos)
+        } else {
+            serverAmbientTick(tickLevel as ServerLevel, tickPos)
+        }
+    }
+
+    private fun serverAmbientTick(tickLevel: ServerLevel, tickPos: BlockPos) {
+        if (blockState.`is`(ModBlocks.RETURN_FONT.get())) return
+        if (lifeEssenceStored <= 0) return
+        val pulseOffset = java.lang.Math.floorMod(tickPos.asLong(), PASSIVE_COPPER_RENEWAL_INTERVAL)
+        if ((tickLevel.gameTime + pulseOffset) % PASSIVE_COPPER_RENEWAL_INTERVAL != 0L) return
+        renewNearbyCopperOxidation(tickLevel)?.let { renewedPos ->
+            playCopperRenewalEffects(tickLevel, renewedPos)
         }
     }
 
@@ -288,6 +303,70 @@ class ObeliskBlockEntity(
         return scraped
     }
 
+    fun renewNearbyCopperOxidation(currentLevel: Level): BlockPos? {
+        if (currentLevel.isClientSide) return null
+        var bestPos: BlockPos? = null
+        var bestStage = -1
+        var bestDistance = Int.MAX_VALUE
+        for (dx in -1..1) {
+            for (dz in -1..1) {
+                val candidatePos = blockPos.offset(dx, -1, dz)
+                val state = currentLevel.getBlockState(candidatePos)
+                val renewedBlock = previousCopperStage(state.block) ?: continue
+                val renewedState = renewedBlock.withPropertiesOf(state)
+                if (renewedState == state) continue
+                val stage = copperOxidationStage(state.block)
+                val distance = dx * dx + dz * dz
+                if (stage > bestStage || (stage == bestStage && distance < bestDistance)) {
+                    bestPos = candidatePos.immutable()
+                    bestStage = stage
+                    bestDistance = distance
+                }
+            }
+        }
+        val target = bestPos ?: return null
+        val currentState = currentLevel.getBlockState(target)
+        val renewedBlock = previousCopperStage(currentState.block) ?: return null
+        val renewedState = renewedBlock.withPropertiesOf(currentState)
+        if (renewedState == currentState) return null
+        currentLevel.setBlock(target, renewedState, 3)
+        return target
+    }
+
+    private fun playCopperRenewalEffects(level: ServerLevel, targetPos: BlockPos) {
+        val verdigris = DustParticleOptions(Vector3f(0.34f, 0.76f, 0.58f), 0.72f)
+        level.sendParticles(
+            verdigris,
+            targetPos.x + 0.5,
+            targetPos.y + 1.02,
+            targetPos.z + 0.5,
+            4,
+            0.18,
+            0.08,
+            0.18,
+            0.01
+        )
+        level.sendParticles(
+            ParticleTypes.WAX_OFF,
+            targetPos.x + 0.5,
+            targetPos.y + 1.02,
+            targetPos.z + 0.5,
+            3,
+            0.22,
+            0.05,
+            0.22,
+            0.0
+        )
+        level.playSound(
+            null,
+            targetPos,
+            SoundEvents.AXE_SCRAPE,
+            SoundSource.BLOCKS,
+            0.2f,
+            1.25f + level.random.nextFloat() * 0.15f
+        )
+    }
+
     private fun previousCopperStage(block: Block): Block? {
         val id = BLOCKS.getKey(block) ?: return null
         val path = id.path
@@ -298,6 +377,16 @@ class ObeliskBlockEntity(
             else -> return null
         }
         return BLOCKS.getValue(ResourceLocation(id.namespace, renewedPath)).takeUnless { it == Blocks.AIR }
+    }
+
+    private fun copperOxidationStage(block: Block): Int {
+        val path = (BLOCKS.getKey(block) ?: return 0).path
+        return when {
+            path.contains("oxidized") -> 3
+            path.contains("weathered") -> 2
+            path.contains("exposed") -> 1
+            else -> 0
+        }
     }
 
     fun isCharging(): Boolean = !isRunActive() && lifeEssenceStored < getModifiedMaxStorage()

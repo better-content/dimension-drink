@@ -30,4 +30,9 @@ class ObeliskRuntimeGameTests {
     fun font_axe_scrapes_altar_copper_oxidation(helper: GameTestHelper) {
         ObeliskGameTestSupport.fontAxeScrapesAltarCopperOxidation(helper)
     }
+
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_runtime", timeoutTicks = 260)
+    fun font_passively_renews_nearby_copper_oxidation(helper: GameTestHelper) {
+        ObeliskGameTestSupport.fontPassivelyRenewsNearbyCopperOxidation(helper)
+    }
 }

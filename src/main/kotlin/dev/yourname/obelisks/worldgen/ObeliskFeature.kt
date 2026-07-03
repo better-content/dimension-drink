@@ -2041,8 +2041,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             return state
         }
 
-        private fun generatedState(block: Block, pos: BlockPos): BlockState {
-            var state = ageCopperBlock(block, pos).defaultBlockState()
+        private fun generatedState(block: Block, pos: BlockPos, altarCenter: BlockPos? = null): BlockState {
+            var state = ageCopperBlock(block, pos, altarCenter).defaultBlockState()
             if (state.hasProperty(BlockStateProperties.LIT)) {
                 state = state.setValue(BlockStateProperties.LIT, true)
             }
@@ -2055,28 +2055,62 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             return state
         }
 
-        private fun ageCopperBlock(block: Block, pos: BlockPos?): Block {
-            val weathered = pos?.let(::useWeatheredCopper) ?: false
+        private fun ageCopperBlock(block: Block, pos: BlockPos?, altarCenter: BlockPos? = null): Block {
+            val ageBias = pos?.let { copperAgeBias(it, altarCenter) } ?: CopperAgeBias.FRESH
             return when (block) {
                 Blocks.RAW_COPPER_BLOCK,
                 Blocks.COPPER_BLOCK,
                 Blocks.EXPOSED_COPPER,
                 Blocks.WEATHERED_COPPER,
-                Blocks.OXIDIZED_COPPER -> if (weathered) Blocks.WEATHERED_COPPER else Blocks.EXPOSED_COPPER
+                Blocks.OXIDIZED_COPPER -> when (ageBias) {
+                    CopperAgeBias.FRESH -> Blocks.COPPER_BLOCK
+                    CopperAgeBias.EXPOSED -> Blocks.EXPOSED_COPPER
+                    CopperAgeBias.WEATHERED -> Blocks.WEATHERED_COPPER
+                }
                 Blocks.CUT_COPPER,
                 Blocks.EXPOSED_CUT_COPPER,
                 Blocks.WEATHERED_CUT_COPPER,
-                Blocks.OXIDIZED_CUT_COPPER -> if (weathered) Blocks.WEATHERED_CUT_COPPER else Blocks.EXPOSED_CUT_COPPER
+                Blocks.OXIDIZED_CUT_COPPER -> when (ageBias) {
+                    CopperAgeBias.FRESH -> Blocks.CUT_COPPER
+                    CopperAgeBias.EXPOSED -> Blocks.EXPOSED_CUT_COPPER
+                    CopperAgeBias.WEATHERED -> Blocks.WEATHERED_CUT_COPPER
+                }
                 Blocks.CUT_COPPER_STAIRS,
                 Blocks.EXPOSED_CUT_COPPER_STAIRS,
                 Blocks.WEATHERED_CUT_COPPER_STAIRS,
-                Blocks.OXIDIZED_CUT_COPPER_STAIRS -> if (weathered) Blocks.WEATHERED_CUT_COPPER_STAIRS else Blocks.EXPOSED_CUT_COPPER_STAIRS
+                Blocks.OXIDIZED_CUT_COPPER_STAIRS -> when (ageBias) {
+                    CopperAgeBias.FRESH -> Blocks.CUT_COPPER_STAIRS
+                    CopperAgeBias.EXPOSED -> Blocks.EXPOSED_CUT_COPPER_STAIRS
+                    CopperAgeBias.WEATHERED -> Blocks.WEATHERED_CUT_COPPER_STAIRS
+                }
                 Blocks.CUT_COPPER_SLAB,
                 Blocks.EXPOSED_CUT_COPPER_SLAB,
                 Blocks.WEATHERED_CUT_COPPER_SLAB,
-                Blocks.OXIDIZED_CUT_COPPER_SLAB -> if (weathered) Blocks.WEATHERED_CUT_COPPER_SLAB else Blocks.EXPOSED_CUT_COPPER_SLAB
+                Blocks.OXIDIZED_CUT_COPPER_SLAB -> when (ageBias) {
+                    CopperAgeBias.FRESH -> Blocks.CUT_COPPER_SLAB
+                    CopperAgeBias.EXPOSED -> Blocks.EXPOSED_CUT_COPPER_SLAB
+                    CopperAgeBias.WEATHERED -> Blocks.WEATHERED_CUT_COPPER_SLAB
+                }
                 else -> block
             }
+        }
+
+        private enum class CopperAgeBias {
+            FRESH,
+            EXPOSED,
+            WEATHERED
+        }
+
+        private fun copperAgeBias(pos: BlockPos, altarCenter: BlockPos? = null): CopperAgeBias {
+            if (altarCenter != null) {
+                val radius = maxOf(abs(pos.x - altarCenter.x), abs(pos.z - altarCenter.z))
+                return when {
+                    radius <= 1 -> CopperAgeBias.FRESH
+                    radius <= 3 -> CopperAgeBias.EXPOSED
+                    else -> CopperAgeBias.WEATHERED
+                }
+            }
+            return if (useWeatheredCopper(pos)) CopperAgeBias.WEATHERED else CopperAgeBias.EXPOSED
         }
 
         private fun useWeatheredCopper(pos: BlockPos): Boolean {
@@ -2115,11 +2149,11 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 }
                 for (y in surfaceY + 1..topY) {
                     val pos = BlockPos(center.x + dx, y, center.z + dz)
-                    setBlock(pos, generatedState(block, pos), 3)
+                    setBlock(pos, generatedState(block, pos, center), 3)
                 }
             }
             val pedestalPos = center.above(ALTAR_HEIGHT)
-            setBlock(pedestalPos, generatedState(Blocks.RAW_COPPER_BLOCK, pedestalPos), 3)
+            setBlock(pedestalPos, generatedState(Blocks.RAW_COPPER_BLOCK, pedestalPos, center), 3)
             placeAltarWelcomeDetails(level, setBlock, center, palette, courtLayout, allowed)
             val fontPos = center.above(ALTAR_HEIGHT + 1)
             for (dy in 1..FONT_CLEARANCE) {
@@ -2146,7 +2180,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     reclaimCourtColumn(level, setBlock, ground, altarCenter)
                     val zone = layout.zoneFor(ground, altarCenter)
                     val block = courtFloorBlock(ground, palette, zone)
-                    setBlock(ground, generatedState(block, ground), 3)
+                    setBlock(ground, generatedState(block, ground, altarCenter), 3)
                 }
             }
             val groundedLayout = layout.copy(groundByColumn = groundByColumn)
@@ -2736,8 +2770,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             return if (value == Blocks.AIR && location.path != "air") null else value
         }
 
-        private fun agedOptionalBlock(modId: String, exposedId: String, weatheredId: String, pos: BlockPos): Block? =
-            optionalBlock(modId, if (useWeatheredCopper(pos)) weatheredId else exposedId)
+        private fun agedOptionalBlock(modId: String, exposedId: String, weatheredId: String, pos: BlockPos, altarCenter: BlockPos? = null): Block? =
+            optionalBlock(modId, if (copperAgeBias(pos, altarCenter) == CopperAgeBias.WEATHERED) weatheredId else exposedId)
 
         private fun copperRoofStair(pos: BlockPos): Block =
             agedOptionalBlock("create", "create:exposed_copper_shingle_stairs", "create:weathered_copper_shingle_stairs", pos)
