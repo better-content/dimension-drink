@@ -5,23 +5,11 @@ Pack-owned obelisk and blood-font worldgen/runtime mod for Forge `1.20.1`.
 ## Common commands
 
 ```bash
-./gradlew test
-./gradlew headlessGameTest
-./gradlew clean build reobfJar stageRuntimeJar
+./gradlew verifyFast
+./gradlew verifyFull
 ```
 
-Selection-specific game test runs are also available:
-
-- `./gradlew runGameTestServerRunLifecycle`
-- `./gradlew runGameTestServerActivation`
-- `./gradlew runGameTestServerRewards`
-- `./gradlew runGameTestServerVoid`
-- `./gradlew runGameTestServerData`
-- `./gradlew runGameTestServerTemplate`
-- `./gradlew runGameTestServerMultiplayer`
-- `./gradlew runGameTestServerCommands`
-- `./gradlew runGameTestServerRuntime`
-- `./gradlew runGameTestServerTCon`
+`verifyFast` runs the JVM verification lane. `verifyFull` adds the headless Forge GameTest pass using the default all-suites selection.
 
 ## Release artifact
 

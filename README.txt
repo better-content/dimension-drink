@@ -12,6 +12,5 @@ respawned player outside the origin font without font rewards.
 
 Useful commands:
 
-* ./gradlew test --no-daemon
-* ./gradlew checkWithGameTests --no-daemon
-* ./gradlew runGameTestServer --no-daemon
+* ./gradlew verifyFast --no-daemon
+* ./gradlew verifyFull --no-daemon

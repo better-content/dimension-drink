@@ -32,46 +32,15 @@ dependencies {
     runtimeOnly fg.deobf(tconstructDep)
 }
 
-def registerGameTestServerSelectionTask = { String taskName, String selection ->
-    tasks.register(taskName, Exec) {
-        workingDir rootProject.projectDir
-        def gradleTask = ':runGameTestServer'
-        def selectionProp = "-PdimensionalFontsGameTestSelection=${selection}"
-        if (org.gradle.internal.os.OperatingSystem.current().isWindows()) {
-            commandLine 'cmd', '/c', 'gradlew.bat', '--no-daemon', gradleTask, selectionProp
-        } else {
-            commandLine './gradlew', '--no-daemon', gradleTask, selectionProp
-        }
-    }
-}
-
-registerGameTestServerSelectionTask('runGameTestServerRunLifecycle', 'run')
-registerGameTestServerSelectionTask('runGameTestServerActivation', 'activation')
-registerGameTestServerSelectionTask('runGameTestServerRewards', 'rewards')
-registerGameTestServerSelectionTask('runGameTestServerVoid', 'void')
-registerGameTestServerSelectionTask('runGameTestServerData', 'data')
-registerGameTestServerSelectionTask('runGameTestServerTemplate', 'template')
-registerGameTestServerSelectionTask('runGameTestServerMultiplayer', 'multiplayer')
-registerGameTestServerSelectionTask('runGameTestServerCommands', 'commands')
-registerGameTestServerSelectionTask('runGameTestServerRuntime', 'runtime')
-registerGameTestServerSelectionTask('runGameTestServerTCon', 'tcon')
-
-tasks.register('verifyGameTests') {
-    dependsOn(
-        tasks.named('runGameTestServerRunLifecycle'),
-        tasks.named('runGameTestServerActivation'),
-        tasks.named('runGameTestServerRewards'),
-        tasks.named('runGameTestServerVoid'),
-        tasks.named('runGameTestServerData'),
-        tasks.named('runGameTestServerTemplate'),
-        tasks.named('runGameTestServerMultiplayer'),
-        tasks.named('runGameTestServerCommands'),
-        tasks.named('runGameTestServerRuntime'),
-        tasks.named('runGameTestServerTCon')
-    )
-}
-
-tasks.register('checkWithGameTests') {
+tasks.register('verifyFast') {
+    group = 'verification'
+    description = 'Runs the fast deterministic verification lane.'
     dependsOn(tasks.named('check'))
-    dependsOn(tasks.named('verifyGameTests'))
+}
+
+tasks.register('verifyFull') {
+    group = 'verification'
+    description = 'Runs the full verification lane, including headless Forge GameTests.'
+    dependsOn(tasks.named('verifyFast'))
+    dependsOn(tasks.named('headlessGameTest'))
 }
