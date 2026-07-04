@@ -15,7 +15,7 @@
     "cultivationBlocks": ["minecraft:copper_block"],
     "structureBlocks": ["minecraft:raw_copper_block", "minecraft:copper_block", "minecraft:cut_copper"],
     "trophyBlocks": ["minecraft:lantern", "minecraft:white_candle", "minecraft:flower_pot", "minecraft:crimson_roots"],
-    "decorations": ["malum:iridescent_ether_torch", "minecraft:lime_candle", "minecraft:white_candle"]
+    "decorations": ["undergarden:shard_torch", "minecraft:flower_pot", "minecraft:crimson_roots", "minecraft:flowering_azalea", "minecraft:lime_candle", "minecraft:white_candle"]
   },
   "rewardTableId": "default",
   "maxBlood": 15000,

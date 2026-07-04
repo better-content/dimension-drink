@@ -725,7 +725,7 @@ object ObeliskGameTestSupport {
             displayName = "Test Nether Visual",
             instanceTemplateId = "nether",
             rewardTableId = "nether",
-            cultivationPalette = CultivationPaletteDefinition(trophyBlocks = listOf("malum:iridescent_ether_torch"))
+            cultivationPalette = CultivationPaletteDefinition(trophyBlocks = listOf("undergarden:shard_torch"))
         )
         val moddedDefinition = ObeliskDefinition(
             id = "test_modded_visual_definition",
@@ -1541,15 +1541,17 @@ object ObeliskGameTestSupport {
             helper.assertTrue(helper.level.getBlockState(fontPos.above(dy)).isAir, "Expected $label font to keep clear space above it")
         }
         val altarCenter = middleTierCenter
-        val iridescentWallTorch = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
-            net.minecraft.resources.ResourceLocation("malum", "iridescent_wall_ether_torch")
+        val shardTorch = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+            net.minecraft.resources.ResourceLocation("undergarden", "shard_torch")
         )
-        val fallbackWallTorch = Blocks.WALL_TORCH
-        val iridescentTorch = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
-            net.minecraft.resources.ResourceLocation("malum", "iridescent_ether_torch")
+        val exposedCopperLantern = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+            net.minecraft.resources.ResourceLocation("everythingcopper", "exposed_copper_lantern")
+        )
+        val weatheredCopperLantern = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+            net.minecraft.resources.ResourceLocation("everythingcopper", "weathered_copper_lantern")
         )
         fun isLantern(state: net.minecraft.world.level.block.state.BlockState): Boolean =
-            state.`is`(Blocks.SOUL_LANTERN) || state.`is`(Blocks.LANTERN)
+            state.`is`(Blocks.SOUL_LANTERN) || state.`is`(Blocks.LANTERN) || state.`is`(exposedCopperLantern) || state.`is`(weatheredCopperLantern)
         listOf(2 to 0, -2 to 0, 0 to 2, 0 to -2).forEach { (dx, dz) ->
             val oldWalkwayLampPos = altarCenter.offset(dx, 3, dz)
             helper.assertTrue(
@@ -1564,22 +1566,22 @@ object ObeliskGameTestSupport {
                 "Expected $label altar corner supports to use warped cultivation posts at $supportPos"
             )
         }
-        var sideOccultTorches = 0
+        var sideCopperLanterns = 0
         listOf(-2 to -2, -2 to 2, 2 to -2, 2 to 2).forEach { (dx, dz) ->
             val outwardX = if (dx < 0) -1 else 1
             val outwardZ = if (dz < 0) -1 else 1
             val xFace = helper.level.getBlockState(altarCenter.offset(dx + outwardX, 3, dz))
             val zFace = helper.level.getBlockState(altarCenter.offset(dx, 3, dz + outwardZ))
-            if (xFace.`is`(iridescentWallTorch) || xFace.`is`(fallbackWallTorch)) {
-                sideOccultTorches++
+            if (isLantern(xFace)) {
+                sideCopperLanterns++
             }
-            if (zFace.`is`(iridescentWallTorch) || zFace.`is`(fallbackWallTorch)) {
-                sideOccultTorches++
+            if (isLantern(zFace)) {
+                sideCopperLanterns++
             }
         }
         helper.assertTrue(
-            sideOccultTorches >= 8,
-            "Expected $label altar to mount 8 occult wall torches or fallback wall torches on the outer faces of the top cultivation supports"
+            sideCopperLanterns >= 8,
+            "Expected $label altar to mount 8 copper lanterns on the outer faces of the top cultivation supports"
         )
         var cultivationSignals = 0
         var pathSignals = 0
@@ -1595,7 +1597,7 @@ object ObeliskGameTestSupport {
         val generatedTerrainLevels = mutableSetOf<Int>()
         val expectedTrophy = expectedTrophyOverride ?: when (label) {
             "end" -> Blocks.WHITE_CANDLE
-            "nether" -> iridescentTorch
+            "nether" -> shardTorch
             "modded" -> Blocks.MAGENTA_CANDLE
             else -> null
         }
@@ -1664,7 +1666,7 @@ object ObeliskGameTestSupport {
             val state = helper.level.getBlockState(pos)
             var weight = 0
             if (isGeneratedCultivationMarker(state)) weight++
-            if (state.`is`(Blocks.WHITE_CANDLE) || state.`is`(Blocks.LIME_CANDLE) || state.`is`(iridescentTorch) || state.`is`(Blocks.OAK_LOG) || state.`is`(Blocks.SPRUCE_LOG)) weight++
+            if (state.`is`(Blocks.WHITE_CANDLE) || state.`is`(Blocks.LIME_CANDLE) || state.`is`(shardTorch) || state.`is`(Blocks.OAK_LOG) || state.`is`(Blocks.SPRUCE_LOG)) weight++
             if (expectedTrophy != null && state.`is`(expectedTrophy)) weight += 2
             return weight
         }

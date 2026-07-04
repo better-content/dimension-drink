@@ -962,7 +962,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     0 -> placeSupportedAbove(level, setBlock, pos.above(), palette.marker)
                     1 -> {
                         placeSupportedAbove(level, setBlock, pos.above(), cultivationPlantBlock(pos, random))
-                        if (random.nextBoolean()) {
+                        if (random.nextInt(100) < 65) {
                             placeSupportedAbove(
                                 level,
                                 setBlock,
@@ -971,7 +971,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                             )
                         }
                     }
-                    else -> placeSupportedAbove(level, setBlock, pos.above(), if (random.nextBoolean()) palette.decoration(random) else palette.wall(random))
+                    else -> placeSupportedAbove(level, setBlock, pos.above(), if (random.nextInt(100) < 65) cultivationPlantBlock(pos, random) else palette.decoration(random))
                 }
             }
         }
@@ -1289,21 +1289,27 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
 
         private fun cultivationPlantBlock(pos: BlockPos, random: RandomSource): Block =
-            when (Math.floorMod(pos.x * 37 + pos.z * 19 + pos.y * 7 + random.nextInt(17), 8)) {
+            when (Math.floorMod(pos.x * 37 + pos.z * 19 + pos.y * 7 + random.nextInt(29), 14)) {
                 0 -> Blocks.POTTED_FERN
-                1 -> Blocks.POTTED_AZALEA
-                2 -> Blocks.POTTED_FLOWERING_AZALEA
-                3 -> Blocks.BROWN_MUSHROOM
-                4 -> Blocks.RED_MUSHROOM
-                5 -> Blocks.CRIMSON_ROOTS
-                6 -> Blocks.WARPED_ROOTS
-                else -> occultCandleBlock(random)
+                1 -> Blocks.POTTED_AZALEA_BUSH
+                2 -> Blocks.POTTED_FLOWERING_AZALEA_BUSH
+                3 -> Blocks.POTTED_ALLIUM
+                4 -> Blocks.POTTED_BLUE_ORCHID
+                5 -> Blocks.POTTED_DANDELION
+                6 -> Blocks.POTTED_POPPY
+                7 -> Blocks.POTTED_OXEYE_DAISY
+                8 -> Blocks.FERN
+                9 -> Blocks.BROWN_MUSHROOM
+                10 -> Blocks.RED_MUSHROOM
+                11 -> Blocks.CRIMSON_ROOTS
+                12 -> Blocks.WARPED_ROOTS
+                else -> Blocks.FLOWERING_AZALEA
             }
 
         private fun buildCultivationBed(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: CultivationPalette, pathColumns: Set<Long>, random: RandomSource) {
             if (!canUseTileGround(level, base, 1)) return
             placeGround(level, setBlock, base, if (random.nextInt(3) == 0) palette.structure(random) else cultivationBedBlock(random))
-            val placedAnchor = if (random.nextInt(100) < 42) {
+            val placedAnchor = if (random.nextInt(100) < 68) {
                 placeSupportedAbove(level, setBlock, base.above(), cultivationPlantBlock(base, random))
             } else if (random.nextInt(3) == 0) {
                 placeTrophyDisplay(level, setBlock, base, palette, pathColumns, random)
@@ -1315,11 +1321,11 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     val flank = base.relative(direction)
                     if (canUseTileGround(level, flank, 1)) {
                         placeGround(level, setBlock, flank, if (random.nextBoolean()) palette.path(random) else cultivationBedBlock(random))
-                        placeSupportedAbove(level, setBlock, flank.above(), if (random.nextBoolean()) palette.decoration(random) else cultivationPlantBlock(flank, random))
+                        placeSupportedAbove(level, setBlock, flank.above(), if (random.nextInt(100) < 72) cultivationPlantBlock(flank, random) else palette.decoration(random))
                     }
                 }
             }
-            scatterTileDetails(level, setBlock, base, palette, random, 5)
+            scatterTileDetails(level, setBlock, base, palette, random, 8)
         }
 
         private fun scatterTileDetails(level: LevelAccessor, setBlock: (BlockPos, BlockState, Int) -> Boolean, base: BlockPos, palette: CultivationPalette, random: RandomSource, attempts: Int) {
@@ -1328,9 +1334,9 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 val pos = terrainGroundNear(level, rough, base.y + 4, 1) ?: return@repeat
                 if (canUseTileGround(level, pos, 1)) {
                     if (random.nextInt(4) == 0) placeGround(level, setBlock, pos, palette.path(random))
-                    when (random.nextInt(6)) {
-                        1, 2 -> placeSupportedAbove(level, setBlock, pos.above(), cultivationPlantBlock(pos, random))
-                        3, 4 -> placeSupportedAbove(level, setBlock, pos.above(), palette.decoration(random))
+                    when (random.nextInt(8)) {
+                        1, 2, 3, 4 -> placeSupportedAbove(level, setBlock, pos.above(), cultivationPlantBlock(pos, random))
+                        5 -> placeSupportedAbove(level, setBlock, pos.above(), palette.decoration(random))
                     }
                 }
             }
@@ -2603,10 +2609,10 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     setBlock(pos, directionalState(block, pos, facing), 3)
                 }
             }
-            placeAltarSideSoulTorches(level, setBlock, center, supportTopY)
+            placeAltarSideCopperLanterns(level, setBlock, center, supportTopY)
         }
 
-        private fun placeAltarSideSoulTorches(
+        private fun placeAltarSideCopperLanterns(
             level: LevelAccessor,
             setBlock: (BlockPos, BlockState, Int) -> Boolean,
             center: BlockPos,
@@ -2623,7 +2629,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 BlockPos(center.x + 3, supportTopY, center.z + 2) to Direction.EAST
             ).forEach { (pos, facing) ->
                 if (!canReplaceDecoration(level, pos)) return@forEach
-                val state = directionalState(occultWallTorchBlock(), pos, facing)
+                val state = directionalState(copperLanternBlock(pos, soul = false), pos, facing)
                 setBlock(pos, state, 3)
             }
         }
@@ -2879,10 +2885,17 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 path == "white_candle" ||
                 path == "candle" ||
                 path == "lantern" ||
+                path.endsWith("_lantern") ||
+                path == "shard_torch" ||
+                path == "shard_wall_torch" ||
                 path == "iridescent_ether_torch" ||
                 path == "iridescent_wall_ether_torch" ||
                 path == "chorus_flower" ||
                 path == "flower_pot" ||
+                path == "azalea" ||
+                path == "flowering_azalea" ||
+                path == "blue_orchid" ||
+                path == "allium" ||
                 path.startsWith("potted_") ||
                 path.endsWith("_mushroom") ||
                 path.endsWith("_roots") ||
@@ -3068,10 +3081,10 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         )
 
         private fun occultTorchBlock(): Block =
-            block("malum:iridescent_ether_torch", Blocks.TORCH)
+            block("undergarden:shard_torch", Blocks.TORCH)
 
         private fun occultWallTorchBlock(): Block =
-            block("malum:iridescent_wall_ether_torch", Blocks.WALL_TORCH)
+            block("undergarden:shard_wall_torch", Blocks.WALL_TORCH)
 
         private fun occultCandleBlock(random: RandomSource): Block =
             if (random.nextBoolean()) Blocks.WHITE_CANDLE else Blocks.LIME_CANDLE
