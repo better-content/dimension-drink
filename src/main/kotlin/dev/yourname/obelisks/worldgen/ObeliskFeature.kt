@@ -1291,8 +1291,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private fun cultivationPlantBlock(pos: BlockPos, random: RandomSource): Block =
             when (Math.floorMod(pos.x * 37 + pos.z * 19 + pos.y * 7 + random.nextInt(29), 14)) {
                 0 -> Blocks.POTTED_FERN
-                1 -> Blocks.POTTED_AZALEA_BUSH
-                2 -> Blocks.POTTED_FLOWERING_AZALEA_BUSH
+                1 -> Blocks.POTTED_AZALEA
+                2 -> Blocks.POTTED_FLOWERING_AZALEA
                 3 -> Blocks.POTTED_ALLIUM
                 4 -> Blocks.POTTED_BLUE_ORCHID
                 5 -> Blocks.POTTED_DANDELION
