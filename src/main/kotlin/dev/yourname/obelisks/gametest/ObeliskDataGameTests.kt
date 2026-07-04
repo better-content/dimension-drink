@@ -39,6 +39,11 @@ class ObeliskDataGameTests {
         ObeliskGameTestSupport.worldgenDefinitionsProduceFontAltarSites(helper)
     }
 
+    @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data_worldgen", timeoutTicks = 200)
+    fun near_build_limit_worldgen_terrain_does_not_place_fonts(helper: GameTestHelper) {
+        ObeliskGameTestSupport.nearBuildLimitWorldgenTerrainDoesNotPlaceFonts(helper)
+    }
+
     @GameTest(templateNamespace = "dimensionalfonts", template = "bootstrap/empty", batch = "obelisk_data_structure_piece", timeoutTicks = 500)
     fun structure_piece_worldgen_produces_complete_font_altar_sites(helper: GameTestHelper) {
         ObeliskGameTestSupport.structurePieceWorldgenProducesCompleteFontAltarSites(helper)

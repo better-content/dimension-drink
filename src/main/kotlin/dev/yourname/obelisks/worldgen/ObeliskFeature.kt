@@ -58,6 +58,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private const val RELIQUARY_RADIUS = 136
         private const val ALTAR_MAX_FOUNDATION_DROP = 2
         private const val TERRAIN_SCAN_UP = 28
+        private const val MAX_WORLDGEN_SURFACE_Y = 208
         private const val SITE_GRID_CHUNKS = 6
         private const val SITE_GRID_BLOCKS = SITE_GRID_CHUNKS * 16
         private const val SITE_GRID_SCAN_RADIUS = 2
@@ -289,8 +290,10 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 .filter(allowed)
                 .mapNotNull { candidate ->
                     val surfaceY = findSurfaceY(level, candidate.x, candidate.z, maxScanY, 1) ?: return@mapNotNull null
+                    if (surfaceY > MAX_WORLDGEN_SURFACE_Y) return@mapNotNull null
                     val base = BlockPos(candidate.x, surfaceY, candidate.z)
                     val normalized = normalizeAltarCenter(level, base) ?: return@mapNotNull null
+                    if (normalized.y > MAX_WORLDGEN_SURFACE_Y) return@mapNotNull null
                     val surface = altarSurfaceMap(level, normalized) ?: return@mapNotNull null
                     if (!canPlaceElevatedAltarAndFont(level, normalized, surface)) return@mapNotNull null
                     normalized

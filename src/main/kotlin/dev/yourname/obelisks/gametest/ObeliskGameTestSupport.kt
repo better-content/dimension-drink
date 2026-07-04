@@ -818,6 +818,35 @@ object ObeliskGameTestSupport {
         helper.succeed()
     }
 
+    fun nearBuildLimitWorldgenTerrainDoesNotPlaceFonts(helper: GameTestHelper) {
+        deleteTestConfigs()
+        val definition = ObeliskDefinition(
+            id = "test_high_altitude_rejection_definition",
+            displayName = "High Altitude Rejection",
+            instanceTemplateId = "end",
+            rewardTableId = "end",
+            cultivationPalette = CultivationPaletteDefinition(trophyBlocks = listOf("minecraft:white_candle"))
+        )
+        writeDefinition(definition)
+        reloadData()
+
+        val highSurfaceCenter = helper.absolutePos(BlockPos(620, 250, 4))
+        prepareGenerationSurface(helper, highSurfaceCenter)
+
+        helper.assertTrue(
+            !ObeliskFeature.generateDefinitionSiteForTests(helper.level, highSurfaceCenter.above(12), definition.id, RandomSource.create(7777L)),
+            "Expected overworld dimensional-font worldgen to reject near-build-limit surface anchors"
+        )
+        helper.assertTrue(
+            locateGeneratedObeliskPosInArea(helper, highSurfaceCenter, 48) == null,
+            "Expected no font to be placed on rejected near-build-limit terrain"
+        )
+
+        deleteTestConfigs()
+        reloadData()
+        helper.succeed()
+    }
+
     fun structurePieceWorldgenProducesCompleteFontAltarSites(helper: GameTestHelper) {
         deleteTestConfigs()
         val prefersBlueSkiesTarget = ModList.get().isLoaded("blue_skies")
