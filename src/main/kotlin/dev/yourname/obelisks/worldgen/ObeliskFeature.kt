@@ -58,7 +58,6 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private const val RELIQUARY_RADIUS = 136
         private const val ALTAR_MAX_FOUNDATION_DROP = 2
         private const val TERRAIN_SCAN_UP = 28
-        private const val MAX_WORLDGEN_SURFACE_Y = 208
         private const val SITE_GRID_CHUNKS = 6
         private const val SITE_GRID_BLOCKS = SITE_GRID_CHUNKS * 16
         private const val SITE_GRID_SCAN_RADIUS = 2
@@ -290,10 +289,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 .filter(allowed)
                 .mapNotNull { candidate ->
                     val surfaceY = findSurfaceY(level, candidate.x, candidate.z, maxScanY, 1) ?: return@mapNotNull null
-                    if (surfaceY > MAX_WORLDGEN_SURFACE_Y) return@mapNotNull null
                     val base = BlockPos(candidate.x, surfaceY, candidate.z)
                     val normalized = normalizeAltarCenter(level, base) ?: return@mapNotNull null
-                    if (normalized.y > MAX_WORLDGEN_SURFACE_Y) return@mapNotNull null
                     val surface = altarSurfaceMap(level, normalized) ?: return@mapNotNull null
                     if (!canPlaceElevatedAltarAndFont(level, normalized, surface)) return@mapNotNull null
                     normalized
@@ -3354,7 +3351,9 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
         private fun buildSite(level: WorldGenLevel, center: BlockPos, definition: ObeliskDefinition, siteSeed: Long, chunk: ChunkPos): BuiltSite? {
             if (!siteMayIntersectChunk(center, chunk)) return null
-            val centerChunk = ChunkPos(center)
+            val surfaceY = findSurfaceY(level, center.x, center.z, level.maxBuildHeight - 2, 1) ?: return null
+            val origin = center.atY(surfaceY)
+            val altarCenter = findNearestViableAltarCenter(level, origin, origin.y + ALTAR_MAX_FOUNDATION_DROP) { true } ?: return null
 
             val palette = CultivationPalette.from(definition, center)
             var placedInChunk = false
@@ -3369,17 +3368,11 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
 
             val detailRandom = RandomSource.create(siteSeed xor SITE_CHUNK_DETAIL_SALT)
-            val pathPlan = planMinimalReliquaryPaths(center, RandomSource.create(siteSeed xor SITE_CHUNK_DETAIL_SALT))
-            val placesAltar = centerChunk == chunk
+            val pathPlan = planMinimalReliquaryPaths(altarCenter, RandomSource.create(siteSeed xor SITE_CHUNK_DETAIL_SALT))
+            val placesAltar = isInsideChunkBounds(altarCenter, chunk)
             var fontPos = center.above(ALTAR_HEIGHT + 1)
             val dressingCenter = if (placesAltar) {
-                if (!isChunkInterior(center, ALTAR_CENTER_CHUNK_MARGIN)) return null
-                val surfaceY = findSurfaceY(level, center.x, center.z, level.maxBuildHeight - 2, 1) ?: return null
-                val origin = center.atY(surfaceY)
-                val altarCenter = findNearestViableAltarCenter(level, origin, origin.y + ALTAR_MAX_FOUNDATION_DROP) { candidate ->
-                    isInsideChunkBounds(candidate, chunk) && isChunkInterior(candidate, ALTAR_CENTER_CHUNK_MARGIN)
-                } ?: return null
-                if (!isInsideChunkBounds(altarCenter, chunk) || !isChunkInterior(altarCenter, ALTAR_CENTER_CHUNK_MARGIN)) return null
+                if (!isChunkInterior(altarCenter, ALTAR_CENTER_CHUNK_MARGIN)) return null
                 val altarSurface = altarSurfaceMap(level, altarCenter) ?: return null
                 if (!canPlaceElevatedAltarAndFont(level, altarCenter, altarSurface)) return null
                 val allowed: (BlockPos) -> Boolean = { pos -> isInsideChunkBounds(pos, chunk) }
@@ -3387,7 +3380,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 fontPos = placeElevatedAltar(level, chunkLocalSetBlock, altarCenter, altarSurface, palette, courtLayout, detailRandom, allowed)
                 altarCenter
             } else {
-                center
+                altarCenter
             }
             placeMinimalReliquaryDressing(level, chunkLocalSetBlock, chunk, dressingCenter, palette, detailRandom, pathPlan)
             placeWetBiomeOvergrowthAround(level, chunkLocalSetBlock, chunk, dressingCenter, RELIQUARY_RADIUS, detailRandom)

@@ -818,35 +818,6 @@ object ObeliskGameTestSupport {
         helper.succeed()
     }
 
-    fun nearBuildLimitWorldgenTerrainDoesNotPlaceFonts(helper: GameTestHelper) {
-        deleteTestConfigs()
-        val definition = ObeliskDefinition(
-            id = "test_high_altitude_rejection_definition",
-            displayName = "High Altitude Rejection",
-            instanceTemplateId = "end",
-            rewardTableId = "end",
-            cultivationPalette = CultivationPaletteDefinition(trophyBlocks = listOf("minecraft:white_candle"))
-        )
-        writeDefinition(definition)
-        reloadData()
-
-        val highSurfaceCenter = helper.absolutePos(BlockPos(620, 250, 4))
-        prepareGenerationSurface(helper, highSurfaceCenter)
-
-        helper.assertTrue(
-            !ObeliskFeature.generateDefinitionSiteForTests(helper.level, highSurfaceCenter.above(12), definition.id, RandomSource.create(7777L)),
-            "Expected overworld dimensional-font worldgen to reject near-build-limit surface anchors"
-        )
-        helper.assertTrue(
-            locateGeneratedObeliskPosInArea(helper, highSurfaceCenter, 48) == null,
-            "Expected no font to be placed on rejected near-build-limit terrain"
-        )
-
-        deleteTestConfigs()
-        reloadData()
-        helper.succeed()
-    }
-
     fun structurePieceWorldgenProducesCompleteFontAltarSites(helper: GameTestHelper) {
         deleteTestConfigs()
         val prefersBlueSkiesTarget = ModList.get().isLoaded("blue_skies")
@@ -881,6 +852,7 @@ object ObeliskGameTestSupport {
             "Expected structure-piece generated obelisk to keep its definition id"
         )
         assertGeneratedAltar(helper, fontPos, "structure-piece")
+        assertNoGeneratedSkyBlocks(helper, center, 48, center.y + 40, "structure-piece")
 
         deleteTestConfigs()
         reloadData()
@@ -2022,6 +1994,18 @@ object ObeliskGameTestSupport {
             }
         }
         return waterTopY
+    }
+
+    private fun assertNoGeneratedSkyBlocks(helper: GameTestHelper, center: BlockPos, radius: Int, minY: Int, label: String) {
+        for (dx in -radius..radius) {
+            for (dz in -radius..radius) {
+                for (y in minY..(helper.level.maxBuildHeight - 1)) {
+                    val pos = BlockPos(center.x + dx, y, center.z + dz)
+                    val state = helper.level.getBlockState(pos)
+                    helper.assertTrue(state.isAir, "Expected $label generation not to leave stray sky blocks at $pos, found ${state.block.descriptionId}")
+                }
+            }
+        }
     }
 
     private fun countAirBelowWaterline(
