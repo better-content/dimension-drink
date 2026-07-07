@@ -7,7 +7,10 @@ import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.BushBlock
 
-internal fun shouldUseAltarThresholdStair(altarY: Int, outerGroundY: Int?, isActiveEntry: Boolean): Boolean {
+internal fun shouldUseAltarUpperThresholdStair(isActiveEntry: Boolean): Boolean =
+    isActiveEntry
+
+internal fun shouldUseAltarLowerThresholdStair(altarY: Int, outerGroundY: Int?, isActiveEntry: Boolean): Boolean {
     if (!isActiveEntry) return false
     return outerGroundY != null && altarY > outerGroundY
 }

@@ -28,18 +28,30 @@ class ObeliskFeatureCourtTest {
     }
 
     @Test
-    fun altarThresholdStairsOnlyAppearWhenCourtSideStepsUp() {
+    fun altarUpperThresholdStairsAppearOnActiveEntries() {
+        assertTrue(
+            shouldUseAltarUpperThresholdStair(isActiveEntry = true),
+            "Active altar entries should always expose an upper stair onto the top tier"
+        )
         assertFalse(
-            shouldUseAltarThresholdStair(altarY = 64, outerGroundY = 64, isActiveEntry = true),
-            "Flat altar court seams should stay blocky instead of placing same-level stairs"
+            shouldUseAltarUpperThresholdStair(isActiveEntry = false),
+            "Inactive altar sides should stay blocky on the upper threshold"
+        )
+    }
+
+    @Test
+    fun altarLowerThresholdStairsOnlyAppearWhenCourtSideStepsUp() {
+        assertFalse(
+            shouldUseAltarLowerThresholdStair(altarY = 64, outerGroundY = 64, isActiveEntry = true),
+            "Flat altar court seams should not add an extra outer stair row"
         )
         assertTrue(
-            shouldUseAltarThresholdStair(altarY = 64, outerGroundY = 63, isActiveEntry = true),
-            "Lower entry ground should still use a stair at the altar threshold"
+            shouldUseAltarLowerThresholdStair(altarY = 64, outerGroundY = 63, isActiveEntry = true),
+            "Lower entry ground should still use an outer stair when the court floor drops"
         )
         assertFalse(
-            shouldUseAltarThresholdStair(altarY = 64, outerGroundY = 63, isActiveEntry = false),
-            "Inactive altar sides should not place threshold stairs"
+            shouldUseAltarLowerThresholdStair(altarY = 64, outerGroundY = 63, isActiveEntry = false),
+            "Inactive altar sides should not place lower threshold stairs"
         )
     }
 }

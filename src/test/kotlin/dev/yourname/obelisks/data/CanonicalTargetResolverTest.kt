@@ -11,11 +11,11 @@ class CanonicalTargetResolverTest {
         val definition = ObeliskDefinition(
             id = "test_id",
             displayName = "Test",
-            instanceTemplateId = "end",
-            targetDimension = "blue_skies:everbright"
+            instanceTemplateId = "otherside",
+            targetDimension = "deeperdarker:otherside"
         )
 
-        assertEquals("blue_skies:everbright", CanonicalTargetResolver.targetId(definition))
+        assertEquals("deeperdarker:otherside", CanonicalTargetResolver.targetId(definition))
     }
 
     @Test

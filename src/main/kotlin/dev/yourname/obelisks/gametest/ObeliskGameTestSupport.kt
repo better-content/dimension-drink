@@ -167,8 +167,6 @@ private fun canonicalLevelKey(templateId: String): ResourceKey<Level>? {
         "overworld" -> ResourceLocation("minecraft", "overworld")
         "nether" -> ResourceLocation("minecraft", "the_nether")
         "end" -> ResourceLocation("minecraft", "the_end")
-        "everbright" -> ResourceLocation("blue_skies", "everbright")
-        "everdawn" -> ResourceLocation("blue_skies", "everdawn")
         "otherside" -> ResourceLocation("deeperdarker", "otherside")
         "undergarden" -> ResourceLocation("undergarden", "undergarden")
         else -> runCatching { ResourceLocation(templateId) }.getOrNull()
@@ -710,9 +708,8 @@ object ObeliskGameTestSupport {
 
     fun worldgenDefinitionsProduceFontAltarSites(helper: GameTestHelper) {
         deleteTestConfigs()
-        val prefersBlueSkiesTarget = ModList.get().isLoaded("blue_skies")
-        val moddedTemplateId = if (prefersBlueSkiesTarget) "blue_skies:everbright" else "nether"
-        val moddedTargetDimension = if (prefersBlueSkiesTarget) "blue_skies:everbright" else "minecraft:the_nether"
+        val moddedTemplateId = "otherside"
+        val moddedTargetDimension = "deeperdarker:otherside"
         val endDefinition = ObeliskDefinition(
             id = "test_end_visual_definition",
             displayName = "Test End Visual",
@@ -808,8 +805,8 @@ object ObeliskGameTestSupport {
             helper,
             moddedPos,
             "modded",
-            expectedTrophyOverride = if (prefersBlueSkiesTarget) Blocks.MAGENTA_CANDLE else null,
-            requireDimensionalTrophy = prefersBlueSkiesTarget
+            expectedTrophyOverride = Blocks.MAGENTA_CANDLE,
+            requireDimensionalTrophy = true
         )
         assertGeneratedAltar(helper, leafCanopyPos, "leaf-canopy")
         assertGeneratedAltar(helper, foliagePos, "foliage")
@@ -820,16 +817,15 @@ object ObeliskGameTestSupport {
 
     fun structurePieceWorldgenProducesCompleteFontAltarSites(helper: GameTestHelper) {
         deleteTestConfigs()
-        val prefersBlueSkiesTarget = ModList.get().isLoaded("blue_skies")
-        if (!prefersBlueSkiesTarget) {
+        if (!ModList.get().isLoaded("deeperdarker")) {
             helper.succeed()
             return
         }
         val definition = ObeliskDefinition(
             id = "test_structure_piece_visual_definition",
             displayName = "Structure Piece Visual",
-            instanceTemplateId = "blue_skies:everbright",
-            targetDimension = "blue_skies:everbright",
+            instanceTemplateId = "otherside",
+            targetDimension = "deeperdarker:otherside",
             rewardTableId = "default",
             cultivationPalette = CultivationPaletteDefinition(trophyBlocks = listOf("minecraft:white_candle"))
         )
@@ -1551,13 +1547,18 @@ object ObeliskGameTestSupport {
         val weatheredCopperLantern = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
             net.minecraft.resources.ResourceLocation("everythingcopper", "weathered_copper_lantern")
         )
+        val sconce = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+            net.minecraft.resources.ResourceLocation("supplementaries", "sconce")
+        )
         fun isLantern(state: net.minecraft.world.level.block.state.BlockState): Boolean =
             state.`is`(Blocks.SOUL_LANTERN) || state.`is`(Blocks.LANTERN) || state.`is`(exposedCopperLantern) || state.`is`(weatheredCopperLantern)
+        fun isAltarLight(state: net.minecraft.world.level.block.state.BlockState): Boolean =
+            isLantern(state) || state.`is`(sconce)
         listOf(2 to 0, -2 to 0, 0 to 2, 0 to -2).forEach { (dx, dz) ->
             val oldWalkwayLampPos = altarCenter.offset(dx, 3, dz)
             helper.assertTrue(
-                !isLantern(helper.level.getBlockState(oldWalkwayLampPos)),
-                "Expected $label altar approach lane to stay clear of hanging lanterns at $oldWalkwayLampPos"
+                !isAltarLight(helper.level.getBlockState(oldWalkwayLampPos)),
+                "Expected $label altar approach lane to stay clear of mounted lights at $oldWalkwayLampPos"
             )
         }
         listOf(-2 to -2, -2 to 2, 2 to -2, 2 to 2).forEach { (dx, dz) ->
@@ -1567,22 +1568,22 @@ object ObeliskGameTestSupport {
                 "Expected $label altar corner supports to use warped cultivation posts at $supportPos"
             )
         }
-        var sideCopperLanterns = 0
+        var sideSconces = 0
         listOf(-2 to -2, -2 to 2, 2 to -2, 2 to 2).forEach { (dx, dz) ->
             val outwardX = if (dx < 0) -1 else 1
             val outwardZ = if (dz < 0) -1 else 1
             val xFace = helper.level.getBlockState(altarCenter.offset(dx + outwardX, 3, dz))
             val zFace = helper.level.getBlockState(altarCenter.offset(dx, 3, dz + outwardZ))
-            if (isLantern(xFace)) {
-                sideCopperLanterns++
+            if (xFace.`is`(sconce)) {
+                sideSconces++
             }
-            if (isLantern(zFace)) {
-                sideCopperLanterns++
+            if (zFace.`is`(sconce)) {
+                sideSconces++
             }
         }
         helper.assertTrue(
-            sideCopperLanterns >= 8,
-            "Expected $label altar to mount 8 copper lanterns on the outer faces of the top cultivation supports"
+            sideSconces >= 8,
+            "Expected $label altar to mount 8 sconces on the outer faces of the top cultivation supports"
         )
         var cultivationSignals = 0
         var pathSignals = 0

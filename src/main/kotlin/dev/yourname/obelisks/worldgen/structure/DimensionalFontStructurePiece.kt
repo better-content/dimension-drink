@@ -53,7 +53,7 @@ class DimensionalFontStructurePiece(
         chunkPos: ChunkPos,
         pivot: BlockPos
     ) {
-        ObeliskFeature.placeStructureSiteForBox(level, centerX, centerZ, siteSeed, box)
+        ObeliskFeature.placeStructureSiteForBox(level, centerX, centerZ, siteSeed, box, chunkPos)
     }
 
     companion object {

@@ -187,7 +187,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val definition = feature.pickDeterministicObelisk(RandomSource.create(siteSeed)) ?: return null
             val center = BlockPos(centerX, level.maxBuildHeight - TERRAIN_SCAN_UP - 2, centerZ)
             val site = feature.buildSite(level, center, definition, siteSeed, chunk) ?: return null
-            if (feature.isInsideChunk(site.fontPos, chunk)) {
+            if (feature.isInsideChunk(site.fontPos, chunk) && level.ensureCanWrite(site.fontPos)) {
                 placeGeneratedFont(level, site, definition)
             }
             return if (site.placedInChunk || feature.isInsideChunk(site.fontPos, chunk)) site.fontPos else null
@@ -198,13 +198,14 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             centerX: Int,
             centerZ: Int,
             siteSeed: Long,
-            box: BoundingBox
+            box: BoundingBox,
+            chunk: ChunkPos = ChunkPos(Math.floorDiv(box.minX(), 16), Math.floorDiv(box.minZ(), 16))
         ): BlockPos? {
             if (level.level.dimension() != Level.OVERWORLD) return null
             val feature = ObeliskFeature(NoneFeatureConfiguration.CODEC)
             val definition = feature.pickDeterministicObelisk(RandomSource.create(siteSeed)) ?: return null
             val center = BlockPos(centerX, level.maxBuildHeight - TERRAIN_SCAN_UP - 2, centerZ)
-            return feature.placeStructureSiteBox(level, center, definition, siteSeed, box)
+            return feature.placeStructureSiteBox(level, center, definition, siteSeed, box, chunk)
         }
 
         fun generateStructureSiteChunkBoxesForTests(
@@ -231,7 +232,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                         level.maxBuildHeight - 1,
                         chunk.maxBlockZ
                     )
-                    placedAny = feature.placeStructureSiteBox(level, center, definition, siteSeed, box) != null || placedAny
+                    placedAny = feature.placeStructureSiteBox(level, center, definition, siteSeed, box, chunk) != null || placedAny
                 }
             }
             return placedAny
@@ -891,6 +892,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private fun findSurfaceY(level: LevelAccessor, x: Int, z: Int, maxY: Int, clearance: Int): Int? {
             val top = maxY.coerceAtMost(level.maxBuildHeight - 2)
             val bottom = level.minBuildHeight + 1
+            if (!level.hasChunk(x shr 4, z shr 4)) return null
+            if (level is WorldGenLevel && !level.ensureCanWrite(BlockPos(x, bottom, z))) return null
             for (y in top downTo bottom) {
                 val pos = BlockPos(x, y, z)
                 val state = level.getBlockState(pos)
@@ -1818,6 +1821,24 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             return setBlock(pos, state, 3)
         }
 
+        private fun placeWallMountedDetail(
+            level: LevelAccessor,
+            setBlock: (BlockPos, BlockState, Int) -> Boolean,
+            pos: BlockPos,
+            facing: Direction,
+            block: Block
+        ): Boolean {
+            if (!canReplaceDecoration(level, pos)) return false
+            val supportPos = pos.relative(facing.opposite)
+            val supportState = level.getBlockState(supportPos)
+            if (!supportState.isFaceSturdy(level, supportPos, facing)) return false
+            var state = directionalState(block, pos, facing)
+            if (state.hasProperty(BlockStateProperties.ATTACH_FACE)) {
+                state = state.setValue(BlockStateProperties.ATTACH_FACE, AttachFace.WALL)
+            }
+            return setBlock(pos, state, 3)
+        }
+
         private fun terrainGroundNear(level: LevelAccessor, rough: BlockPos, maxY: Int, clearance: Int): BlockPos? {
             val y = findSurfaceY(level, rough.x, rough.z, maxY, clearance) ?: return null
             return BlockPos(rough.x, y, rough.z)
@@ -1838,9 +1859,9 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         private fun resolveDecorDisplayBlock(block: Block): Block {
             if (!isPottablePlantDisplayBlock(block)) return block
             val id = BuiltInRegistries.BLOCK.getKey(block)
-            val pottedId = ResourceLocation.tryParse("${id.namespace}:potted_${id.path}") ?: return Blocks.FLOWER_POT
+            val pottedId = ResourceLocation.tryParse("${id.namespace}:potted_${id.path}") ?: return block
             val potted = BuiltInRegistries.BLOCK.get(pottedId)
-            return if (potted == Blocks.AIR && pottedId.path != "air") Blocks.FLOWER_POT else potted
+            return if (potted == Blocks.AIR && pottedId.path != "air") block else potted
         }
 
         private fun isPottablePlantDisplayBlock(block: Block): Boolean {
@@ -2531,14 +2552,28 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 val outer = center.relative(direction, 3)
                 val midPos = BlockPos(mid.x, baseY + 1, mid.z)
                 val outerPos = BlockPos(outer.x, baseY + 1, outer.z)
-                setBlock(midPos, generatedState(palette.courtPrimaryBlock(midPos), midPos), 3)
-                val outerState = altarWelcomeThresholdState(level, center, outerPos, direction, direction in courtLayout.entryOffsets.keys, palette, allowed)
+                val isActiveEntry = direction in courtLayout.entryOffsets.keys
+                val midState = altarTopThresholdState(midPos, direction, isActiveEntry, palette)
+                setBlock(midPos, midState, 3)
+                val outerState = altarLowerThresholdState(level, center, outerPos, direction, isActiveEntry, palette, allowed)
                 setBlock(outerPos, outerState, 3)
             }
             placeAltarCopperRoof(level, setBlock, center)
         }
 
-        private fun altarWelcomeThresholdState(
+        private fun altarTopThresholdState(
+            midPos: BlockPos,
+            direction: Direction,
+            isActiveEntry: Boolean,
+            palette: CultivationPalette
+        ): BlockState =
+            if (shouldUseAltarUpperThresholdStair(isActiveEntry)) {
+                generatedState(Blocks.CUT_COPPER_STAIRS, midPos).setValue(BlockStateProperties.HORIZONTAL_FACING, direction.opposite)
+            } else {
+                generatedState(palette.courtPrimaryBlock(midPos), midPos)
+            }
+
+        private fun altarLowerThresholdState(
             level: LevelAccessor,
             altarCenter: BlockPos,
             outerPos: BlockPos,
@@ -2555,11 +2590,11 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             } else {
                 terrainGroundNear(level, outerPos.below(), altarCenter.y + ALTAR_MAX_FOUNDATION_DROP + 2, 1)
             }
-            val shouldStepUp = shouldUseAltarThresholdStair(altarCenter.y, outerGround?.y, isActiveEntry = true)
+            val shouldStepUp = shouldUseAltarLowerThresholdStair(altarCenter.y, outerGround?.y, isActiveEntry = true)
             return if (shouldStepUp) {
                 generatedState(Blocks.CUT_COPPER_STAIRS, outerPos).setValue(BlockStateProperties.HORIZONTAL_FACING, direction.opposite)
             } else {
-                generatedState(palette.courtPrimaryBlock(outerPos), outerPos)
+                Blocks.AIR.defaultBlockState()
             }
         }
 
@@ -2628,9 +2663,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 BlockPos(center.x + 2, supportTopY, center.z + 3) to Direction.SOUTH,
                 BlockPos(center.x + 3, supportTopY, center.z + 2) to Direction.EAST
             ).forEach { (pos, facing) ->
-                if (!canReplaceDecoration(level, pos)) return@forEach
-                val state = directionalState(copperLanternBlock(pos, soul = false), pos, facing)
-                setBlock(pos, state, 3)
+                placeWallMountedDetail(level, setBlock, pos, facing, altarSconceBlock(pos))
             }
         }
 
@@ -2831,6 +2864,10 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     ?: Blocks.LANTERN
             }
 
+        private fun altarSconceBlock(pos: BlockPos): Block =
+            optionalBlock("supplementaries", "supplementaries:sconce")
+                ?: copperLanternBlock(pos, soul = false)
+
         private fun copperChainBlock(pos: BlockPos): Block =
             agedOptionalBlock("everythingcopper", "everythingcopper:exposed_copper_chain", "everythingcopper:weathered_copper_chain", pos)
                 ?: Blocks.CHAIN
@@ -3015,7 +3052,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                     CultivationTheme(
                         path = listOf(Blocks.PACKED_MUD),
                         structure = listOf(Blocks.RAW_COPPER_BLOCK, Blocks.COPPER_BLOCK, Blocks.CUT_COPPER, Blocks.EXPOSED_CUT_COPPER),
-                        decorations = listOf(Blocks.FLOWER_POT, Blocks.WHITE_CANDLE, Blocks.LIME_CANDLE),
+                        decorations = listOf(Blocks.WHITE_CANDLE, Blocks.LIME_CANDLE),
                         walls = listOf(Blocks.CUT_COPPER, Blocks.RAW_COPPER_BLOCK),
                         markers = listOf(Blocks.COPPER_BLOCK),
                         focalStructures = listOf(TileType.CULTIVATION_COURT, TileType.BROKEN_TRELLIS, TileType.SHRINE, TileType.TRELLIS_RUIN),
@@ -3358,7 +3395,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val palette = CultivationPalette.from(definition, center)
             var placedInChunk = false
             val chunkLocalSetBlock = { pos: BlockPos, state: BlockState, flags: Int ->
-                if (isInsideChunkBounds(pos, chunk)) {
+                if (isInsideChunkBounds(pos, chunk) && level.ensureCanWrite(pos)) {
                     val placed = level.setBlock(pos, state, flags)
                     placedInChunk = placedInChunk || placed
                     placed
@@ -3396,11 +3433,11 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             center: BlockPos,
             definition: ObeliskDefinition,
             siteSeed: Long,
-            box: BoundingBox
+            box: BoundingBox,
+            chunk: ChunkPos
         ): BlockPos? {
-            val chunk = ChunkPos(Math.floorDiv(box.minX(), 16), Math.floorDiv(box.minZ(), 16))
             val site = buildSite(level, center, definition, siteSeed, chunk) ?: return null
-            if (box.isInside(site.fontPos)) {
+            if (box.isInside(site.fontPos) && level.ensureCanWrite(site.fontPos)) {
                 placeGeneratedFont(level, site, definition)
             }
             return if (site.placedInChunk || box.isInside(site.fontPos)) site.fontPos else null

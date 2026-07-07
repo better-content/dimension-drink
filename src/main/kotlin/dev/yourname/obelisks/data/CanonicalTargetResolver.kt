@@ -40,8 +40,6 @@ object CanonicalTargetResolver {
             "overworld" -> "minecraft:overworld"
             "nether" -> "minecraft:the_nether"
             "end" -> "minecraft:the_end"
-            "everbright" -> "blue_skies:everbright"
-            "everdawn" -> "blue_skies:everdawn"
             "otherside" -> "deeperdarker:otherside"
             "undergarden" -> "undergarden:undergarden"
             else -> id

@@ -14,7 +14,7 @@
     "pathBlocks": ["minecraft:cut_copper", "minecraft:copper_block", "minecraft:raw_copper_block"],
     "cultivationBlocks": ["minecraft:copper_block"],
     "structureBlocks": ["minecraft:raw_copper_block", "minecraft:copper_block", "minecraft:cut_copper"],
-    "decorations": ["undergarden:shard_torch", "minecraft:flower_pot", "minecraft:flowering_azalea", "minecraft:lime_candle", "minecraft:white_candle"]
+    "decorations": ["undergarden:shard_torch", "minecraft:flowering_azalea", "minecraft:lime_candle", "minecraft:white_candle"]
   },
   "rewardTableId": "overworld",
   "maxBlood": 15000,
