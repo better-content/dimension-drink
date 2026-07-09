@@ -20,11 +20,11 @@ class DimensionalFontWorldgenPlacementTest {
             "Dimensional font worldgen should be controlled by vanilla random-spread structure placement"
         )
         assertTrue(
-            Regex(""""spacing"\s*:\s*42\b""").containsMatchIn(structureSet),
+            Regex(""""spacing"\s*:\s*30\b""").containsMatchIn(structureSet),
             "Dimensional font structure rarity should stay explicit and reviewable"
         )
         assertTrue(
-            Regex(""""separation"\s*:\s*12\b""").containsMatchIn(structureSet),
+            Regex(""""separation"\s*:\s*9\b""").containsMatchIn(structureSet),
             "Dimensional font structures should keep enough separation to avoid overlapping cultivation centers"
         )
         assertTrue(
