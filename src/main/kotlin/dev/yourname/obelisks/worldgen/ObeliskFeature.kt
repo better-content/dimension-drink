@@ -2865,8 +2865,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             }
 
         private fun altarSconceBlock(pos: BlockPos): Block =
-            optionalBlock("supplementaries", "supplementaries:sconce")
-                ?: copperLanternBlock(pos, soul = false)
+            optionalBlock("supplementaries", "supplementaries:sconce_wall")
+                ?: occultWallTorchBlock()
 
         private fun copperChainBlock(pos: BlockPos): Block =
             agedOptionalBlock("everythingcopper", "everythingcopper:exposed_copper_chain", "everythingcopper:weathered_copper_chain", pos)

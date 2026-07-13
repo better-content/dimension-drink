@@ -47,6 +47,7 @@ import net.minecraft.world.InteractionResult
 import net.minecraft.world.entity.item.ItemEntity
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Blocks
+import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.util.RandomSource
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.Items
@@ -1547,13 +1548,13 @@ object ObeliskGameTestSupport {
         val weatheredCopperLantern = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
             net.minecraft.resources.ResourceLocation("everythingcopper", "weathered_copper_lantern")
         )
-        val sconce = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
-            net.minecraft.resources.ResourceLocation("supplementaries", "sconce")
+        val wallSconce = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+            net.minecraft.resources.ResourceLocation("supplementaries", "sconce_wall")
         )
         fun isLantern(state: net.minecraft.world.level.block.state.BlockState): Boolean =
             state.`is`(Blocks.SOUL_LANTERN) || state.`is`(Blocks.LANTERN) || state.`is`(exposedCopperLantern) || state.`is`(weatheredCopperLantern)
         fun isAltarLight(state: net.minecraft.world.level.block.state.BlockState): Boolean =
-            isLantern(state) || state.`is`(sconce)
+            isLantern(state) || state.`is`(wallSconce)
         listOf(2 to 0, -2 to 0, 0 to 2, 0 to -2).forEach { (dx, dz) ->
             val oldWalkwayLampPos = altarCenter.offset(dx, 3, dz)
             helper.assertTrue(
@@ -1572,12 +1573,24 @@ object ObeliskGameTestSupport {
         listOf(-2 to -2, -2 to 2, 2 to -2, 2 to 2).forEach { (dx, dz) ->
             val outwardX = if (dx < 0) -1 else 1
             val outwardZ = if (dz < 0) -1 else 1
+            val xFacing = if (dx < 0) Direction.WEST else Direction.EAST
+            val zFacing = if (dz < 0) Direction.NORTH else Direction.SOUTH
             val xFace = helper.level.getBlockState(altarCenter.offset(dx + outwardX, 3, dz))
             val zFace = helper.level.getBlockState(altarCenter.offset(dx, 3, dz + outwardZ))
-            if (xFace.`is`(sconce)) {
+            if (xFace.`is`(wallSconce)) {
+                helper.assertTrue(
+                    xFace.hasProperty(BlockStateProperties.HORIZONTAL_FACING) &&
+                        xFace.getValue(BlockStateProperties.HORIZONTAL_FACING) == xFacing,
+                    "Expected $label x-side wall sconce to face $xFacing, found $xFace"
+                )
                 sideSconces++
             }
-            if (zFace.`is`(sconce)) {
+            if (zFace.`is`(wallSconce)) {
+                helper.assertTrue(
+                    zFace.hasProperty(BlockStateProperties.HORIZONTAL_FACING) &&
+                        zFace.getValue(BlockStateProperties.HORIZONTAL_FACING) == zFacing,
+                    "Expected $label z-side wall sconce to face $zFacing, found $zFace"
+                )
                 sideSconces++
             }
         }
