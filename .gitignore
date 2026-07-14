@@ -20,9 +20,25 @@ build
 # other
 eclipse
 /run/
+run-gametest/*
+!run-gametest/config/
+!run-gametest/config/dimensionalfonts/
+!run-gametest/config/dimensionalfonts/**
+!run-gametest/gameteststructures/
+!run-gametest/gameteststructures/**
 .cache
 .codex
 prod-run/server
+logs/
+*.log
+*.log.gz
+eula.txt
+server.properties
+options.txt
+usercache.json
+usernamecache.json
+.gradle-local/
+.kotlin/
 
 # Files from Forge MDK
 forge*changelog.txt
