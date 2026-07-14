@@ -18,7 +18,7 @@ KFF_JAR_PATH="${KFF_JAR_PATH:-${HOME}/.gradle/caches/modules-2/files-2.1/curse.m
 FORGE_INSTALLER_PATH="${FORGE_INSTALLER_PATH:-${ROOT_DIR}/.cache/forge/forge-${FORGE_COORD_VERSION}-installer.jar}"
 
 ENGINE_JAR="$(find "${ROOT_DIR}/instanced-dimensions/build/libs" -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' | head -n 1)"
-OBELISKS_JAR="$(find "${ROOT_DIR}/obelisks/build/libs" -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' | head -n 1)"
+DIMENSION_DRINK_JAR="$(find "${ROOT_DIR}/dimension_drink/build/libs" -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' | head -n 1)"
 
 require_file() {
   local path="$1"
@@ -50,7 +50,7 @@ stage_mods() {
   mkdir -p "${MODS_DIR}" "${LOG_DIR}"
   rm -f "${MODS_DIR}"/*.jar
   cp "${ENGINE_JAR}" "${MODS_DIR}/"
-  cp "${OBELISKS_JAR}" "${MODS_DIR}/"
+  cp "${DIMENSION_DRINK_JAR}" "${MODS_DIR}/"
   cp "${C2MEF_JAR_PATH}" "${MODS_DIR}/${C2MEF_JAR_NAME}"
   cp "${KFF_JAR_PATH}" "${MODS_DIR}/${KFF_JAR_NAME}"
   printf 'eula=true\n' > "${SERVER_DIR}/eula.txt"
@@ -96,7 +96,7 @@ main() {
   require_file "${C2MEF_JAR_PATH}" "C2MEF jar"
   require_file "${KFF_JAR_PATH}" "Kotlin for Forge jar"
   require_file "${ENGINE_JAR}" "Instanced Dimensions jar"
-  require_file "${OBELISKS_JAR}" "Obelisks jar"
+  require_file "${DIMENSION_DRINK_JAR}" "Dimension Drink jar"
 
   download_installer
   require_file "${FORGE_INSTALLER_PATH}" "Forge installer"

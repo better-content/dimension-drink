@@ -1,0 +1,23 @@
+package dev.yourname.dimensiondrink.gametest
+
+import net.minecraft.gametest.framework.GameTest
+import net.minecraft.gametest.framework.GameTestHelper
+import net.minecraftforge.gametest.PrefixGameTestTemplate
+
+@PrefixGameTestTemplate(false)
+class ObeliskActivationGameTests {
+    @GameTest(templateNamespace = "dimensiondrink", template = "bootstrap/empty", batch = "obelisk_activation_player", timeoutTicks = 3600)
+    fun charged_obelisk_activates_run_and_returns_player(helper: GameTestHelper) {
+        ObeliskGameTestSupport.chargedObeliskActivatesRunAndReturnsPlayer(helper)
+    }
+
+    @GameTest(templateNamespace = "dimensiondrink", template = "bootstrap/empty", batch = "obelisk_activation_minimum_blood", timeoutTicks = 800)
+    fun font_requires_visible_blood_to_start_run(helper: GameTestHelper) {
+        ObeliskGameTestSupport.fontRequiresVisibleBloodToStartRun(helper)
+    }
+
+    @GameTest(templateNamespace = "dimensiondrink", template = "bootstrap/empty", batch = "obelisk_activation_relocated", timeoutTicks = 3600)
+    fun relocated_spawn_normalizes_canonical_target(helper: GameTestHelper) {
+        ObeliskGameTestSupport.relocatedSpawnRetargetsTravelWarmup(helper)
+    }
+}

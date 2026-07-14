@@ -1,4 +1,4 @@
-Dimensional Fonts
+Dimension Drink
 =================
 
 Forge 1.20.1 Kotlin mod for dimensional blood-font expeditions.

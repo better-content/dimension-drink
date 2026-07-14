@@ -4,21 +4,21 @@ plugins {
 }
 
 ext {
-    modId = 'dimensionalfonts'
-    modName = 'Dimensional Fonts'
-    modGroupId = 'dev.yourname.obelisks'
+    modId = 'dimensiondrink'
+    modName = 'Dimension Drink'
+    modGroupId = 'dev.yourname.dimensiondrink'
     modDescription = 'Dimensional blood fonts open real-dimension expeditions from small altars.'
 }
 
 apply from: rootProject.file('gradle/forge-module.gradle')
 
-def dimensionalFontGameTestNamespaces = (findProperty('dimensionalFontsGameTestNamespaces') ?: modId).toString()
-def dimensionalFontGameTestSelection = (findProperty('dimensionalFontsGameTestSelection') ?: 'all').toString()
+def dimensionDrinkGameTestNamespaces = (findProperty('dimensionDrinkGameTestNamespaces') ?: modId).toString()
+def dimensionDrinkGameTestSelection = (findProperty('dimensionDrinkGameTestSelection') ?: 'all').toString()
 
 gradle.projectsEvaluated {
     minecraft.runs.configureEach {
-        property 'forge.enabledGameTestNamespaces', dimensionalFontGameTestNamespaces
-        property 'dimensionalfonts.gametest.selection', dimensionalFontGameTestSelection
+        property 'forge.enabledGameTestNamespaces', dimensionDrinkGameTestNamespaces
+        property 'dimensiondrink.gametest.selection', dimensionDrinkGameTestSelection
     }
 }
 

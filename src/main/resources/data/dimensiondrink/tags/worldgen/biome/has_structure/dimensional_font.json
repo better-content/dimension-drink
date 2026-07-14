@@ -1,0 +1,60 @@
+{
+  "replace": false,
+  "values": [
+    "#minecraft:is_badlands",
+    "#minecraft:is_forest",
+    "#minecraft:is_hill",
+    "#minecraft:is_jungle",
+    "#minecraft:is_mountain",
+    "#minecraft:is_savanna",
+    "#minecraft:is_taiga",
+    "minecraft:cherry_grove",
+    "minecraft:desert",
+    "minecraft:dripstone_caves",
+    "minecraft:grove",
+    "minecraft:ice_spikes",
+    "minecraft:lush_caves",
+    "minecraft:mangrove_swamp",
+    "minecraft:meadow",
+    "minecraft:mushroom_fields",
+    "minecraft:plains",
+    "minecraft:snowy_plains",
+    "minecraft:snowy_slopes",
+    "minecraft:stony_peaks",
+    "minecraft:sunflower_plains",
+    "minecraft:swamp",
+    "minecraft:windswept_gravelly_hills",
+    {
+      "id": "#forge:is_cave",
+      "required": false
+    },
+    {
+      "id": "#forge:is_dry/overworld",
+      "required": false
+    },
+    {
+      "id": "#forge:is_lush",
+      "required": false
+    },
+    {
+      "id": "#forge:is_plains",
+      "required": false
+    },
+    {
+      "id": "#forge:is_sandy",
+      "required": false
+    },
+    {
+      "id": "#forge:is_sparse",
+      "required": false
+    },
+    {
+      "id": "#forge:is_swamp",
+      "required": false
+    },
+    {
+      "id": "#forge:is_wet/overworld",
+      "required": false
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-# Dimensional Fonts
+# Dimension Drink
 
 Pack-owned obelisk and blood-font worldgen/runtime mod for Forge `1.20.1`.
 
@@ -15,6 +15,6 @@ Pack-owned obelisk and blood-font worldgen/runtime mod for Forge `1.20.1`.
 
 Use the staged reobfuscated runtime jar for pack deployment:
 
-- `build/libs/dimensionalfonts-<version>.jar`
+- `build/libs/dimensiondrink-<version>.jar`
 
 `stageRuntimeJar` copies `build/reobfJar/output.jar` onto that canonical release path so pack deployment does not need a repo-specific rename rule.

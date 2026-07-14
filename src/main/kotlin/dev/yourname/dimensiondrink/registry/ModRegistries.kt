@@ -1,0 +1,14 @@
+package dev.yourname.dimensiondrink.registry
+
+import net.minecraftforge.eventbus.api.IEventBus
+
+object ModRegistries {
+    fun registerAll(bus: IEventBus) {
+        ModStructurePoolElements.register(bus)
+        ModStructures.register(bus)
+        ModBlocks.REGISTRY.register(bus)
+        ModItems.REGISTRY.register(bus)
+        ModBlockEntities.REGISTRY.register(bus)
+        ModFeatures.REGISTRY.register(bus)
+    }
+}
