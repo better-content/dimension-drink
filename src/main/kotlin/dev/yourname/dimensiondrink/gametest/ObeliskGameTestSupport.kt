@@ -1218,7 +1218,23 @@ object ObeliskGameTestSupport {
     }
 
     fun terrainClearingTaskIsRemoved(helper: GameTestHelper) {
-        helper.assertTrue(true, "Dimension Drink sites do not run terrain clearing tasks")
+        val center = helper.absolutePos(BlockPos(20, 3, 20))
+        val obstructionPos = center.above()
+        prepareGenerationSurface(helper, center)
+        helper.level.setBlock(obstructionPos, Blocks.OBSIDIAN.defaultBlockState(), 3)
+
+        helper.assertTrue(
+            !ObeliskFeature.generateDefinitionSiteForTests(helper.level, center.above(12), "end", RandomSource.create(24680L)),
+            "Expected generated sites with blocked airspace to be rejected instead of clearing terrain"
+        )
+        helper.assertTrue(
+            helper.level.getBlockState(obstructionPos).`is`(Blocks.OBSIDIAN),
+            "Expected blocked airspace to remain intact when site generation is rejected"
+        )
+        helper.assertTrue(
+            locateGeneratedObeliskPos(helper, center) == null,
+            "Expected blocked-airspace generation attempt not to place an obelisk"
+        )
         helper.succeed()
     }
 

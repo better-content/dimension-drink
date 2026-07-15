@@ -51,6 +51,8 @@ class RunRecordSerializationTest {
         assertEquals(record.backendSiteCenter, decoded.backendSiteCenter)
         assertEquals(record.backendSiteBounds, decoded.backendSiteBounds)
         assertEquals(record.spawnPos, decoded.spawnPos)
+        assertEquals(record.createdGameTime, decoded.createdGameTime)
+        assertEquals(record.updatedGameTime, decoded.updatedGameTime)
         assertEquals(record.monstersKilled, decoded.monstersKilled)
         assertEquals(record.totalDamageDealt, decoded.totalDamageDealt)
         assertEquals(record.ticksElapsed, decoded.ticksElapsed)
