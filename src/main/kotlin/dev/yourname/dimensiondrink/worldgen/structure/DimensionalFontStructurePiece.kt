@@ -54,8 +54,8 @@ class DimensionalFontStructurePiece(
         pivot: BlockPos
     ) {
         // Structure post-processing may visit neighboring chunks while keeping the same piece.
-        // Restrict writes to the current boxed slice instead of trusting the reported chunkPos.
-        ObeliskFeature.placeStructureSiteForBox(level, centerX, centerZ, siteSeed, box)
+        // Restrict writes to the current boxed slice and current chunk callback.
+        ObeliskFeature.placeStructureSiteForBox(level, centerX, centerZ, siteSeed, box, chunkPos)
     }
 
     companion object {

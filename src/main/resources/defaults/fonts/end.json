@@ -1,0 +1,25 @@
+{
+  "id": "end",
+  "displayName": "End Dimensional Font",
+  "instanceTemplateId": "end",
+  "targetDimension": "minecraft:the_end",
+  "coordinateScale": 1.0,
+  "spawnSearchRadius": 96,
+  "runRadius": 384,
+  "requiredNamespace": "minecraft",
+  "enabled": false,
+  "worldgenWeight": 0.0,
+  "worldgenFamilyId": "altar",
+  "cultivationPalette": {
+    "pathBlocks": ["minecraft:cut_copper", "minecraft:copper_block", "minecraft:raw_copper_block"],
+    "cultivationBlocks": ["minecraft:copper_block"],
+    "structureBlocks": ["minecraft:raw_copper_block", "minecraft:copper_block", "minecraft:cut_copper"],
+    "trophyBlocks": ["minecraft:end_rod", "minecraft:white_candle", "minecraft:chorus_flower"],
+    "decorations": ["minecraft:end_rod", "minecraft:potted_flowering_azalea_bush", "minecraft:white_candle", "minecraft:chorus_flower"]
+  },
+  "rewardTableId": "default",
+  "maxBlood": 15000,
+  "baseBloodPerTick": 0.25,
+  "heartBloodMultiplier": 0.08,
+  "runBloodDrainPerTick": 20.0
+}

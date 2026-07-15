@@ -85,7 +85,7 @@ object RunRegistry : RunService {
 
     fun isPreparedInstanceReady(templateId: String): Boolean {
         val targetId = CanonicalTargetResolver.targetId(templateId)
-        return ObeliskDataManager.enabledDimensionDrinks().any {
+        return ObeliskDataManager.allDimensionDrinks().any {
             it.id == templateId || it.instanceTemplateId == templateId || it.targetDimension == templateId ||
                 it.instanceTemplateId == targetId || it.targetDimension == targetId
         }
