@@ -44,6 +44,7 @@ import net.minecraft.resources.ResourceLocation
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.InteractionResult
+import net.minecraft.world.effect.MobEffects
 import net.minecraft.world.entity.item.ItemEntity
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Blocks
@@ -1095,6 +1096,18 @@ object ObeliskGameTestSupport {
                     }, onSuccess = {
                         helper.assertTrue(TravelManager.returnPlayer(playerA), "Expected first player return to succeed")
                         helper.assertTrue(TravelManager.returnPlayer(playerB), "Expected second player return to succeed")
+                        listOf(playerA, playerB).forEach { player ->
+                            val slowness = player.getEffect(MobEffects.MOVEMENT_SLOWDOWN)
+                            val darkness = player.getEffect(MobEffects.DARKNESS)
+                            helper.assertTrue(
+                                slowness?.duration == 20 && slowness.amplifier == 3,
+                                "Expected returning player to receive one second of Slowness IV"
+                            )
+                            helper.assertTrue(
+                                darkness?.duration == 20 && darkness.amplifier == 0,
+                                "Expected returning player to receive one second of Darkness I"
+                            )
+                        }
                         waitUntil(helper, 320, "Expected both players to return and the shared run to clean up", condition = {
                             clientA.pump(server)
                             clientB.pump(server)

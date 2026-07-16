@@ -43,6 +43,8 @@ object RunRegistry : RunService {
 
     private const val RUN_SAVE_INTERVAL_TICKS = 100L
     private const val ENTRY_WARMUP_TICKS = 30L
+    private const val ENTRY_DEBUFF_TICKS = 12
+    private const val RETURN_DEBUFF_TICKS = 20
 
     private val logger = LogUtils.getLogger()
     private val backend = RunBackendManager.backend
@@ -103,6 +105,7 @@ object RunRegistry : RunService {
                     removePlayer(record, player.uuid, disqualify = disqualify)
                     persistRunNow(player.server, record)
                 }
+                applyDrinkDebuffs(player, RETURN_DEBUFF_TICKS)
                 true
             }
             ReturnRunResult.NotBound -> false
@@ -638,9 +641,13 @@ object RunRegistry : RunService {
     }
 
     private fun applyEntryWarmupEffects(player: ServerPlayer) {
-        player.addEffect(MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 12, 3, false, false, true))
-        player.addEffect(MobEffectInstance(MobEffects.DARKNESS, 12, 0, false, false, true))
+        applyDrinkDebuffs(player, ENTRY_DEBUFF_TICKS)
         player.foodData.addExhaustion(0.16f)
+    }
+
+    private fun applyDrinkDebuffs(player: ServerPlayer, durationTicks: Int) {
+        player.addEffect(MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, durationTicks, 3, false, false, true))
+        player.addEffect(MobEffectInstance(MobEffects.DARKNESS, durationTicks, 0, false, false, true))
     }
 
     private fun clearEntryWarmup(player: ServerPlayer) {
