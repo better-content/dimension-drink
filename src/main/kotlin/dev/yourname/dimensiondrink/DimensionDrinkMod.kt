@@ -4,7 +4,6 @@ import com.mojang.logging.LogUtils
 import dev.yourname.dimensiondrink.data.ObeliskDataManager
 import dev.yourname.dimensiondrink.commands.ObeliskCommands
 import dev.yourname.dimensiondrink.gametest.ObeliskGameTestRegistrar
-import dev.yourname.dimensiondrink.integration.tcon.TConAffixRewards
 import dev.yourname.dimensiondrink.registry.ModRegistries
 import dev.yourname.dimensiondrink.runtime.combat.RunCombatTracker
 import dev.yourname.dimensiondrink.runtime.energy.FERegenerationHandler
@@ -32,7 +31,6 @@ class DimensionDrinkMod {
         MinecraftForge.EVENT_BUS.register(PlayerReturnHandler)
         MinecraftForge.EVENT_BUS.register(VanillaPortalBlocker)
         MinecraftForge.EVENT_BUS.register(RewardSystem)
-        MinecraftForge.EVENT_BUS.register(TConAffixRewards)
         MinecraftForge.EVENT_BUS.register(RunRegistry)
         MinecraftForge.EVENT_BUS.register(RunBossBarManager)
         MinecraftForge.EVENT_BUS.register(ObeliskCommands)

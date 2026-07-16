@@ -7,7 +7,6 @@ import dev.yourname.dimensiondrink.data.KillCurrencyDefinition
 import dev.yourname.dimensiondrink.data.RewardEntryDefinition
 import dev.yourname.dimensiondrink.data.RewardPoolDefinition
 import dev.yourname.dimensiondrink.data.RewardTableDefinition
-import dev.yourname.dimensiondrink.integration.tcon.TConAffixRewards
 import dev.yourname.dimensiondrink.runtime.run.RunRecord
 import net.minecraft.core.BlockPos
 import net.minecraft.core.particles.ParticleTypes
@@ -56,7 +55,6 @@ object RewardSystem {
         var deliveredAny = false
         recipients.forEach { player ->
             val rewards = buildRewards(run, rewardTable).toMutableList()
-            TConAffixRewards.rollAffixedPart(level.random)?.let(rewards::add)
             val currencyRewards = buildKillCurrencyRewards(run, rewardTable)
             (rewards + currencyRewards).forEach { stack ->
                 deliverToPlayerOrFont(level, originPos, obelisk, player, stack)

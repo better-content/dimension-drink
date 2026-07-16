@@ -19,7 +19,6 @@ object ObeliskGameTestRegistrar {
             "multiplayer" -> event.register(ObeliskMultiplayerGameTests::class.java)
             "commands" -> event.register(ObeliskCommandGameTests::class.java)
             "runtime" -> event.register(ObeliskRuntimeGameTests::class.java)
-            "tcon" -> event.register(ObeliskTConGameTests::class.java)
             else -> {
                 event.register(ObeliskRunLifecycleGameTests::class.java)
                 event.register(ObeliskActivationGameTests::class.java)
@@ -30,7 +29,6 @@ object ObeliskGameTestRegistrar {
                 event.register(ObeliskMultiplayerGameTests::class.java)
                 event.register(ObeliskCommandGameTests::class.java)
                 event.register(ObeliskRuntimeGameTests::class.java)
-                event.register(ObeliskTConGameTests::class.java)
             }
         }
     }
