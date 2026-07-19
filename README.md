@@ -18,3 +18,7 @@ Use the staged reobfuscated runtime jar for pack deployment:
 - `build/libs/dimensiondrink-<version>.jar`
 
 `stageRuntimeJar` copies `build/reobfJar/output.jar` onto that canonical release path so pack deployment does not need a repo-specific rename rule.
+
+## Community and support
+
+For modpack and mod discussion, playtest feedback, and bug reports, join the [Better Content Discord](https://discord.gg/EkRnZbzqS9).
