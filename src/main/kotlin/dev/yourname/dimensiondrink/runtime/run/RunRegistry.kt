@@ -8,7 +8,6 @@ import dev.yourname.dimensiondrink.api.RunService
 import dev.yourname.dimensiondrink.content.ObeliskBlockEntity
 import dev.yourname.dimensiondrink.data.CanonicalTargetResolver
 import dev.yourname.dimensiondrink.data.ObeliskDataManager
-import dev.yourname.dimensiondrink.runtime.combat.RunMonsterSpawner
 import dev.yourname.dimensiondrink.runtime.backend.ActiveSiteHandle
 import dev.yourname.dimensiondrink.runtime.backend.ActiveSiteResult
 import dev.yourname.dimensiondrink.runtime.backend.EnterRunResult
@@ -493,7 +492,6 @@ object RunRegistry : RunService {
         }
 
         record.emptyTicks = 0L
-        RunMonsterSpawner.tick(server, record, playerCount)
         record.ticksElapsed++
         if (record.ticksElapsed % ObeliskConstants.DRAIN_EXPONENTIAL_INTERVAL_TICKS.toLong() == 0L) {
             record.drainMultiplier = exp(obelisk.getModifiedDrainFactor() * record.ticksElapsed.toDouble())
