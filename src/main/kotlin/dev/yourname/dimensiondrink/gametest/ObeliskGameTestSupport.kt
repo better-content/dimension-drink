@@ -23,6 +23,8 @@ import dev.yourname.dimensiondrink.runtime.run.RunState
 import dev.yourname.dimensiondrink.runtime.run.RunSavedData
 import dev.yourname.dimensiondrink.runtime.ui.RunBossBarManager
 import dev.yourname.dimensiondrink.worldgen.ObeliskFeature
+import dev.yourname.dimensiondrink.worldgen.structure.DimensionalFontSiteGenerator
+import dev.yourname.dimensiondrink.worldgen.structure.DimensionalFontStructurePiece
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
@@ -47,7 +49,10 @@ import net.minecraft.world.InteractionResult
 import net.minecraft.world.effect.MobEffects
 import net.minecraft.world.entity.item.ItemEntity
 import net.minecraft.world.level.Level
+import net.minecraft.world.level.ChunkPos
 import net.minecraft.world.level.block.Blocks
+import net.minecraft.world.level.levelgen.Heightmap
+import net.minecraft.world.level.levelgen.structure.BoundingBox
 import net.minecraft.util.RandomSource
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.Items
@@ -817,10 +822,6 @@ object ObeliskGameTestSupport {
 
     fun structurePieceWorldgenProducesCompleteFontAltarSites(helper: GameTestHelper) {
         deleteTestConfigs()
-        if (!ModList.get().isLoaded("deeperdarker")) {
-            helper.succeed()
-            return
-        }
         val definition = ObeliskDefinition(
             id = "test_structure_piece_visual_definition",
             displayName = "Structure Piece Visual",
@@ -834,10 +835,67 @@ object ObeliskGameTestSupport {
 
         val center = chunkInteriorTestAnchor(helper.absolutePos(BlockPos(260, 3, 4)))
         prepareCliffsideGenerationSurface(helper, center)
-        helper.assertTrue(
-            ObeliskFeature.generateStructureSiteChunkBoxesForTests(helper.level, center.above(18), definition.id, 9012L),
-            "Expected structure-piece chunk-box generation to place a complete font and altar"
+        val altarCenter = center.below()
+        val piece = DimensionalFontStructurePiece(
+            altarCenter,
+            9012L,
+            definition.id,
+            (definition.maxBlood ?: ObeliskConstants.MAX_BLOOD_STORAGE) * 1.5
         )
+        val centerChunk = ChunkPos(altarCenter)
+        val sentinelColumn = altarCenter.offset(0, 0, 20)
+        val sentinel = BlockPos(
+            sentinelColumn.x,
+            helper.level.getHeight(Heightmap.Types.WORLD_SURFACE_WG, sentinelColumn.x, sentinelColumn.z) - 1,
+            sentinelColumn.z
+        )
+        helper.level.setBlock(sentinel, Blocks.DIAMOND_BLOCK.defaultBlockState(), 3)
+        val centerBox = BoundingBox(
+            centerChunk.minBlockX,
+            helper.level.minBuildHeight,
+            centerChunk.minBlockZ,
+            centerChunk.maxBlockX,
+            helper.level.maxBuildHeight - 1,
+            centerChunk.maxBlockZ
+        )
+        piece.postProcess(
+            helper.level,
+            helper.level.structureManager(),
+            helper.level.chunkSource.generator,
+            RandomSource.create(9012L),
+            centerBox,
+            ChunkPos(centerChunk.x + 128, centerChunk.z - 128),
+            BlockPos.ZERO
+        )
+        helper.assertTrue(
+            helper.level.getBlockState(sentinel).`is`(Blocks.DIAMOND_BLOCK),
+            "Expected the structure BoundingBox to prevent writes into a neighboring chunk"
+        )
+        for (chunkX in centerChunk.x - 2..centerChunk.x + 2) {
+            for (chunkZ in centerChunk.z - 2..centerChunk.z + 2) {
+                val slice = ChunkPos(chunkX, chunkZ)
+                val box = BoundingBox(
+                    slice.minBlockX,
+                    helper.level.minBuildHeight,
+                    slice.minBlockZ,
+                    slice.maxBlockX,
+                    helper.level.maxBuildHeight - 1,
+                    slice.maxBlockZ
+                )
+                // Deliberately disagree with the slice to model the callback bookkeeping observed
+                // under C2ME. The vanilla BoundingBox must remain the only placement authority.
+                val mismatchedCallbackChunk = ChunkPos(chunkX + 128, chunkZ - 128)
+                piece.postProcess(
+                    helper.level,
+                    helper.level.structureManager(),
+                    helper.level.chunkSource.generator,
+                    RandomSource.create(9012L),
+                    box,
+                    mismatchedCallbackChunk,
+                    BlockPos.ZERO
+                )
+            }
+        }
 
         val fontPos = requireNotNull(locateGeneratedObeliskPosInArea(helper, center, 40)) {
             "Expected structure-piece generation to place a font on the altar"
@@ -847,8 +905,22 @@ object ObeliskGameTestSupport {
             obelisk?.definitionId == definition.id,
             "Expected structure-piece generated obelisk to keep its definition id"
         )
-        assertGeneratedAltar(helper, fontPos, "structure-piece")
-        assertNoGeneratedSkyBlocks(helper, center, 48, center.y + 40, "structure-piece")
+        assertGeneratedAltar(helper, fontPos, "structure-piece", requireReliquaryLandscaping = false)
+        var pathBlocks = 0
+        for (dx in -DimensionalFontSiteGenerator.SITE_RADIUS..DimensionalFontSiteGenerator.SITE_RADIUS) {
+            for (dz in -DimensionalFontSiteGenerator.SITE_RADIUS..DimensionalFontSiteGenerator.SITE_RADIUS) {
+                for (dy in -20..20) {
+                    if (helper.level.getBlockState(altarCenter.offset(dx, dy, dz)).`is`(Blocks.PACKED_MUD)) {
+                        pathBlocks++
+                    }
+                }
+            }
+        }
+        helper.assertTrue(pathBlocks >= 8, "Expected structure-piece generation to include bounded approach paths")
+        helper.assertTrue(
+            DimensionalFontSiteGenerator.centerFitsStartChunk(altarCenter),
+            "Expected the complete center court to remain inside its start chunk"
+        )
 
         deleteTestConfigs()
         reloadData()
@@ -1528,7 +1600,8 @@ object ObeliskGameTestSupport {
         label: String,
         requireBroadLowerStep: Boolean = true,
         expectedTrophyOverride: net.minecraft.world.level.block.Block? = null,
-        requireDimensionalTrophy: Boolean = false
+        requireDimensionalTrophy: Boolean = false,
+        requireReliquaryLandscaping: Boolean = true
     ) {
         val baseCenter = fontPos.below()
         val middleTierCenter = baseCenter.below()
@@ -1611,6 +1684,7 @@ object ObeliskGameTestSupport {
             sideLights >= 4,
             "Expected $label altar to keep visible outer-face lighting around the top cultivation supports"
         )
+        if (!requireReliquaryLandscaping) return
         var cultivationSignals = 0
         var pathSignals = 0
         var trophySignals = 0

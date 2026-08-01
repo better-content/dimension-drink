@@ -1,8 +1,10 @@
 package dev.yourname.dimensiondrink.worldgen.structure
 
 import com.mojang.serialization.Codec
+import dev.yourname.dimensiondrink.ObeliskConstants
+import dev.yourname.dimensiondrink.data.ObeliskDataManager
+import dev.yourname.dimensiondrink.data.ObeliskDefinition
 import dev.yourname.dimensiondrink.registry.ModStructures
-import dev.yourname.dimensiondrink.worldgen.ObeliskFeature
 import net.minecraft.core.BlockPos
 import net.minecraft.core.QuartPos
 import net.minecraft.tags.BiomeTags
@@ -19,7 +21,7 @@ class DimensionalFontStructure(settings: StructureSettings) : Structure(settings
         val chunk = context.chunkPos()
         val seed = structureSeed(context.seed(), chunk)
         val random = RandomSource.create(seed)
-        val center = ObeliskFeature.structureAnchorForChunk(chunk, random)
+        val center = DimensionalFontSiteGenerator.anchorForStartChunk(chunk, random)
         val centerBiome = context.chunkGenerator().biomeSource.getNoiseBiome(
             QuartPos.fromBlock(center.x),
             0,
@@ -33,16 +35,36 @@ class DimensionalFontStructure(settings: StructureSettings) : Structure(settings
         ) {
             return Optional.empty()
         }
-        val surfaceY = context.chunkGenerator().getFirstFreeHeight(
-            center.x,
-            center.z,
-            Heightmap.Types.WORLD_SURFACE_WG,
-            context.heightAccessor(),
-            context.randomState()
-        )
-        val position = BlockPos(center.x, surfaceY, center.z)
+        val definition = pickDefinition(RandomSource.create(seed)) ?: return Optional.empty()
+        val heights = mutableListOf<Int>()
+        for (dx in -DimensionalFontSiteGenerator.ALTAR_RADIUS..DimensionalFontSiteGenerator.ALTAR_RADIUS) {
+            for (dz in -DimensionalFontSiteGenerator.ALTAR_RADIUS..DimensionalFontSiteGenerator.ALTAR_RADIUS) {
+                val x = center.x + dx
+                val z = center.z + dz
+                val groundY = context.chunkGenerator().getFirstFreeHeight(
+                    x,
+                    z,
+                    Heightmap.Types.WORLD_SURFACE_WG,
+                    context.heightAccessor(),
+                    context.randomState()
+                ) - 1
+                val surfaceState = context.chunkGenerator().getBaseColumn(
+                    x,
+                    z,
+                    context.heightAccessor(),
+                    context.randomState()
+                ).getBlock(groundY)
+                if (!surfaceState.fluidState.isEmpty) return Optional.empty()
+                heights += groundY
+            }
+        }
+        val groundY = heights.maxOrNull() ?: return Optional.empty()
+        if (groundY - (heights.minOrNull() ?: groundY) > MAX_ALTAR_SLOPE) return Optional.empty()
+        val maxBlood = ((definition.maxBlood ?: ObeliskConstants.MAX_BLOOD_STORAGE) * GENERATED_CAPACITY_MULTIPLIER)
+            .coerceAtMost(1_000_000.0)
+        val position = BlockPos(center.x, groundY, center.z)
         return Optional.of(GenerationStub(position) { pieces ->
-            pieces.addPiece(DimensionalFontStructurePiece(center.x, center.z, seed))
+            pieces.addPiece(DimensionalFontStructurePiece(position, seed, definition.id, maxBlood))
         })
     }
 
@@ -50,6 +72,22 @@ class DimensionalFontStructure(settings: StructureSettings) : Structure(settings
 
     companion object {
         val CODEC: Codec<DimensionalFontStructure> = simpleCodec(::DimensionalFontStructure)
+        private const val MAX_ALTAR_SLOPE = 6
+        private const val GENERATED_CAPACITY_MULTIPLIER = 1.5
+
+        private fun pickDefinition(random: RandomSource): ObeliskDefinition? {
+            val enabled = ObeliskDataManager.enabledDimensionDrinks()
+                .filter { it.worldgenWeight > 0.0 }
+                .sortedBy { it.id }
+            if (enabled.isEmpty()) return null
+            val total = enabled.sumOf { it.worldgenWeight }
+            var cursor = random.nextDouble() * total
+            for (definition in enabled) {
+                cursor -= definition.worldgenWeight
+                if (cursor <= 0.0) return definition
+            }
+            return enabled.last()
+        }
 
         private fun structureSeed(worldSeed: Long, chunk: ChunkPos): Long {
             var value = worldSeed xor 0x4f1bbcdc2d6a5f3bL

@@ -221,6 +221,16 @@ class ObeliskBlockEntity(
         setEnergyStoredForDebug(getModifiedMaxStorage())
     }
 
+    /** Initializes a naturally generated font without emitting neighbor or client updates mid-worldgen. */
+    fun initializeGeneratedFont(definitionId: String, maxBlood: Double) {
+        this.definitionId = definitionId
+        generatedMaxBlood = maxBlood.coerceAtLeast(getDefinitionMaxBlood())
+        lifeEssenceStored = getModifiedMaxStorage()
+        fractionalRegenCarry = 0.0
+        fractionalDrainCarry = 0.0
+        setChanged()
+    }
+
     fun cycleTemplate() {
         val templates = ObeliskConstants.DEFAULT_TEMPLATES
         val currentIndex = templates.indexOf(definitionId).takeIf { it >= 0 } ?: 0
