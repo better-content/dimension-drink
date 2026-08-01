@@ -3445,7 +3445,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             chunk: ChunkPos
         ): BlockPos? {
             val site = buildSite(level, center, definition, siteSeed, chunk) ?: return null
-            if (isInsideChunkBounds(site.fontPos, chunk) && box.isInside(site.fontPos) && level.ensureCanWrite(site.fontPos)) {
+            if (box.isInside(site.fontPos) && level.ensureCanWrite(site.fontPos)) {
                 placeGeneratedFont(level, site, definition)
             }
             return if (site.placedInChunk || box.isInside(site.fontPos)) site.fontPos else null
