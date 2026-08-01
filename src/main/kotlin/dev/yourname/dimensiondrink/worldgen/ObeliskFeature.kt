@@ -893,7 +893,6 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val top = maxY.coerceAtMost(level.maxBuildHeight - 2)
             val bottom = level.minBuildHeight + 1
             if (!level.hasChunk(x shr 4, z shr 4)) return null
-            if (level is WorldGenLevel && !level.ensureCanWrite(BlockPos(x, bottom, z))) return null
             for (y in top downTo bottom) {
                 val pos = BlockPos(x, y, z)
                 val state = level.getBlockState(pos)
@@ -3446,7 +3445,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             chunk: ChunkPos
         ): BlockPos? {
             val site = buildSite(level, center, definition, siteSeed, chunk) ?: return null
-            if (box.isInside(site.fontPos) && level.ensureCanWrite(site.fontPos)) {
+            if (isInsideChunkBounds(site.fontPos, chunk) && box.isInside(site.fontPos) && level.ensureCanWrite(site.fontPos)) {
                 placeGeneratedFont(level, site, definition)
             }
             return if (site.placedInChunk || box.isInside(site.fontPos)) site.fontPos else null
