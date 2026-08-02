@@ -927,6 +927,73 @@ object ObeliskGameTestSupport {
         helper.succeed()
     }
 
+    fun structurePieceWorldgenPlacesLiteralDimensionalFont(helper: GameTestHelper) {
+        deleteTestConfigs()
+        val definition = ObeliskDefinition(
+            id = "test_literal_worldgen_font",
+            displayName = "Literal Worldgen Font",
+            instanceTemplateId = "overworld",
+            targetDimension = "minecraft:overworld",
+            rewardTableId = "default"
+        )
+        writeDefinition(definition)
+        reloadData()
+
+        val surfaceCenter = chunkInteriorTestAnchor(helper.absolutePos(BlockPos(20, 3, 20)))
+        prepareGenerationSurface(helper, surfaceCenter)
+        val altarCenter = surfaceCenter.below()
+        val piece = DimensionalFontStructurePiece(
+            altarCenter,
+            0x4c49544552414cL,
+            definition.id,
+            (definition.maxBlood ?: ObeliskConstants.MAX_BLOOD_STORAGE) * 1.5
+        )
+        val startChunk = ChunkPos(altarCenter)
+        val startChunkBox = BoundingBox(
+            startChunk.minBlockX,
+            helper.level.minBuildHeight,
+            startChunk.minBlockZ,
+            startChunk.maxBlockX,
+            helper.level.maxBuildHeight - 1,
+            startChunk.maxBlockZ
+        )
+        piece.postProcess(
+            helper.level,
+            helper.level.structureManager(),
+            helper.level.chunkSource.generator,
+            RandomSource.create(0x4c49544552414cL),
+            startChunkBox,
+            ChunkPos(startChunk.x + 128, startChunk.z - 128),
+            BlockPos.ZERO
+        )
+
+        val expectedFontPos = altarCenter.above(3)
+        val generatedState = helper.level.getBlockState(expectedFontPos)
+        val generatedId = BuiltInRegistries.BLOCK.getKey(generatedState.block)
+        helper.assertTrue(
+            generatedId == ResourceLocation(MOD_ID, "dimensional_font"),
+            "Expected the production structure piece to generate literal dimensiondrink:dimensional_font at $expectedFontPos, found $generatedId"
+        )
+        helper.assertTrue(
+            generatedState.`is`(ModBlocks.OBELISK.get()),
+            "Expected the generated literal font to use the registered dimensional font block"
+        )
+        val generatedFont = helper.level.getBlockEntity(expectedFontPos) as? ObeliskBlockEntity
+        helper.assertTrue(generatedFont != null, "Expected the literal generated font to create its block entity")
+        helper.assertTrue(
+            generatedFont?.definitionId == definition.id,
+            "Expected the literal generated font block entity to retain its serialized definition"
+        )
+        helper.assertTrue(
+            generatedFont?.bloodStored == generatedFont?.getModifiedMaxStorage()?.toDouble(),
+            "Expected the literal generated font block entity to be initialized and filled"
+        )
+
+        deleteTestConfigs()
+        reloadData()
+        helper.succeed()
+    }
+
     fun generatedOverworldChunksProduceCultivationCenters(helper: GameTestHelper) {
         deleteTestConfigs()
         reloadData()

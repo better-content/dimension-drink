@@ -44,6 +44,11 @@ class ObeliskDataGameTests {
         ObeliskGameTestSupport.structurePieceWorldgenProducesCompleteFontAltarSites(helper)
     }
 
+    @GameTest(templateNamespace = "dimensiondrink", template = "bootstrap/empty", batch = "obelisk_data_literal_font", timeoutTicks = 300)
+    fun structure_piece_worldgen_places_literal_dimensional_font(helper: GameTestHelper) {
+        ObeliskGameTestSupport.structurePieceWorldgenPlacesLiteralDimensionalFont(helper)
+    }
+
     @GameTest(templateNamespace = "dimensiondrink", template = "bootstrap/empty", batch = "obelisk_data_overworld_presence", timeoutTicks = 1600)
     fun generated_overworld_chunks_produce_cultivation_centers(helper: GameTestHelper) {
         ObeliskGameTestSupport.generatedOverworldChunksProduceCultivationCenters(helper)
