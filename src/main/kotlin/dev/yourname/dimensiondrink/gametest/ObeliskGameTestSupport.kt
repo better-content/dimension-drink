@@ -1727,12 +1727,41 @@ object ObeliskGameTestSupport {
             state.`is`(Blocks.SOUL_LANTERN) || state.`is`(Blocks.LANTERN) || state.`is`(exposedCopperLantern) || state.`is`(weatheredCopperLantern)
         fun isAltarLight(state: net.minecraft.world.level.block.state.BlockState): Boolean =
             isLantern(state) || state.`is`(sconce) || state.`is`(wallSconce)
+        val copperShingleSlab = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+            net.minecraft.resources.ResourceLocation("create", "exposed_copper_shingle_slab")
+        )
+        val copperShingleStairs = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+            net.minecraft.resources.ResourceLocation("create", "exposed_copper_shingle_stairs")
+        )
+        fun isAltarRoofBlock(state: net.minecraft.world.level.block.state.BlockState): Boolean =
+            state.`is`(Blocks.CUT_COPPER_SLAB) ||
+                state.`is`(Blocks.CUT_COPPER_STAIRS) ||
+                state.`is`(Blocks.EXPOSED_CUT_COPPER_SLAB) ||
+                state.`is`(Blocks.EXPOSED_CUT_COPPER_STAIRS) ||
+                state.`is`(Blocks.WEATHERED_CUT_COPPER_SLAB) ||
+                state.`is`(Blocks.WEATHERED_CUT_COPPER_STAIRS) ||
+                state.`is`(copperShingleSlab) ||
+                state.`is`(copperShingleStairs)
         listOf(-2 to -2, -2 to 2, 2 to -2, 2 to 2).forEach { (dx, dz) ->
             val supportPos = altarCenter.offset(dx, 3, dz)
             helper.assertTrue(
                 helper.level.getBlockState(supportPos).`is`(Blocks.STRIPPED_WARPED_STEM),
                 "Expected $label altar corner supports to use warped cultivation posts at $supportPos"
             )
+            helper.assertTrue(
+                helper.level.getBlockState(supportPos.below()).`is`(Blocks.STRIPPED_WARPED_STEM),
+                "Expected $label altar corner supports to continue down to the font surround at ${supportPos.below()}"
+            )
+        }
+        for (dx in -2..2) {
+            for (dz in -2..2) {
+                if (kotlin.math.max(kotlin.math.abs(dx), kotlin.math.abs(dz)) != 2) continue
+                val roof = altarCenter.offset(dx, 4, dz)
+                helper.assertTrue(
+                    isAltarRoofBlock(helper.level.getBlockState(roof)),
+                    "Expected $label altar to have a copper roof ring at $roof"
+                )
+            }
         }
         var sideLights = 0
         listOf(-2 to -2, -2 to 2, 2 to -2, 2 to 2).forEach { (dx, dz) ->

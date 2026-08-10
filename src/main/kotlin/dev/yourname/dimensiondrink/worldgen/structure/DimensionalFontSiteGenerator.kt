@@ -3,6 +3,7 @@ package dev.yourname.dimensiondrink.worldgen.structure
 import dev.yourname.dimensiondrink.content.ObeliskBlockEntity
 import dev.yourname.dimensiondrink.data.ObeliskDefinition
 import dev.yourname.dimensiondrink.registry.ModBlocks
+import dev.yourname.dimensiondrink.worldgen.preferredAltarSconceBlockIds
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
@@ -14,6 +15,7 @@ import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.block.state.properties.AttachFace
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
+import net.minecraft.tags.BlockTags
 import net.minecraft.world.level.levelgen.Heightmap
 import net.minecraft.world.level.levelgen.structure.BoundingBox
 import kotlin.math.abs
@@ -145,13 +147,18 @@ object DimensionalFontSiteGenerator {
     ) {
         val supportY = center.y + 4
         listOf(-2 to -2, -2 to 2, 2 to -2, 2 to 2).forEach { (dx, dz) ->
-            val support = BlockPos(center.x + dx, supportY, center.z + dz)
-            setBoxed(level, box, support, Blocks.STRIPPED_WARPED_STEM.defaultBlockState())
-            val outwardX = if (dx < 0) -1 else 1
-            val outwardZ = if (dz < 0) -1 else 1
-            setBoxed(level, box, support.offset(outwardX, 0, 0), Blocks.LANTERN.defaultBlockState())
-            setBoxed(level, box, support.offset(0, 0, outwardZ), Blocks.LANTERN.defaultBlockState())
+            for (y in center.y + 3..supportY) {
+                val support = BlockPos(center.x + dx, y, center.z + dz)
+                var state = Blocks.STRIPPED_WARPED_STEM.defaultBlockState()
+                if (state.hasProperty(BlockStateProperties.AXIS)) {
+                    state = state.setValue(BlockStateProperties.AXIS, Direction.Axis.Y)
+                }
+                setBoxed(level, box, support, state)
+            }
         }
+
+        placeAltarSideSconces(level, box, center, supportY)
+        placeAltarCopperRoof(level, box, center, supportY + 1)
 
         val potBase = center.offset(0, 1, 4)
         setBoxed(level, box, potBase, copperState(Blocks.CUT_COPPER, potBase, center))
@@ -168,6 +175,101 @@ object DimensionalFontSiteGenerator {
             if (state.canSurvive(level, trophyPos)) setBoxed(level, box, trophyPos, state)
         }
     }
+
+    private fun placeAltarCopperRoof(
+        level: WorldGenLevel,
+        box: BoundingBox,
+        center: BlockPos,
+        roofY: Int
+    ) {
+        for (dx in -2..2) {
+            for (dz in -2..2) {
+                if (max(abs(dx), abs(dz)) != 2) continue
+                val pos = center.offset(dx, roofY - center.y, dz)
+                val block = when {
+                    abs(dx) == 2 && abs(dz) == 2 -> roofSlabBlock(pos)
+                    else -> roofStairBlock(pos)
+                }
+                val facing = when {
+                    dx < 0 -> Direction.WEST
+                    dx > 0 -> Direction.EAST
+                    dz < 0 -> Direction.NORTH
+                    else -> Direction.SOUTH
+                }
+                setBoxed(level, box, pos, roofState(block, pos, facing))
+            }
+        }
+    }
+
+    private fun placeAltarSideSconces(
+        level: WorldGenLevel,
+        box: BoundingBox,
+        center: BlockPos,
+        supportTopY: Int
+    ) {
+        listOf(
+            BlockPos(center.x - 2, supportTopY, center.z - 3) to Direction.NORTH,
+            BlockPos(center.x - 3, supportTopY, center.z - 2) to Direction.WEST,
+            BlockPos(center.x - 2, supportTopY, center.z + 3) to Direction.SOUTH,
+            BlockPos(center.x - 3, supportTopY, center.z + 2) to Direction.WEST,
+            BlockPos(center.x + 2, supportTopY, center.z - 3) to Direction.NORTH,
+            BlockPos(center.x + 3, supportTopY, center.z - 2) to Direction.EAST,
+            BlockPos(center.x + 2, supportTopY, center.z + 3) to Direction.SOUTH,
+            BlockPos(center.x + 3, supportTopY, center.z + 2) to Direction.EAST
+        ).forEach { (pos, facing) ->
+            val key = preferredAltarSconceBlockIds()
+                .asSequence()
+                .mapNotNull(ResourceLocation::tryParse)
+                .mapNotNull { BuiltInRegistries.BLOCK.getOptional(it).orElse(null) }
+                .firstOrNull { it != Blocks.AIR }
+                ?: Blocks.LANTERN
+            setBoxed(level, box, pos, sconceState(key, pos, facing))
+        }
+    }
+
+    private fun sconceState(block: Block, pos: BlockPos, facing: Direction): BlockState {
+        var state = block.defaultBlockState()
+        if (state.hasProperty(BlockStateProperties.HORIZONTAL_FACING)) {
+            state = state.setValue(BlockStateProperties.HORIZONTAL_FACING, facing)
+        } else if (state.hasProperty(BlockStateProperties.FACING)) {
+            state = state.setValue(BlockStateProperties.FACING, facing)
+        }
+        if (state.hasProperty(BlockStateProperties.ATTACH_FACE)) {
+            state = state.setValue(BlockStateProperties.ATTACH_FACE, AttachFace.WALL)
+        }
+        if (state.hasProperty(BlockStateProperties.LIT)) {
+            state = state.setValue(BlockStateProperties.LIT, true)
+        }
+        return state
+    }
+
+    private fun roofState(block: Block, pos: BlockPos, facing: Direction): BlockState {
+        var state = copperState(block, pos, null)
+        if (state.hasProperty(BlockStateProperties.HORIZONTAL_FACING)) {
+            state = state.setValue(BlockStateProperties.HORIZONTAL_FACING, facing)
+        } else if (state.hasProperty(BlockStateProperties.FACING)) {
+            state = state.setValue(BlockStateProperties.FACING, facing)
+        }
+        if (state.hasProperty(BlockStateProperties.STAIRS_SHAPE)) {
+            state = state.setValue(BlockStateProperties.STAIRS_SHAPE, net.minecraft.world.level.block.state.properties.StairsShape.STRAIGHT)
+        }
+        return state
+    }
+
+    private fun roofSlabBlock(pos: BlockPos): Block =
+        optionalBlock("create", "create:exposed_copper_shingle_slab", "create:weathered_copper_shingle_slab")
+            ?: Blocks.CUT_COPPER_SLAB
+
+    private fun roofStairBlock(pos: BlockPos): Block =
+        optionalBlock("create", "create:exposed_copper_shingle_stairs", "create:weathered_copper_shingle_stairs")
+            ?: Blocks.CUT_COPPER_STAIRS
+
+    private fun optionalBlock(namespace: String, vararg ids: String): Block? =
+        ids.asSequence()
+            .mapNotNull(ResourceLocation::tryParse)
+            .filter { it.namespace == namespace }
+            .mapNotNull { BuiltInRegistries.BLOCK.getOptional(it).orElse(null) }
+            .firstOrNull { it != Blocks.AIR }
 
     private fun placeLocalDressing(
         level: WorldGenLevel,
@@ -201,7 +303,7 @@ object DimensionalFontSiteGenerator {
 
                 val hash = coordinateHash(siteSeed, x, z)
                 if (isPathColumn(dx, dz)) {
-                    if (level.getBlockState(above).isAir) {
+                    if (isNaturalPathGround(groundState)) {
                         val block = paths[Math.floorMod(hash.toInt(), paths.size)]
                         setBoxed(level, box, ground, preparedState(block))
                     }
@@ -226,6 +328,13 @@ object DimensionalFontSiteGenerator {
         val y = firstFree - 1
         return y.takeIf { it in box.minY()..box.maxY() }
     }
+
+    private fun isNaturalPathGround(state: BlockState): Boolean =
+        state.`is`(BlockTags.DIRT) ||
+            state.`is`(BlockTags.SAND) ||
+            state.`is`(BlockTags.BASE_STONE_OVERWORLD) ||
+            state.`is`(BlockTags.BASE_STONE_NETHER) ||
+            state.`is`(Blocks.PACKED_MUD)
 
     private fun setBoxed(level: WorldGenLevel, box: BoundingBox, pos: BlockPos, state: BlockState): Boolean =
         box.isInside(pos) && level.setBlock(pos, state, UPDATE_FLAGS)
