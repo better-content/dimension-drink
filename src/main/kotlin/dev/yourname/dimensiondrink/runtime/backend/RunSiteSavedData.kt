@@ -4,6 +4,7 @@ import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.Registries
 import net.minecraft.nbt.CompoundTag
 import net.minecraft.nbt.ListTag
+import net.minecraft.nbt.Tag
 import net.minecraft.resources.ResourceKey
 import net.minecraft.resources.ResourceLocation
 import net.minecraft.server.MinecraftServer
@@ -44,6 +45,7 @@ class RunSiteSavedData private constructor(
     }
 
     override fun save(tag: CompoundTag): CompoundTag {
+        tag.putInt("schema", SCHEMA_VERSION)
         val list = ListTag()
         records.values
             .sortedWith(compareBy<RunSiteRecord> { it.backendLevelKey.location().toString() }.thenBy { it.siteIndex })
@@ -54,12 +56,17 @@ class RunSiteSavedData private constructor(
 
     companion object {
         private const val DATA_NAME = "dimensiondrink_run_sites"
+        const val SCHEMA_VERSION = 1
 
         fun get(server: MinecraftServer): RunSiteSavedData {
             return server.overworld().dataStorage.computeIfAbsent(::load, ::RunSiteSavedData, DATA_NAME)
         }
 
         fun load(tag: CompoundTag): RunSiteSavedData {
+            val schema = if (tag.contains("schema", Tag.TAG_INT.toInt())) tag.getInt("schema") else 0
+            require(schema == SCHEMA_VERSION) {
+                "Unsupported Dimension Drink run-site schema $schema; expected $SCHEMA_VERSION. Refusing to rewrite world data."
+            }
             val loaded = linkedMapOf<UUID, RunSiteRecord>()
             val list = tag.getList("sites", CompoundTag.TAG_COMPOUND.toInt())
             for (index in 0 until list.size) {

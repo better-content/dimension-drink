@@ -7,8 +7,25 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.assertFailsWith
 
 class RunRecordSerializationTest {
+    @Test
+    fun savedDataDeclaresSchemaAndRejectsUnknownVersions() {
+        val current = net.minecraft.nbt.CompoundTag().apply {
+            putInt("schema", RunSavedData.SCHEMA_VERSION)
+            put("runs", net.minecraft.nbt.ListTag())
+        }
+        val first = RunSavedData.load(current)
+        val encoded = first.save(net.minecraft.nbt.CompoundTag())
+        assertEquals(RunSavedData.SCHEMA_VERSION, encoded.getInt("schema"))
+        assertTrue(RunSavedData.load(encoded).values().isEmpty())
+
+        val newer = encoded.copy().apply { putInt("schema", RunSavedData.SCHEMA_VERSION + 1) }
+        assertFailsWith<IllegalArgumentException> { RunSavedData.load(newer) }
+        assertFailsWith<IllegalArgumentException> { RunSavedData.load(net.minecraft.nbt.CompoundTag()) }
+    }
+
     @Test
     fun roundTripPreservesCoreFields() {
         val record = RunRecord(

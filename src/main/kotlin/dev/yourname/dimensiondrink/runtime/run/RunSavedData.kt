@@ -2,6 +2,7 @@ package dev.yourname.dimensiondrink.runtime.run
 
 import net.minecraft.nbt.CompoundTag
 import net.minecraft.nbt.ListTag
+import net.minecraft.nbt.Tag
 import net.minecraft.server.MinecraftServer
 import net.minecraft.world.level.saveddata.SavedData
 import java.util.UUID
@@ -36,6 +37,7 @@ class RunSavedData private constructor(
     fun snapshot(): Collection<RunRecord> = records.values.map { it.deepCopy() }
 
     override fun save(tag: CompoundTag): CompoundTag {
+        tag.putInt("schema", SCHEMA_VERSION)
         val list = ListTag()
         records.values
             .sortedBy { it.createdGameTime }
@@ -46,12 +48,17 @@ class RunSavedData private constructor(
 
     companion object {
         private const val DATA_NAME = "dimensiondrink_runs"
+        const val SCHEMA_VERSION = 1
 
         fun get(server: MinecraftServer): RunSavedData {
             return server.overworld().dataStorage.computeIfAbsent(::load, ::RunSavedData, DATA_NAME)
         }
 
         fun load(tag: CompoundTag): RunSavedData {
+            val schema = if (tag.contains("schema", Tag.TAG_INT.toInt())) tag.getInt("schema") else 0
+            require(schema == SCHEMA_VERSION) {
+                "Unsupported Dimension Drink run schema $schema; expected $SCHEMA_VERSION. Refusing to rewrite world data."
+            }
             val loaded = linkedMapOf<UUID, RunRecord>()
             val list = tag.getList("runs", CompoundTag.TAG_COMPOUND.toInt())
             for (index in 0 until list.size) {
