@@ -6,6 +6,8 @@ import com.bettercontent.dimensiondrink.MOD_ID
 import com.bettercontent.dimensiondrink.ObeliskConstants
 import com.bettercontent.dimensiondrink.api.ObeliskApi
 import com.bettercontent.dimensiondrink.api.RunBeginResult
+import com.bettercontent.dimensiondrink.api.event.FontAggregateReturnEvent
+import com.bettercontent.dimensiondrink.api.event.FontEnterEvent
 import com.bettercontent.dimensiondrink.content.ObeliskBlockEntity
 import com.bettercontent.dimensiondrink.data.CanonicalTargetResolver
 import com.bettercontent.dimensiondrink.data.CultivationPaletteDefinition
@@ -60,9 +62,11 @@ import net.minecraft.world.level.material.Fluids
 import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.Vec3
 import net.minecraftforge.common.capabilities.ForgeCapabilities
+import net.minecraftforge.common.MinecraftForge
 import net.minecraftforge.network.NetworkHooks
 import net.minecraftforge.event.entity.living.LivingDeathEvent
 import net.minecraftforge.event.entity.player.PlayerEvent
+import net.minecraftforge.eventbus.api.SubscribeEvent
 import net.minecraftforge.fml.ModList
 import net.minecraftforge.fluids.FluidStack
 import net.minecraftforge.fluids.capability.IFluidHandler
@@ -105,6 +109,21 @@ private data class ArrivalStatus(
     val totalChunks: Int = 1,
     val failureReason: String? = null
 )
+
+private class FontEventRecorder(private val playerId: UUID) {
+    val entries = CopyOnWriteArrayList<FontEnterEvent>()
+    val returns = CopyOnWriteArrayList<FontAggregateReturnEvent>()
+
+    @SubscribeEvent
+    fun onEnter(event: FontEnterEvent) {
+        if (event.player.uuid == playerId) entries += event
+    }
+
+    @SubscribeEvent
+    fun onReturn(event: FontAggregateReturnEvent) {
+        if (event.player.uuid == playerId) returns += event
+    }
+}
 
 private object InstanceTemplateDataManager {
     fun templatesPath(): Path = ObeliskDataManager.configRootPath().resolve("target_dimensions")
@@ -249,6 +268,8 @@ object ObeliskGameTestSupport {
         val server = helper.level.server
         val client = connectHeadlessPlayer(helper)
         val player = client.player
+        val fontEvents = FontEventRecorder(player.uuid)
+        MinecraftForge.EVENT_BUS.register(fontEvents)
         val obeliskPos = helper.absolutePos(BlockPos(4, 2, 1))
 
         try {
@@ -302,11 +323,23 @@ object ObeliskGameTestSupport {
                         val runId = requireNotNull(liveObelisk!!.activeRunId) { "Expected active run id after activation" }
                         val run = requireNotNull(RunRegistry.get(runId)) { "Expected run registry entry after activation" }
                         helper.assertTrue(run.originLevelKey == helper.level.dimension(), "Expected activated run to keep origin dimension")
+                        helper.assertTrue(fontEvents.entries.size == 1, "Expected successful Font transport to post one enter event")
+                        val enterEvent = fontEvents.entries.single()
+                        helper.assertTrue(enterEvent.runId == runId, "Expected Font enter event to identify the active run")
+                        helper.assertTrue(enterEvent.definitionId.toString() == "dimension_drink:end", "Expected Font enter event to identify the Font definition")
+                        helper.assertTrue(enterEvent.targetDimension == Level.END, "Expected Font enter event to identify the transported destination")
+                        helper.assertTrue(enterEvent.aggregateId.toString() == "minecraft:end_stone", "Expected End Font event to identify end stone aggregate")
                         helper.assertTrue(RunRegistry.finishRun(server, runId), "Expected activation test cleanup to finish the run")
                         waitUntil(helper, 1200, "Expected activation test cleanup to remove the run", condition = {
                             client.pump(server)
                             RunRegistry.get(runId) == null
                         }, onSuccess = {
+                            helper.assertTrue(fontEvents.returns.size == 1, "Expected successful Font completion to post one return event")
+                            val returnEvent = fontEvents.returns.single()
+                            helper.assertTrue(returnEvent.runId == runId, "Expected Font return event to preserve the entered run identity")
+                            helper.assertTrue(returnEvent.targetDimension == Level.END, "Expected Font return event to preserve the entered destination")
+                            helper.assertTrue(returnEvent.aggregateId == enterEvent.aggregateId, "Expected Font return event to preserve the matching aggregate")
+                            MinecraftForge.EVENT_BUS.unregister(fontEvents)
                             client.close(server)
                             helper.succeed()
                         })
@@ -314,6 +347,7 @@ object ObeliskGameTestSupport {
                 })
             }
         } catch (t: Throwable) {
+            MinecraftForge.EVENT_BUS.unregister(fontEvents)
             client.close(server)
             throw t
         }
@@ -533,6 +567,8 @@ object ObeliskGameTestSupport {
         val server = helper.level.server
         val client = connectHeadlessPlayer(helper)
         val player = client.player
+        val fontEvents = FontEventRecorder(player.uuid)
+        MinecraftForge.EVENT_BUS.register(fontEvents)
         val originDimension = player.serverLevel().dimension()
         val obeliskPos = helper.absolutePos(BlockPos(4, 2, 7))
 
@@ -581,6 +617,7 @@ object ObeliskGameTestSupport {
                 helper.assertTrue(!deathEvent.isCanceled, "Expected font run death handling to leave normal death uncanceled")
 
                 val afterDeath = requireNotNull(RunRegistry.get(runId)) { "Expected run to remain registered after one participant death" }
+                helper.assertTrue(fontEvents.entries.size == 1, "Expected the completed Font transport to post one enter event before death")
                 helper.assertTrue(player.uuid !in afterDeath.activePlayers, "Expected dead player to be removed from active players")
                 helper.assertTrue(player.uuid !in afterDeath.pendingPlayers, "Expected dead player to be removed from pending players")
                 helper.assertTrue(player.uuid !in afterDeath.survivors, "Expected dead player to lose survivor reward eligibility")
@@ -604,12 +641,15 @@ object ObeliskGameTestSupport {
                     helper.assertTrue(cooledObelisk?.activeRunId == null, "Expected death-return cleanup to clear the active run id")
                     helper.assertTrue(cooledObelisk?.isOnCooldown() == false, "Expected death-return cleanup to leave font usable without cooldown")
                     helper.assertTrue(RunRegistry.get(runId) == null, "Expected death-return cleanup to remove the run")
+                    helper.assertTrue(fontEvents.returns.isEmpty(), "Expected death and subsequent cleanup not to post a successful Font return event")
+                    MinecraftForge.EVENT_BUS.unregister(fontEvents)
                     client.close(server)
                     helper.succeed()
                 })
                 })
             }
         } catch (t: Throwable) {
+            MinecraftForge.EVENT_BUS.unregister(fontEvents)
             client.close(server)
             throw t
         }

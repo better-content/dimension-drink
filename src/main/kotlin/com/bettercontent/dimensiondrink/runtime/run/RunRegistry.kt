@@ -5,6 +5,8 @@ import com.bettercontent.dimensiondrink.ObeliskConstants
 import com.bettercontent.dimensiondrink.api.RunBeginResult
 import com.bettercontent.dimensiondrink.api.RunHandle
 import com.bettercontent.dimensiondrink.api.RunService
+import com.bettercontent.dimensiondrink.api.event.FontAggregateReturnEvent
+import com.bettercontent.dimensiondrink.api.event.FontEnterEvent
 import com.bettercontent.dimensiondrink.content.ObeliskBlockEntity
 import com.bettercontent.dimensiondrink.data.CanonicalTargetResolver
 import com.bettercontent.dimensiondrink.data.ObeliskDataManager
@@ -35,6 +37,7 @@ import net.minecraftforge.event.server.ServerStoppedEvent
 import net.minecraftforge.event.server.ServerStoppingEvent
 import net.minecraftforge.eventbus.api.EventPriority
 import net.minecraftforge.eventbus.api.SubscribeEvent
+import net.minecraftforge.common.MinecraftForge
 import java.util.UUID
 import kotlin.math.exp
 
@@ -95,16 +98,31 @@ object RunRegistry : RunService {
     fun describePreparedInstances(): String = "backend=${backend.javaClass.simpleName}"
 
     fun returnPlayer(player: ServerPlayer, disqualify: Boolean = true): Boolean {
+        val recordBeforeReturn = mutableRunForPlayer(player.uuid)
+        val qualifiedReturnContext = recordBeforeReturn
+            ?.takeIf { !disqualify && player.uuid in it.survivors && player.uuid !in it.disqualifiedPlayers }
+            ?.let(FontEventContextResolver::resolve)
         return when (backend.returnPlayer(player)) {
             ReturnRunResult.Returned -> {
                 player.fallDistance = 0.0f
-                val record = mutableRunForPlayer(player.uuid)
+                val record = recordBeforeReturn
                 if (record != null) {
                     clearEntryWarmup(player)
                     removePlayer(record, player.uuid, disqualify = disqualify)
                     persistRunNow(player.server, record)
                 }
                 applyDrinkDebuffs(player, RETURN_DEBUFF_TICKS)
+                if (record != null && qualifiedReturnContext != null) {
+                    MinecraftForge.EVENT_BUS.post(
+                        FontAggregateReturnEvent(
+                            player = player,
+                            runId = record.id,
+                            definitionId = qualifiedReturnContext.definitionId,
+                            targetDimension = qualifiedReturnContext.targetDimension,
+                            aggregateId = qualifiedReturnContext.aggregateId
+                        )
+                    )
+                }
                 true
             }
             ReturnRunResult.NotBound -> false
@@ -569,6 +587,7 @@ object RunRegistry : RunService {
             refreshSpawnPos(server, record)
             record.updatedGameTime = currentGameTime(server)
             persistRunNow(server, record)
+            postFontEnterEvent(player, record)
             return RunEntryAttempt.Entered
         }
         return when (val result = backend.enterPlayer(player, handle)) {
@@ -582,6 +601,7 @@ object RunRegistry : RunService {
                 refreshSpawnPos(server, record)
                 record.updatedGameTime = currentGameTime(server)
                 persistRunNow(server, record)
+                postFontEnterEvent(player, record)
                 RunEntryAttempt.Entered
             }
             is EnterRunResult.Rejected -> {
@@ -609,6 +629,27 @@ object RunRegistry : RunService {
             record.spawnPos = spawn.immutable()
             markRunDirty(record.id)
         }
+    }
+
+    private fun postFontEnterEvent(player: ServerPlayer, record: RunRecord) {
+        val context = FontEventContextResolver.resolve(record)
+        if (context == null) {
+            logger.warn(
+                "Skipping Font enter event for run {} definition={} because its destination aggregate is not configured",
+                record.id,
+                record.definitionId
+            )
+            return
+        }
+        MinecraftForge.EVENT_BUS.post(
+            FontEnterEvent(
+                player = player,
+                runId = record.id,
+                definitionId = context.definitionId,
+                targetDimension = context.targetDimension,
+                aggregateId = context.aggregateId
+            )
+        )
     }
 
     private fun discardEmptyRun(server: MinecraftServer, record: RunRecord, reason: String) {
