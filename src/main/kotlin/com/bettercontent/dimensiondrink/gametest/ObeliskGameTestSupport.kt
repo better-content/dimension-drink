@@ -1151,7 +1151,7 @@ object ObeliskGameTestSupport {
             )
             helper.assertTrue(
                 ObeliskApi.getDefinition(presentId)?.targetDimension == "minecraft:the_end",
-                "Expected reload to normalize legacy end target to minecraft:the_end"
+                "Expected reload to keep the explicit canonical end target"
             )
 
             deleteTestConfigs()
@@ -1168,7 +1168,8 @@ object ObeliskGameTestSupport {
         val definition = ObeliskDefinition(
             id = "test_instance_template_mapping",
             displayName = "Template Mapping",
-            instanceTemplateId = "end",
+            instanceTemplateId = "minecraft:the_end",
+            targetDimension = "minecraft:the_end",
             rewardTableId = "end"
         )
         writeDefinition(definition)

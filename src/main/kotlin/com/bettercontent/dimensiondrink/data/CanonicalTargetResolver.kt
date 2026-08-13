@@ -8,11 +8,12 @@ import net.minecraft.world.level.Level
 object CanonicalTargetResolver {
     fun targetId(definition: ObeliskDefinition): String {
         return definition.targetDimension?.trim()?.takeIf { it.isNotEmpty() }
-            ?: legacyTargetDimension(definition.instanceTemplateId.trim().takeIf { it.isNotEmpty() } ?: definition.id)
+            ?: definition.instanceTemplateId.trim().takeIf { it.isNotEmpty() }
+            ?: definition.id
     }
 
     fun targetId(definitionId: String): String {
-        return ObeliskDataManager.getObelisk(definitionId)?.let(::targetId) ?: legacyTargetDimension(definitionId)
+        return ObeliskDataManager.getObelisk(definitionId)?.let(::targetId) ?: definitionId
     }
 
     fun targetLevelKey(definitionOrTargetId: String): ResourceKey<Level>? {
@@ -21,7 +22,7 @@ object CanonicalTargetResolver {
     }
 
     fun coordinateScale(definition: ObeliskDefinition): Double {
-        return definition.coordinateScale ?: legacyCoordinateScale(definition.instanceTemplateId.ifBlank { definition.id })
+        return definition.coordinateScale ?: defaultCoordinateScale(targetId(definition))
     }
 
     fun coordinateScale(definitionId: String): Double {
@@ -29,27 +30,12 @@ object CanonicalTargetResolver {
             ?: defaultCoordinateScale(definitionId)
     }
 
-    fun defaultCoordinateScale(targetOrLegacyId: String): Double = legacyCoordinateScale(targetOrLegacyId)
+    fun defaultCoordinateScale(targetId: String): Double {
+        return if (targetId == "minecraft:the_nether") 0.125 else 1.0
+    }
 
     fun resourceLocationOrNull(raw: String): ResourceLocation? {
         return runCatching { ResourceLocation(raw) }.getOrNull()
     }
 
-    private fun legacyTargetDimension(id: String): String {
-        return when (id) {
-            "overworld" -> "minecraft:overworld"
-            "nether" -> "minecraft:the_nether"
-            "end" -> "minecraft:the_end"
-            "otherside" -> "deeperdarker:otherside"
-            "undergarden" -> "undergarden:undergarden"
-            else -> id
-        }
-    }
-
-    private fun legacyCoordinateScale(id: String): Double {
-        return when (id) {
-            "nether", "minecraft:the_nether" -> 0.125
-            else -> 1.0
-        }
-    }
 }

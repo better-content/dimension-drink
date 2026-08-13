@@ -110,15 +110,15 @@ object ObeliskDataManager {
             logger.info("Skipping font definition {} because required namespace {} is unavailable", id, requiredNamespace)
             return null
         }
-        val legacyTargetId = stringOrNull(definition.instanceTemplateId) ?: id
         val targetDimension = stringOrNull(definition.targetDimension)
-            ?: CanonicalTargetResolver.targetId(definition.copy(instanceTemplateId = legacyTargetId))
+            ?: stringOrNull(definition.instanceTemplateId)
+            ?: id
         return definition.copy(
             id = id,
             displayName = stringOrNull(definition.displayName) ?: id.replaceFirstChar { it.uppercase() },
             instanceTemplateId = targetDimension,
             targetDimension = targetDimension,
-            coordinateScale = (definition.coordinateScale ?: CanonicalTargetResolver.defaultCoordinateScale(legacyTargetId)).coerceAtLeast(0.0),
+            coordinateScale = (definition.coordinateScale ?: CanonicalTargetResolver.defaultCoordinateScale(targetDimension)).coerceAtLeast(0.0),
             spawnSearchRadius = definition.spawnSearchRadius?.coerceIn(0, 128) ?: 16,
             runRadius = definition.runRadius?.coerceIn(16, 512) ?: 96,
             maxBlood = definition.maxBlood?.coerceIn(1.0, 1_000_000.0) ?: 15_000.0,

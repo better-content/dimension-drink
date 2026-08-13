@@ -19,22 +19,22 @@ class CanonicalTargetResolverTest {
     }
 
     @Test
-    fun targetIdFallsBackToLegacyAliases() {
+    fun targetIdUsesConfiguredValueWithoutAliases() {
         val definition = ObeliskDefinition(
             id = "nether",
             displayName = "Nether",
             instanceTemplateId = ""
         )
 
-        assertEquals("minecraft:the_nether", CanonicalTargetResolver.targetId(definition))
+        assertEquals("nether", CanonicalTargetResolver.targetId(definition))
     }
 
     @Test
-    fun coordinateScaleUsesLegacyNetherRule() {
+    fun coordinateScaleUsesCanonicalNetherDimension() {
         val definition = ObeliskDefinition(
             id = "nether",
             displayName = "Nether",
-            instanceTemplateId = "nether"
+            instanceTemplateId = "minecraft:the_nether"
         )
 
         assertEquals(0.125, CanonicalTargetResolver.coordinateScale(definition))

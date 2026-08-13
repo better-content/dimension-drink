@@ -7,7 +7,7 @@ import net.minecraftforge.gametest.PrefixGameTestTemplate
 @PrefixGameTestTemplate(false)
 class ObeliskTemplateMappingGameTests {
     @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_template", timeoutTicks = 400)
-    fun legacy_instance_template_id_selects_target_dimension(helper: GameTestHelper) {
+    fun explicit_target_dimension_selects_runtime_dimension(helper: GameTestHelper) {
         ObeliskGameTestSupport.instanceTemplateIdSelectsRuntimeInstanceTemplate(helper)
     }
 }
