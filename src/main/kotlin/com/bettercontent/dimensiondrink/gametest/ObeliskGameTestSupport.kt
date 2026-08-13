@@ -874,7 +874,7 @@ object ObeliskGameTestSupport {
         reloadData()
 
         val center = chunkInteriorTestAnchor(helper.absolutePos(BlockPos(260, 3, 4)))
-        prepareCliffsideGenerationSurface(helper, center)
+        prepareGenerationSurface(helper, center)
         val altarCenter = center.below()
         val piece = DimensionalFontStructurePiece(
             altarCenter,
@@ -1180,6 +1180,7 @@ object ObeliskGameTestSupport {
                     id = presentId,
                     displayName = "Present Template",
                     instanceTemplateId = "end",
+                    targetDimension = "minecraft:the_end",
                     rewardTableId = "overworld"
                 )
             )
