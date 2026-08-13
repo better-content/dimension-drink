@@ -4,9 +4,9 @@ plugins {
 }
 
 ext {
-    modId = 'dimensiondrink'
+    modId = 'dimension_drink'
     modName = 'Dimension Drink'
-    modGroupId = 'dev.yourname.dimensiondrink'
+    modGroupId = 'com.bettercontent'
     modDescription = 'Dimensional blood fonts open real-dimension expeditions from small altars.'
 }
 
@@ -18,7 +18,7 @@ def dimensionDrinkGameTestSelection = (findProperty('dimensionDrinkGameTestSelec
 gradle.projectsEvaluated {
     minecraft.runs.configureEach {
         property 'forge.enabledGameTestNamespaces', dimensionDrinkGameTestNamespaces
-        property 'dimensiondrink.gametest.selection', dimensionDrinkGameTestSelection
+        property 'dimension_drink.gametest.selection', dimensionDrinkGameTestSelection
     }
 }
 

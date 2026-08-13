@@ -1,0 +1,6 @@
+{
+  "type": "dimension_drink:dimensional_font",
+  "biomes": "#dimension_drink:has_structure/dimensional_font",
+  "spawn_overrides": {},
+  "step": "surface_structures"
+}

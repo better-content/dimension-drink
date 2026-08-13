@@ -1,7 +1,0 @@
-{
-  "parent": "dimensiondrink:block/dimensional_font",
-  "textures": {
-    "stone": "minecraft:block/oxidized_copper",
-    "particle": "minecraft:block/oxidized_copper"
-  }
-}

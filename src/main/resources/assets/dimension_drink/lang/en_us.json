@@ -1,0 +1,16 @@
+{
+  "block.dimension_drink.dimensional_font": "Dimensional Font",
+  "item.dimension_drink.dimensional_font": "Dimensional Font",
+  "block.dimension_drink.return_seal": "Return Font",
+  "item.dimension_drink.return_seal": "Return Font",
+  "item.dimension_drink.affix.durability": "+%s%% Durability",
+  "item.dimension_drink.affix.attack_damage": "+%s%% Attack Damage",
+  "item.dimension_drink.affix.attack_speed": "+%s%% Attack Speed",
+  "item.dimension_drink.affix.mining_speed": "+%s%% Mining Speed",
+  "item.dimension_drink.affix.projectile_damage": "+%s%% Projectile Damage",
+  "item.dimension_drink.affix.draw_speed": "+%s%% Draw Speed",
+  "item.dimension_drink.affix.armor": "+%s%% Armor",
+  "item.dimension_drink.affix.armor_toughness": "+%s%% Armor Toughness",
+  "item.dimension_drink.affix.knockback_resistance": "+%s%% Knockback Resistance",
+  "tooltip.dimension_drink.affixes": "Font Affixes"
+}

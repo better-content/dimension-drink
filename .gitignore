@@ -1,36 +1,33 @@
-# eclipse
-bin
-*.launch
-.settings
-.metadata
-.classpath
-.project
-
-# idea
-out
+/.gradle/
+/.gradle-local/
+/.kotlin/
+/build/
+/run/
+/run-client/
+/run-server/
+/run-data/
+/run-gametest/
+/logs/
+/out/
+/bin/
+/eclipse/
+/.idea/
+/.vscode/
+/.settings/
+/.classpath
+/.project
+/.factorypath
+*.iml
 *.ipr
 *.iws
-*.iml
-.idea
-
-# gradle
-build
-.gradle
-
-# other
-eclipse
-/run/
-run-gametest/*
-!run-gametest/gameteststructures/
-!run-gametest/gameteststructures/**
-logs/
-.git.corrupt-*/
-.cache
-.codex
-prod-run/server
-
-# Files from Forge MDK
-forge*changelog.txt
-
-*.jar
-/pack-repro/mods/
+*.launch
+*.log
+*.class
+hs_err_pid*
+replay_pid*
+.DS_Store
+Thumbs.db
+/.cache/
+/.codex/
+/libs/*.jar
+/src/generated/resources/.cache/
