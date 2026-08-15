@@ -147,7 +147,7 @@ object DimensionalFontSiteGenerator {
     ) {
         val supportY = center.y + 4
         listOf(-2 to -2, -2 to 2, 2 to -2, 2 to 2).forEach { (dx, dz) ->
-            for (y in center.y + 3..supportY) {
+            for (y in center.y + 2..supportY) {
                 val support = BlockPos(center.x + dx, y, center.z + dz)
                 var state = Blocks.STRIPPED_WARPED_STEM.defaultBlockState()
                 if (state.hasProperty(BlockStateProperties.AXIS)) {
