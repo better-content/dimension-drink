@@ -12,5 +12,7 @@
   "item.dimension_drink.affix.armor": "+%s%% Armor",
   "item.dimension_drink.affix.armor_toughness": "+%s%% Armor Toughness",
   "item.dimension_drink.affix.knockback_resistance": "+%s%% Knockback Resistance",
-  "tooltip.dimension_drink.affixes": "Font Affixes"
+  "tooltip.dimension_drink.affixes": "Font Affixes",
+  "item.dimension_drink.dimensional_font_map": "%s Map",
+  "item.dimension_drink.dimensional_font_map.destination": "Destination: %s"
 }

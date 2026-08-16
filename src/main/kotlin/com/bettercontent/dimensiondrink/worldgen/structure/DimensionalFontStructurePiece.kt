@@ -31,6 +31,12 @@ class DimensionalFontStructurePiece(
         center.z + DimensionalFontSiteGenerator.SITE_RADIUS
     )
 ) {
+    val fontCenter: BlockPos
+        get() = center.immutable()
+
+    val fontDefinitionId: String
+        get() = definitionId
+
     init {
         require(layoutVersion == DimensionalFontSiteGenerator.LAYOUT_VERSION) {
             "Unsupported dimensional font layout version $layoutVersion"

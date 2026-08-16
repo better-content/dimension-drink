@@ -12,6 +12,7 @@ import com.bettercontent.dimensiondrink.runtime.player.VanillaPortalBlocker
 import com.bettercontent.dimensiondrink.runtime.reward.RewardSystem
 import com.bettercontent.dimensiondrink.runtime.run.RunRegistry
 import com.bettercontent.dimensiondrink.runtime.ui.RunBossBarManager
+import com.bettercontent.dimensiondrink.trade.DimensionalFontMapTrades
 import com.bettercontent.dimensiondrink.worldgen.village.VillageShrinePools
 import net.minecraftforge.common.MinecraftForge
 import net.minecraftforge.fml.common.Mod
@@ -34,6 +35,7 @@ class DimensionDrinkMod {
         MinecraftForge.EVENT_BUS.register(RunRegistry)
         MinecraftForge.EVENT_BUS.register(RunBossBarManager)
         MinecraftForge.EVENT_BUS.register(ObeliskCommands)
+        MinecraftForge.EVENT_BUS.register(DimensionalFontMapTrades)
         MinecraftForge.EVENT_BUS.register(VillageShrinePools)
     }
 

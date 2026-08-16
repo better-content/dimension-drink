@@ -1,11 +1,19 @@
 package com.bettercontent.dimensiondrink.gametest
 
 import com.bettercontent.dimensiondrink.worldgen.pickCourtPotBlock
+import com.bettercontent.dimensiondrink.data.ObeliskDataManager
+import com.bettercontent.dimensiondrink.trade.DimensionalFontMapListing
+import com.bettercontent.dimensiondrink.trade.DimensionalFontMapTrades
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.gametest.framework.GameTest
 import net.minecraft.gametest.framework.GameTestHelper
+import net.minecraft.world.entity.npc.VillagerProfession
+import net.minecraft.world.entity.npc.VillagerTrades
+import net.minecraft.world.item.Items
 import net.minecraft.world.level.block.Blocks
+import net.minecraftforge.event.village.VillagerTradesEvent
 import net.minecraftforge.gametest.PrefixGameTestTemplate
 import java.nio.file.FileSystems
 import java.nio.file.Files
@@ -87,6 +95,70 @@ class ObeliskDataGameTests {
         val block = pickCourtPotBlock(true, BlockPos(8, 64, -5))
         helper.assertTrue(block == Blocks.POTTED_DEAD_BUSH, "Expected dry-biome court pot selection to use potted dead bushes")
         helper.succeed()
+    }
+
+    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
+    fun employed_villagers_receive_common_font_map_listings(helper: GameTestHelper) {
+        val employedTrades = emptyTradeLevels()
+        DimensionalFontMapTrades.onVillagerTrades(VillagerTradesEvent(employedTrades, VillagerProfession.FARMER))
+        helper.assertTrue(
+            employedTrades[2].count { it is DimensionalFontMapListing } == 1,
+            "Expected one apprentice dimensional font map listing"
+        )
+        helper.assertTrue(
+            employedTrades[3].count { it is DimensionalFontMapListing } == 1,
+            "Expected one journeyman dimensional font map listing"
+        )
+
+        listOf(VillagerProfession.NONE, VillagerProfession.NITWIT).forEach { profession ->
+            val excludedTrades = emptyTradeLevels()
+            DimensionalFontMapTrades.onVillagerTrades(VillagerTradesEvent(excludedTrades, profession))
+            helper.assertTrue(
+                excludedTrades.values.all { listings -> listings.none { it is DimensionalFontMapListing } },
+                "Expected $profession to have no dimensional font map listings"
+            )
+        }
+        helper.succeed()
+    }
+
+    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
+    fun font_map_offer_identifies_its_destination(helper: GameTestHelper) {
+        val definition = ObeliskDataManager.getObelisk("nether")
+            ?: error("Missing bundled nether dimensional font definition")
+        val offer = DimensionalFontMapListing.createOffer(
+            helper.level,
+            helper.absolutePos(BlockPos(1, 2, 1)),
+            definition,
+            6,
+            Items.EMERALD
+        )
+        val result = offer.result
+
+        helper.assertTrue(offer.baseCostA.`is`(Items.EMERALD) && offer.baseCostA.count == 8, "Expected an eight-unit map price")
+        helper.assertTrue(offer.costB.isEmpty, "Expected no secondary map cost")
+        helper.assertTrue(offer.maxUses == 8 && offer.xp == 6, "Expected authored map uses and villager XP")
+        helper.assertTrue(offer.priceMultiplier == 0.0f, "Expected coin pricing not to scale with demand")
+        helper.assertTrue(result.`is`(Items.FILLED_MAP), "Expected a vanilla filled map result")
+        helper.assertTrue(result.hoverName.string == "${definition.displayName} Map", "Expected the font type in the map name")
+        helper.assertTrue(
+            result.tag?.getString(DimensionalFontMapListing.DEFINITION_TAG) == definition.id,
+            "Expected the map to retain its font definition id"
+        )
+        helper.assertTrue(
+            result.getTagElement("display")?.getList("Lore", 8)?.getString(0)?.contains(definition.displayName) == true,
+            "Expected the font type in the map tooltip"
+        )
+        helper.assertTrue(
+            result.tag?.getList("Decorations", 10)?.isEmpty() == false,
+            "Expected a target decoration on the dimensional font map"
+        )
+        helper.succeed()
+    }
+
+    private fun emptyTradeLevels(): Int2ObjectOpenHashMap<MutableList<VillagerTrades.ItemListing>> {
+        return Int2ObjectOpenHashMap<MutableList<VillagerTrades.ItemListing>>().apply {
+            for (level in 1..5) put(level, mutableListOf())
+        }
     }
 
     private fun indexedJsonNames(resourceFolder: String): List<String> {
