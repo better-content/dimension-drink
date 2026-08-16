@@ -102,12 +102,12 @@ class ObeliskDataGameTests {
         val employedTrades = emptyTradeLevels()
         DimensionalFontMapTrades.onVillagerTrades(VillagerTradesEvent(employedTrades, VillagerProfession.FARMER))
         helper.assertTrue(
-            employedTrades[2].count { it is DimensionalFontMapListing } == 1,
-            "Expected one apprentice dimensional font map listing"
+            employedTrades[1].count { it is DimensionalFontMapListing } == 1,
+            "Expected one novice dimensional font map listing"
         )
         helper.assertTrue(
-            employedTrades[3].count { it is DimensionalFontMapListing } == 1,
-            "Expected one journeyman dimensional font map listing"
+            listOf(2, 3).all { level -> employedTrades[level].none { it is DimensionalFontMapListing } },
+            "Expected no level-gated dimensional font map listings"
         )
 
         listOf(VillagerProfession.NONE, VillagerProfession.NITWIT).forEach { profession ->
@@ -152,6 +152,54 @@ class ObeliskDataGameTests {
             result.tag?.getList("Decorations", 10)?.isEmpty() == false,
             "Expected a target decoration on the dimensional font map"
         )
+
+        val nextDefinition = ObeliskDataManager.getObelisk("end")
+            ?: error("Missing bundled end dimensional font definition")
+        val nextMap = DimensionalFontMapListing.createMap(
+            helper.level,
+            helper.absolutePos(BlockPos(3, 2, 3)),
+            nextDefinition
+        )
+        offer.increaseUses()
+        DimensionalFontMapTrades.replaceOfferResult(offer, nextMap)
+        helper.assertTrue(offer.uses == 1, "Expected rotation to preserve offer usage state")
+        helper.assertTrue(offer.baseCostA.`is`(Items.EMERALD) && offer.baseCostA.count == 8, "Expected rotation to preserve map price")
+        helper.assertTrue(
+            offer.result.tag?.getString(DimensionalFontMapListing.DEFINITION_TAG) == nextDefinition.id,
+            "Expected rotation to replace the offered destination definition"
+        )
+        helper.succeed()
+    }
+
+    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
+    fun font_map_rotation_prioritizes_unsold_types_and_cycles(helper: GameTestHelper) {
+        fun choose(candidates: List<String>, excluded: Set<String>): String? {
+            val iterator = candidates.iterator()
+            return DimensionalFontMapListing.selectCandidate(
+                excluded,
+                8,
+                { if (iterator.hasNext()) iterator.next() else null },
+                { it }
+            )
+        }
+
+        helper.assertTrue(
+            choose(listOf("nether", "nether", "undergarden"), setOf("nether")) == "undergarden",
+            "Expected rotation to skip previously sold types"
+        )
+        helper.assertTrue(
+            choose(listOf("nether", "undergarden"), setOf("nether", "undergarden")) == "nether",
+            "Expected the first different location as a duplicate-type fallback"
+        )
+        helper.assertTrue(choose(emptyList(), setOf("nether")) == null, "Expected no candidate when no fonts can be located")
+
+        val eligible = setOf("nether", "undergarden", "otherside")
+        val first = DimensionalFontMapTrades.advanceSoldTypes(emptySet(), "nether", eligible)
+        val second = DimensionalFontMapTrades.advanceSoldTypes(first, "undergarden", eligible)
+        val completed = DimensionalFontMapTrades.advanceSoldTypes(second, "otherside", eligible)
+        helper.assertTrue(first == setOf("nether"), "Expected the first sold type to be retained")
+        helper.assertTrue(second == setOf("nether", "undergarden"), "Expected distinct sold types to accumulate")
+        helper.assertTrue(completed.isEmpty(), "Expected type history to reset after a complete cycle")
         helper.succeed()
     }
 
