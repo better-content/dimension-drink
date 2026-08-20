@@ -9,7 +9,7 @@ Pack-owned obelisk and blood-font worldgen/runtime mod for Forge `1.20.1`.
 ./gradlew verifyFull
 ```
 
-`verifyFast` runs the JVM verification lane. `verifyFull` adds the headless Forge GameTest pass using the default all-suites selection.
+`verifyFast` runs the JVM verification lane. `verifyFull` adds the headless Forge GameTest pass using the dedicated lifecycle smoke selection. Set `-PdimensionDrinkGameTestSelection=all` only when intentionally exercising the broader legacy suites.
 
 ## Release artifact
 

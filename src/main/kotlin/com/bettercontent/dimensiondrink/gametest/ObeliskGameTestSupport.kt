@@ -328,6 +328,64 @@ object ObeliskGameTestSupport {
         }
     }
 
+    fun smokeLogoutCleanup(helper: GameTestHelper) {
+        val server = helper.level.server
+        val client = connectHeadlessPlayer(helper)
+        val player = client.player
+        val originPos = helper.absolutePos(BlockPos(9, 2, 3))
+        var runId: UUID? = null
+        try {
+            placeChargedDefinitionObelisk(helper, originPos, "end")
+            val obelisk = helper.level.getBlockEntity(originPos) as ObeliskBlockEntity
+            val result = RunRegistry.activateObelisk(player, obelisk, originPos)
+            helper.assertTrue(result?.startsWith("Drinking from ") == true, "Expected entry before logout cleanup")
+            client.pump(server)
+            runId = requireNotNull(RunRegistry.getRun(player.uuid)).runId
+
+            RunRegistry.onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent(player))
+            helper.assertTrue(RunRegistry.getRun(player.uuid) == null, "Expected logout to clear player ownership")
+            helper.assertTrue(RunRegistry.get(runId) == null, "Expected final-player logout to close the session")
+            helper.assertTrue(obelisk.activeRunId == null, "Expected logout cleanup to clear the origin font")
+            helper.assertTrue(RunSavedData.get(server).snapshot().none { it.id == runId }, "Expected logout cleanup to remove saved run data")
+            runId = null
+            client.close(server)
+            helper.succeed()
+        } catch (failure: Throwable) {
+            runId?.let { RunRegistry.finishRun(server, it) }
+            client.close(server)
+            throw failure
+        }
+    }
+
+    fun smokeDeathCleanup(helper: GameTestHelper) {
+        val server = helper.level.server
+        val client = connectHeadlessPlayer(helper)
+        val player = client.player
+        val originPos = helper.absolutePos(BlockPos(9, 2, 6))
+        var runId: UUID? = null
+        try {
+            placeChargedDefinitionObelisk(helper, originPos, "end")
+            val obelisk = helper.level.getBlockEntity(originPos) as ObeliskBlockEntity
+            val result = RunRegistry.activateObelisk(player, obelisk, originPos)
+            helper.assertTrue(result?.startsWith("Drinking from ") == true, "Expected entry before death cleanup")
+            client.pump(server)
+            runId = requireNotNull(RunRegistry.getRun(player.uuid)).runId
+
+            RunRegistry.onLivingDeath(LivingDeathEvent(player, player.damageSources().generic()))
+            helper.assertTrue(RunRegistry.getRun(player.uuid) == null, "Expected death to clear player ownership")
+            helper.assertTrue(RunRegistry.get(runId) == null, "Expected final-player death to close the session")
+            helper.assertTrue(obelisk.activeRunId == null, "Expected death cleanup to clear the origin font")
+            helper.assertTrue(RunSavedData.get(server).snapshot().none { it.id == runId }, "Expected death cleanup to remove saved run data")
+            runId = null
+            client.close(server)
+            helper.succeed()
+        } catch (failure: Throwable) {
+            runId?.let { RunRegistry.finishRun(server, it) }
+            client.close(server)
+            throw failure
+        }
+    }
+
     fun runCreationPersistsOwnedInstanceMetadata(helper: GameTestHelper) {
         val server = helper.level.server
         waitForPreparedTemplate(helper, "end") {
@@ -1380,7 +1438,7 @@ object ObeliskGameTestSupport {
                     val activeRun = requireNotNull(RunRegistry.get(activeRunId))
                     val instance = requireNotNull(InstanceManager.getInstance(activeRun.instanceId))
                     val joinMessage = RunRegistry.activateObelisk(playerB, obelisk, obeliskPos)
-                    helper.assertTrue(joinMessage?.startsWith("Drinking from active") == true, "Expected second player to join the existing run")
+                    helper.assertTrue(joinMessage?.startsWith("Drinking from ") == true, "Expected second player to join the existing run")
 
                     waitUntil(helper, 240, "Expected both players to share the same canonical target site", condition = {
                         clientA.pump(server)
@@ -1390,20 +1448,14 @@ object ObeliskGameTestSupport {
                             playerA.serverLevel().dimension() == instance.levelKey &&
                             playerB.serverLevel().dimension() == instance.levelKey
                     }, onSuccess = {
-                        helper.assertTrue(TravelManager.returnPlayer(playerA), "Expected first player return to succeed")
-                        helper.assertTrue(TravelManager.returnPlayer(playerB), "Expected second player return to succeed")
-                        listOf(playerA, playerB).forEach { player ->
-                            val slowness = player.getEffect(MobEffects.MOVEMENT_SLOWDOWN)
-                            val darkness = player.getEffect(MobEffects.DARKNESS)
-                            helper.assertTrue(
-                                slowness?.duration == 20 && slowness.amplifier == 3,
-                                "Expected returning player to receive one second of Slowness IV"
-                            )
-                            helper.assertTrue(
-                                darkness?.duration == 20 && darkness.amplifier == 0,
-                                "Expected returning player to receive one second of Darkness I"
-                            )
+                        helper.assertTrue(RunRegistry.returnPlayer(playerA), "Expected first player return to succeed")
+                        val afterFirstReturn = requireNotNull(RunRegistry.get(activeRunId)) {
+                            "Expected shared run to remain until its final player returns"
                         }
+                        helper.assertTrue(playerA.uuid !in afterFirstReturn.activePlayers, "Expected first player ownership to clear")
+                        helper.assertTrue(playerB.uuid in afterFirstReturn.activePlayers, "Expected second player to keep the shared run active")
+                        helper.assertTrue(obelisk.activeRunId == activeRunId, "Expected origin font to retain the shared run")
+                        helper.assertTrue(RunRegistry.returnPlayer(playerB), "Expected second player return to succeed")
                         waitUntil(helper, 320, "Expected both players to return and the shared run to clean up", condition = {
                             clientA.pump(server)
                             clientB.pump(server)

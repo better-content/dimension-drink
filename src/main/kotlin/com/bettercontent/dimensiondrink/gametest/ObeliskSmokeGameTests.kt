@@ -22,6 +22,21 @@ class ObeliskSmokeGameTests {
         ObeliskGameTestSupport.smokeExternalDimensionCleanup(helper)
     }
 
+    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "font_smoke", timeoutTicks = 1200)
+    fun shared_run_closes_only_after_final_player_returns(helper: GameTestHelper) {
+        ObeliskGameTestSupport.secondPlayerJoinsExistingRunAndBothReturn(helper)
+    }
+
+    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "font_smoke", timeoutTicks = 1200)
+    fun final_player_logout_cleans_session(helper: GameTestHelper) {
+        ObeliskGameTestSupport.smokeLogoutCleanup(helper)
+    }
+
+    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "font_smoke", timeoutTicks = 1200)
+    fun final_player_death_cleans_session(helper: GameTestHelper) {
+        ObeliskGameTestSupport.smokeDeathCleanup(helper)
+    }
+
     @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "font_smoke", timeoutTicks = 600)
     fun server_console_smoke_command(helper: GameTestHelper) {
         val server = helper.level.server
