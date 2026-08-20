@@ -1,6 +1,8 @@
 package com.bettercontent.dimensiondrink.trade
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -27,5 +29,24 @@ class DimensionalFontMapTradeResourcesTest {
 
         assertTrue(language.contains("item.dimension_drink.dimensional_font_map"))
         assertTrue(language.contains("item.dimension_drink.dimensional_font_map.destination"))
+    }
+
+    @Test
+    fun wanderingTraderFactoryExposesTheFontListing() {
+        assertIs<DimensionalFontMapListing>(DimensionalFontMapTrades.wanderingTraderListing(0))
+    }
+
+    @Test
+    fun soldFontCycleResetsOnlyAfterEveryEligibleType() {
+        val eligible = linkedSetOf("overworld", "nether", "end")
+
+        assertEquals(
+            linkedSetOf("overworld", "nether"),
+            DimensionalFontMapTrades.advanceSoldTypes(setOf("overworld"), "nether", eligible)
+        )
+        assertEquals(
+            emptySet(),
+            DimensionalFontMapTrades.advanceSoldTypes(setOf("overworld", "nether"), "end", eligible)
+        )
     }
 }

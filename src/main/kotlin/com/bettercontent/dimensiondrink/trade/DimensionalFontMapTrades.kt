@@ -19,7 +19,7 @@ import net.minecraft.server.level.ServerPlayer
 import net.minecraft.tags.TagKey
 import net.minecraft.util.RandomSource
 import net.minecraft.world.entity.Entity
-import net.minecraft.world.entity.npc.VillagerProfession
+import net.minecraft.world.entity.npc.AbstractVillager
 import net.minecraft.world.entity.npc.VillagerTrades
 import net.minecraft.world.entity.npc.Villager
 import net.minecraft.world.inventory.MerchantMenu
@@ -33,21 +33,17 @@ import net.minecraft.world.level.chunk.ChunkStatus
 import net.minecraft.world.level.levelgen.structure.Structure
 import net.minecraft.world.level.saveddata.maps.MapDecoration
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData
-import net.minecraftforge.event.village.VillagerTradesEvent
 import net.minecraftforge.event.entity.player.TradeWithVillagerEvent
-import net.minecraftforge.eventbus.api.EventPriority
 import net.minecraftforge.eventbus.api.SubscribeEvent
 import net.minecraftforge.registries.ForgeRegistries
 
 object DimensionalFontMapTrades {
     private const val SOLD_TYPES_TAG = "dimension_drink:font_map_sold_types"
-    private val noviceListing = DimensionalFontMapListing(2)
 
-    @SubscribeEvent(priority = EventPriority.LOWEST)
-    fun onVillagerTrades(event: VillagerTradesEvent) {
-        if (event.type == VillagerProfession.NONE || event.type == VillagerProfession.NITWIT) return
-        event.trades[1].add(noviceListing)
-    }
+    /** Stable JVM entry point used by the pack's wandering-trader integration. */
+    @JvmStatic
+    fun wanderingTraderListing(villagerXp: Int): VillagerTrades.ItemListing =
+        DimensionalFontMapListing(villagerXp)
 
     @SubscribeEvent
     fun onTradeCompleted(event: TradeWithVillagerEvent) {
@@ -55,13 +51,13 @@ object DimensionalFontMapTrades {
         val soldDefinitionId = offer.result.tag?.getString(DimensionalFontMapListing.DEFINITION_TAG)
             ?.takeIf(String::isNotBlank)
             ?: return
-        val villager = event.abstractVillager as? Villager ?: return
+        val villager = event.abstractVillager
         val level = villager.level() as? ServerLevel ?: return
         val eligibleTypes = DimensionalFontMapListing.enabledDefinitionIds()
         val soldTypes = advanceSoldTypes(readSoldTypes(villager.persistentData), soldDefinitionId, eligibleTypes)
         writeSoldTypes(villager.persistentData, soldTypes)
 
-        val nextMap = noviceListing.nextMap(level, villager.blockPosition(), soldTypes) ?: return
+        val nextMap = DimensionalFontMapListing(0).nextMap(level, villager.blockPosition(), soldTypes) ?: return
         replaceOfferResult(offer, nextMap)
 
         val player = event.entity as? ServerPlayer ?: return
@@ -70,10 +66,10 @@ object DimensionalFontMapTrades {
             ClientboundMerchantOffersPacket(
                 menu.containerId,
                 villager.offers,
-                villager.villagerData.level,
-                villager.villagerXp,
+                if (villager is Villager) villager.villagerData.level else 1,
+                if (villager is Villager) villager.villagerXp else 0,
                 villager.showProgressBar(),
-                villager.canRestock()
+                villager is Villager && villager.canRestock()
             )
         )
     }
@@ -94,7 +90,7 @@ object DimensionalFontMapTrades {
         offer.result.count = nextMap.count
     }
 
-    private fun readSoldTypes(tag: CompoundTag): Set<String> {
+    internal fun readSoldTypes(tag: CompoundTag): Set<String> {
         val values = tag.getList(SOLD_TYPES_TAG, Tag.TAG_STRING.toInt())
         return (0 until values.size).mapTo(linkedSetOf(), values::getString)
     }
@@ -111,8 +107,12 @@ class DimensionalFontMapListing(
 ) : VillagerTrades.ItemListing {
     override fun getOffer(trader: Entity, random: RandomSource): MerchantOffer? {
         val level = trader.level() as? ServerLevel ?: return null
-        val map = nextMap(level, trader.blockPosition(), emptySet()) ?: return null
-        return createOffer(map, villagerXp, currencyItem())
+        val currency = currencyItem() ?: return null
+        val soldTypes = (trader as? AbstractVillager)
+            ?.let { DimensionalFontMapTrades.readSoldTypes(it.persistentData) }
+            ?: emptySet()
+        val map = nextMap(level, trader.blockPosition(), soldTypes) ?: return null
+        return createOffer(map, villagerXp, currency)
     }
 
     internal fun nextMap(level: ServerLevel, origin: BlockPos, excludedTypes: Set<String>): ItemStack? {
@@ -149,12 +149,18 @@ class DimensionalFontMapListing(
         const val MAX_USES = 8
 
         private const val SEARCH_RADIUS_CHUNKS = 100
-        private val DIMENSIONAL_FONT_STRUCTURE = ResourceLocation(MOD_ID, "dimensional_font")
-        private val COPPER_COIN = ResourceLocation("createdeco", "copper_coin")
-        private val FONT_MAP_STRUCTURES: TagKey<Structure> = TagKey.create(
-            Registries.STRUCTURE,
-            ResourceLocation(MOD_ID, "on_dimensional_font_maps")
-        )
+        private val DIMENSIONAL_FONT_STRUCTURE by lazy {
+            ResourceLocation(MOD_ID, "dimensional_font")
+        }
+        private val COPPER_COIN by lazy {
+            ResourceLocation("createdeco", "copper_coin")
+        }
+        private val FONT_MAP_STRUCTURES: TagKey<Structure> by lazy {
+            TagKey.create(
+                Registries.STRUCTURE,
+                ResourceLocation(MOD_ID, "on_dimensional_font_maps")
+            )
+        }
 
         internal fun createOffer(
             level: ServerLevel,
@@ -214,9 +220,9 @@ class DimensionalFontMapListing(
             return fallback
         }
 
-        internal fun currencyItem(): Item {
+        internal fun currencyItem(): Item? {
             val coin = ForgeRegistries.ITEMS.getValue(COPPER_COIN)
-            return coin?.takeUnless { it == Items.AIR } ?: Items.EMERALD
+            return coin?.takeUnless { it == Items.AIR }
         }
     }
 }

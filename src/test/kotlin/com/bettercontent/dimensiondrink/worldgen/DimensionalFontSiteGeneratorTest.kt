@@ -2,6 +2,7 @@ package com.bettercontent.dimensiondrink.worldgen
 
 import com.bettercontent.dimensiondrink.worldgen.structure.DimensionalFontSiteGenerator
 import net.minecraft.core.BlockPos
+import net.minecraft.core.Direction
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -9,6 +10,18 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class DimensionalFontSiteGeneratorTest {
+    @Test
+    fun currentLayoutAddsTwoStairRungsOnEveryCardinalApproach() {
+        assertEquals(3, DimensionalFontSiteGenerator.LAYOUT_VERSION)
+        val center = BlockPos(8, 70, 8)
+        Direction.Plane.HORIZONTAL.forEach { direction ->
+            assertEquals(
+                listOf(center.relative(direction, 2).above(), center.relative(direction).above(2)),
+                DimensionalFontSiteGenerator.altarApproachStairPositions(center, direction)
+            )
+        }
+    }
+
     @Test
     fun centerCourtMustFitItsStartChunk() {
         assertTrue(DimensionalFontSiteGenerator.centerFitsStartChunk(BlockPos(5, 70, 5)))

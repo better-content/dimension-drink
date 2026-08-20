@@ -4,16 +4,12 @@ import com.bettercontent.dimensiondrink.worldgen.pickCourtPotBlock
 import com.bettercontent.dimensiondrink.data.ObeliskDataManager
 import com.bettercontent.dimensiondrink.trade.DimensionalFontMapListing
 import com.bettercontent.dimensiondrink.trade.DimensionalFontMapTrades
-import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.gametest.framework.GameTest
 import net.minecraft.gametest.framework.GameTestHelper
-import net.minecraft.world.entity.npc.VillagerProfession
-import net.minecraft.world.entity.npc.VillagerTrades
 import net.minecraft.world.item.Items
 import net.minecraft.world.level.block.Blocks
-import net.minecraftforge.event.village.VillagerTradesEvent
 import net.minecraftforge.gametest.PrefixGameTestTemplate
 import java.nio.file.FileSystems
 import java.nio.file.Files
@@ -98,26 +94,12 @@ class ObeliskDataGameTests {
     }
 
     @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
-    fun employed_villagers_receive_common_font_map_listings(helper: GameTestHelper) {
-        val employedTrades = emptyTradeLevels()
-        DimensionalFontMapTrades.onVillagerTrades(VillagerTradesEvent(employedTrades, VillagerProfession.FARMER))
+    fun font_maps_use_the_wandering_trader_listing(helper: GameTestHelper) {
+        val listing = DimensionalFontMapTrades.wanderingTraderListing(0)
         helper.assertTrue(
-            employedTrades[1].count { it is DimensionalFontMapListing } == 1,
-            "Expected one novice dimensional font map listing"
+            listing is DimensionalFontMapListing,
+            "Expected the first-class wandering trader integration to expose a dimensional font map listing"
         )
-        helper.assertTrue(
-            listOf(2, 3).all { level -> employedTrades[level].none { it is DimensionalFontMapListing } },
-            "Expected no level-gated dimensional font map listings"
-        )
-
-        listOf(VillagerProfession.NONE, VillagerProfession.NITWIT).forEach { profession ->
-            val excludedTrades = emptyTradeLevels()
-            DimensionalFontMapTrades.onVillagerTrades(VillagerTradesEvent(excludedTrades, profession))
-            helper.assertTrue(
-                excludedTrades.values.all { listings -> listings.none { it is DimensionalFontMapListing } },
-                "Expected $profession to have no dimensional font map listings"
-            )
-        }
         helper.succeed()
     }
 
@@ -201,12 +183,6 @@ class ObeliskDataGameTests {
         helper.assertTrue(second == setOf("nether", "undergarden"), "Expected distinct sold types to accumulate")
         helper.assertTrue(completed.isEmpty(), "Expected type history to reset after a complete cycle")
         helper.succeed()
-    }
-
-    private fun emptyTradeLevels(): Int2ObjectOpenHashMap<MutableList<VillagerTrades.ItemListing>> {
-        return Int2ObjectOpenHashMap<MutableList<VillagerTrades.ItemListing>>().apply {
-            for (level in 1..5) put(level, mutableListOf())
-        }
     }
 
     private fun indexedJsonNames(resourceFolder: String): List<String> {

@@ -26,6 +26,16 @@ class ObeliskRuntimeGameTests {
         ObeliskGameTestSupport.fontRegenIgnoresAltarCopperOxidation(helper)
     }
 
+    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_runtime", timeoutTicks = 160)
+    fun font_charges_while_loaded_and_catches_up_after_unload(helper: GameTestHelper) {
+        ObeliskGameTestSupport.fontChargesWhileLoadedAndCatchesUpAfterUnload(helper)
+    }
+
+    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_runtime", timeoutTicks = 120)
+    fun font_regeneration_clock_handles_legacy_active_and_future_state(helper: GameTestHelper) {
+        ObeliskGameTestSupport.fontRegenerationClockHandlesLegacyActiveAndFutureState(helper)
+    }
+
     @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_runtime", timeoutTicks = 120)
     fun font_axe_scrapes_altar_copper_oxidation(helper: GameTestHelper) {
         ObeliskGameTestSupport.fontAxeScrapesAltarCopperOxidation(helper)

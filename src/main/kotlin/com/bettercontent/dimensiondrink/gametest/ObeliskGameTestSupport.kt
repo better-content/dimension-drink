@@ -53,6 +53,7 @@ import net.minecraft.world.entity.item.ItemEntity
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.ChunkPos
 import net.minecraft.world.level.block.Blocks
+import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.level.levelgen.Heightmap
 import net.minecraft.world.level.levelgen.structure.BoundingBox
 import net.minecraft.util.RandomSource
@@ -1119,6 +1120,19 @@ object ObeliskGameTestSupport {
             "Expected structure-piece generated obelisk to keep its definition id"
         )
         assertGeneratedAltar(helper, fontPos, "structure-piece", requireReliquaryLandscaping = false)
+        Direction.Plane.HORIZONTAL.forEach { direction ->
+            DimensionalFontSiteGenerator.altarApproachStairPositions(altarCenter, direction).forEach { stairPos ->
+                val stair = helper.level.getBlockState(stairPos)
+                helper.assertTrue(
+                    stair.`is`(Blocks.CUT_COPPER_STAIRS),
+                    "Expected layout-v3 altar approach stair at $stairPos"
+                )
+                helper.assertTrue(
+                    stair.getValue(BlockStateProperties.HORIZONTAL_FACING) == direction.opposite,
+                    "Expected altar approach stair at $stairPos to ascend inward"
+                )
+            }
+        }
         var pathBlocks = 0
         for (dx in -DimensionalFontSiteGenerator.SITE_RADIUS..DimensionalFontSiteGenerator.SITE_RADIUS) {
             for (dz in -DimensionalFontSiteGenerator.SITE_RADIUS..DimensionalFontSiteGenerator.SITE_RADIUS) {
@@ -1668,6 +1682,84 @@ object ObeliskGameTestSupport {
         helper.assertTrue(freshRate > 0.0, "Expected font to have base regen")
         helper.assertTrue(weatheredRate == freshRate, "Expected weathered copper altar support not to change regen")
         helper.assertTrue(oxidizedRate == freshRate, "Expected oxidized copper altar support not to change regen")
+        helper.succeed()
+    }
+
+    fun fontChargesWhileLoadedAndCatchesUpAfterUnload(helper: GameTestHelper) {
+        val obeliskPos = helper.absolutePos(BlockPos(20, 2, 20))
+        placeChargedDefinitionObelisk(helper, obeliskPos, "end")
+        val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
+            ?: error("Expected obelisk block entity for passive regeneration test")
+        obelisk.setEnergyStoredForDebug(0)
+
+        helper.runAfterDelay(12) {
+            helper.assertTrue(obelisk.bloodStored >= 3.0, "Expected a loaded font to regenerate through its block ticker")
+            val persisted = obelisk.updateTag.copy()
+            val savedBlood = obelisk.bloodStored
+            val savedGameTime = helper.level.gameTime
+
+            obelisk.fillToCapacity()
+            obelisk.load(persisted)
+            obelisk.advancePassiveRegeneration(savedGameTime + 400L)
+            helper.assertTrue(
+                obelisk.bloodStored == savedBlood + 100.0,
+                "Expected 400 unloaded server ticks at 0.25 mB/t to restore exactly 100 mB"
+            )
+
+            obelisk.setEnergyStoredForDebug(obelisk.getModifiedMaxStorage() - 10)
+            obelisk.advancePassiveRegeneration(savedGameTime + 800L)
+            helper.assertTrue(
+                obelisk.bloodStored.toInt() == obelisk.getModifiedMaxStorage(),
+                "Expected unloaded regeneration to cap at effective storage capacity"
+            )
+            helper.succeed()
+        }
+    }
+
+    fun fontRegenerationClockHandlesLegacyActiveAndFutureState(helper: GameTestHelper) {
+        val obeliskPos = helper.absolutePos(BlockPos(20, 2, 20))
+        placeChargedDefinitionObelisk(helper, obeliskPos, "end")
+        val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
+            ?: error("Expected obelisk block entity for regeneration clock test")
+        val now = helper.level.gameTime
+
+        val legacyTag = obelisk.updateTag.copy().also { tag ->
+            tag.putInt("life_essence_stored", 0)
+            tag.putDouble("blood_stored", 0.0)
+            tag.remove("last_passive_regen_game_time")
+            tag.remove("active_run_id")
+        }
+        obelisk.load(legacyTag)
+        obelisk.advancePassiveRegeneration(now + 1_000L)
+        helper.assertTrue(obelisk.bloodStored == 0.0, "Expected legacy NBT to seed its clock without a windfall")
+        obelisk.advancePassiveRegeneration(now + 1_004L)
+        helper.assertTrue(obelisk.bloodStored == 1.0, "Expected charging to begin after the legacy clock is seeded")
+
+        obelisk.setEnergyStoredForDebug(0)
+        obelisk.setActiveRun(UUID.randomUUID())
+        obelisk.advancePassiveRegeneration(now + 400L)
+        helper.assertTrue(obelisk.bloodStored == 0.0, "Expected an active font not to charge")
+        obelisk.setActiveRun(null)
+
+        val futureTag = obelisk.updateTag.copy().also { tag ->
+            tag.putInt("life_essence_stored", 0)
+            tag.putDouble("blood_stored", 0.0)
+            tag.putLong("last_passive_regen_game_time", now + 10_000L)
+            tag.remove("active_run_id")
+        }
+        obelisk.load(futureTag)
+        obelisk.advancePassiveRegeneration(now)
+        helper.assertTrue(obelisk.bloodStored == 0.0, "Expected a future timestamp to reset without granting blood")
+        obelisk.advancePassiveRegeneration(now + 4L)
+        helper.assertTrue(obelisk.bloodStored == 1.0, "Expected charging to resume from the reset baseline")
+
+        val returnPos = helper.absolutePos(BlockPos(24, 2, 20))
+        helper.level.setBlock(returnPos, ModBlocks.RETURN_FONT.get().defaultBlockState(), 3)
+        val returnFont = helper.level.getBlockEntity(returnPos) as? ObeliskBlockEntity
+            ?: error("Expected return seal block entity for regeneration clock test")
+        returnFont.setEnergyStoredForDebug(0)
+        returnFont.advancePassiveRegeneration(now + 20_000L)
+        helper.assertTrue(returnFont.bloodStored == 0.0, "Expected return seals never to charge")
         helper.succeed()
     }
 

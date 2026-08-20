@@ -46,6 +46,7 @@ class ObeliskBlockEntity(
         private val BLOOD_MAGIC_LIFE_ESSENCE_FLUID_ID = ResourceLocation("bloodmagic", "life_essence_fluid")
         private const val BLOOD_MAGIC_LIFE_ESSENCE_DESCRIPTION_ID = "fluid.bloodmagic.life_essence_fluid"
         private const val PASSIVE_COPPER_RENEWAL_INTERVAL = 160L
+        private const val LAST_PASSIVE_REGEN_GAME_TIME_TAG = "last_passive_regen_game_time"
     }
 
     var modifiers: List<ObeliskModifier> = ObeliskModifier.generateModifiers()
@@ -93,6 +94,7 @@ class ObeliskBlockEntity(
 
     private var fractionalRegenCarry: Double = 0.0
     private var fractionalDrainCarry: Double = 0.0
+    private var lastPassiveRegenGameTime: Long? = null
 
     var heartStack: ItemStack = ItemStack.EMPTY
         private set
@@ -188,12 +190,14 @@ class ObeliskBlockEntity(
     }
 
     fun setTargetTemplate(templateId: String) {
+        advancePassiveRegenerationNow()
         definitionId = templateId
         setChanged()
         syncToClients()
     }
 
     fun setDefinition(definitionId: String) {
+        advancePassiveRegenerationNow()
         this.definitionId = definitionId
         setChanged()
         syncToClients()
@@ -204,6 +208,7 @@ class ObeliskBlockEntity(
     }
 
     fun setGeneratedMaxBlood(maxBlood: Double?) {
+        advancePassiveRegenerationNow()
         generatedMaxBlood = maxBlood?.coerceAtLeast(getDefinitionMaxBlood())
         val previous = lifeEssenceStored
         setLifeEssenceStored(lifeEssenceStored)
@@ -227,6 +232,7 @@ class ObeliskBlockEntity(
     }
 
     fun cycleTemplate() {
+        advancePassiveRegenerationNow()
         val templates = ObeliskConstants.DEFAULT_TEMPLATES
         val currentIndex = templates.indexOf(definitionId).takeIf { it >= 0 } ?: 0
         definitionId = templates[(currentIndex + 1) % templates.size]
@@ -235,7 +241,9 @@ class ObeliskBlockEntity(
     }
 
     fun setActiveRun(runId: UUID?) {
+        advancePassiveRegenerationNow()
         activeRunId = runId
+        checkpointPassiveRegenerationNow()
         setChanged()
         syncToClients()
     }
@@ -283,6 +291,7 @@ class ObeliskBlockEntity(
 
     private fun serverAmbientTick(tickLevel: ServerLevel, tickPos: BlockPos) {
         if (blockState.`is`(ModBlocks.RETURN_FONT.get())) return
+        advancePassiveRegeneration(tickLevel.gameTime)
         if (lifeEssenceStored <= 0) return
         val pulseOffset = java.lang.Math.floorMod(tickPos.asLong(), PASSIVE_COPPER_RENEWAL_INTERVAL)
         if ((tickLevel.gameTime + pulseOffset) % PASSIVE_COPPER_RENEWAL_INTERVAL != 0L) return
@@ -472,6 +481,45 @@ class ObeliskBlockEntity(
         return fillLifeEssenceTank(wholeRegen).toDouble()
     }
 
+    internal fun advancePassiveRegeneration(gameTime: Long): Double {
+        if (blockState.`is`(ModBlocks.RETURN_FONT.get())) return 0.0
+        val previousGameTime = lastPassiveRegenGameTime
+        lastPassiveRegenGameTime = gameTime
+        if (previousGameTime == null || gameTime <= previousGameTime) {
+            if (previousGameTime != gameTime) setChanged()
+            return 0.0
+        }
+        if (isRunActive()) return 0.0
+
+        val missingBlood = getModifiedMaxStorage() - lifeEssenceStored
+        if (missingBlood <= 0) return 0.0
+        val rate = getModifiedRegenRate()
+        if (rate <= 0.0) {
+            setChanged()
+            return 0.0
+        }
+
+        val elapsedTicks = gameTime - previousGameTime
+        val regenBudget = minOf(rate * elapsedTicks.toDouble(), missingBlood.toDouble())
+        val regenerated = regenerateBlood(regenBudget)
+        // A successful tank fill checkpoints against the live level clock; restore the exact
+        // supplied clock so explicit catch-up and normal ticking share the same boundary.
+        lastPassiveRegenGameTime = gameTime
+        // Persist the clock even when only the fractional carry changed.
+        setChanged()
+        return regenerated
+    }
+
+    private fun advancePassiveRegenerationNow() {
+        val serverLevel = level as? ServerLevel ?: return
+        advancePassiveRegeneration(serverLevel.gameTime)
+    }
+
+    private fun checkpointPassiveRegenerationNow() {
+        val serverLevel = level as? ServerLevel ?: return
+        lastPassiveRegenGameTime = serverLevel.gameTime
+    }
+
     fun restoreRunEnergy(amount: Int): Int = restoreRunBlood(amount.toDouble()).toInt()
 
     fun restoreRunBlood(amount: Double): Double {
@@ -508,6 +556,7 @@ class ObeliskBlockEntity(
     }
 
     private fun onBloodStorageChanged() {
+        checkpointPassiveRegenerationNow()
         setChanged()
         syncToClients()
     }
@@ -557,6 +606,7 @@ class ObeliskBlockEntity(
 
     fun placeHeart(stack: ItemStack): Boolean {
         if (!canAcceptHeart(stack)) return false
+        advancePassiveRegenerationNow()
         heartStack = stack.copyWithCount(1)
         stack.shrink(1)
         setChanged()
@@ -566,6 +616,7 @@ class ObeliskBlockEntity(
 
     fun removeHeart(): ItemStack {
         if (heartStack.isEmpty) return ItemStack.EMPTY
+        advancePassiveRegenerationNow()
         val removed = heartStack.copy()
         heartStack = ItemStack.EMPTY
         setChanged()
@@ -588,6 +639,7 @@ class ObeliskBlockEntity(
         tag.putDouble("blood_stored", bloodStored)
         tag.putDouble("fractional_regen_carry", fractionalRegenCarry)
         tag.putDouble("fractional_drain_carry", fractionalDrainCarry)
+        lastPassiveRegenGameTime?.let { tag.putLong(LAST_PASSIVE_REGEN_GAME_TIME_TAG, it) }
         generatedMaxBlood?.let { tag.putDouble("generated_max_blood", it) }
         tag.putUUID("obelisk_id", obeliskId)
         tag.putString("definition_id", definitionId)
@@ -637,6 +689,11 @@ class ObeliskBlockEntity(
             tag.getDouble("fractional_drain_carry").coerceIn(0.0, 0.999_999)
         } else {
             0.0
+        }
+        lastPassiveRegenGameTime = if (tag.contains(LAST_PASSIVE_REGEN_GAME_TIME_TAG, Tag.TAG_LONG.toInt())) {
+            tag.getLong(LAST_PASSIVE_REGEN_GAME_TIME_TAG)
+        } else {
+            null
         }
         activeRunId = if (tag.hasUUID("active_run_id")) tag.getUUID("active_run_id") else null
         cooldownUntilGameTime = 0L

@@ -29,7 +29,7 @@ import kotlin.math.max
  * callback chunk bookkeeping cannot change the result.
  */
 object DimensionalFontSiteGenerator {
-    const val LAYOUT_VERSION = 2
+    const val LAYOUT_VERSION = 3
     const val SITE_RADIUS = 32
     const val COURT_RADIUS = 5
     const val ALTAR_RADIUS = 3
@@ -70,6 +70,11 @@ object DimensionalFontSiteGenerator {
         if (distance <= COURT_RADIUS || distance > PATH_RADIUS) return false
         return abs(dx) <= 1 || abs(dz) <= 1
     }
+
+    internal fun altarApproachStairPositions(center: BlockPos, direction: Direction): List<BlockPos> = listOf(
+        center.relative(direction, 2).above(),
+        center.relative(direction).above(2)
+    )
 
     internal fun coordinateHash(seed: Long, x: Int, z: Int, salt: Long = 0L): Long {
         var value = seed xor salt
@@ -122,6 +127,7 @@ object DimensionalFontSiteGenerator {
 
         val pedestal = center.above(2)
         setBoxed(level, box, pedestal, copperState(Blocks.RAW_COPPER_BLOCK, pedestal, center))
+        placeAltarApproachStairs(level, box, center)
         listOf(-COURT_RADIUS to -COURT_RADIUS, -COURT_RADIUS to COURT_RADIUS, COURT_RADIUS to -COURT_RADIUS, COURT_RADIUS to COURT_RADIUS)
             .forEach { (dx, dz) ->
                 val corner = center.offset(dx, 0, dz)
@@ -136,6 +142,14 @@ object DimensionalFontSiteGenerator {
         placeCenterDetails(level, box, center, siteSeed, definition)
         (level.getBlockEntity(fontPos) as? ObeliskBlockEntity)
             ?.initializeGeneratedFont(definition.id, maxBlood)
+    }
+
+    private fun placeAltarApproachStairs(level: WorldGenLevel, box: BoundingBox, center: BlockPos) {
+        Direction.Plane.HORIZONTAL.forEach { direction ->
+            altarApproachStairPositions(center, direction).forEach { pos ->
+                setBoxed(level, box, pos, roofState(Blocks.CUT_COPPER_STAIRS, pos, direction.opposite))
+            }
+        }
     }
 
     private fun placeCenterDetails(
