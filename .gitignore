@@ -7,6 +7,7 @@
 /run-server/
 /run-data/
 /run-gametest/
+/run-gametest-smoke/
 /logs/
 /out/
 /bin/

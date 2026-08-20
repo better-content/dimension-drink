@@ -65,7 +65,7 @@ minecraft {
         }
 
         gameTestServer {
-            workingDirectory rootProject.file('run-gametest')
+            workingDirectory rootProject.file('run-gametest-smoke')
             property 'forge.enabledGameTestNamespaces', modId
         }
 
@@ -155,6 +155,22 @@ tasks.register('headlessGameTest') {
     dependsOn tasks.named('runGameTestServer')
 }
 
+tasks.register('cleanSmokeGameTestWorld', Delete) {
+    group = 'verification'
+    description = 'Deletes only the generated isolated smoke-test world.'
+    delete rootProject.file('run-gametest-smoke/world')
+}
+
+tasks.register('syncSmokeServerProperties', Copy) {
+    from('src/gametest/server.properties')
+    into(rootProject.file('run-gametest-smoke'))
+}
+
+tasks.matching { it.name == 'runGameTestServer' }.configureEach {
+    dependsOn tasks.named('cleanSmokeGameTestWorld')
+    dependsOn tasks.named('syncSmokeServerProperties')
+}
+
 if (file('src/gameteststructures').exists()) {
     tasks.register('syncGameTestStructures', Copy) {
         from('src/gameteststructures')
@@ -163,7 +179,7 @@ if (file('src/gameteststructures').exists()) {
 
     tasks.register('syncGameTestStructuresGameTest', Copy) {
         from('src/gameteststructures')
-        into(rootProject.file('run-gametest/gameteststructures'))
+        into(rootProject.file('run-gametest-smoke/gameteststructures'))
     }
 
     tasks.matching { it.name.startsWith('prepareRun') }.configureEach {

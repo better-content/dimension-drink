@@ -8,7 +8,6 @@ import net.minecraft.nbt.Tag
 import net.minecraft.resources.ResourceKey
 import net.minecraft.resources.ResourceLocation
 import net.minecraft.server.MinecraftServer
-import net.minecraft.world.level.ChunkPos
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.saveddata.SavedData
 import java.util.UUID
@@ -41,6 +40,17 @@ class RunSiteSavedData private constructor(
     fun replaceAll(updatedRecords: Collection<RunSiteRecord>) {
         records.clear()
         updatedRecords.forEach { records[it.siteId] = it.deepCopy() }
+        setDirty()
+    }
+
+    fun pruneInactive(maxRecords: Int) {
+        val overflow = (records.size - maxRecords.coerceAtLeast(0)).coerceAtLeast(0)
+        if (overflow == 0) return
+        records.values
+            .filter { it.state != SiteState.ACTIVE }
+            .sortedBy { it.updatedGameTime }
+            .take(overflow)
+            .forEach { records.remove(it.siteId) }
         setDirty()
     }
 
@@ -93,8 +103,7 @@ data class RunSiteRecord(
     var spawnPos: BlockPos? = null,
     var createdGameTime: Long = 0L,
     var updatedGameTime: Long = createdGameTime,
-    var cooldownUntilGameTime: Long = 0L,
-    val touchedChunks: MutableSet<ChunkPos> = linkedSetOf()
+    var cooldownUntilGameTime: Long = 0L
 ) {
     fun preparedHandle(): PreparedSiteHandle = PreparedSiteHandle(
         siteId = siteId,
@@ -116,9 +125,7 @@ data class RunSiteRecord(
         )
     }
 
-    fun deepCopy(): RunSiteRecord = copy(
-        touchedChunks = LinkedHashSet(touchedChunks)
-    )
+    fun deepCopy(): RunSiteRecord = copy()
 
     fun toTag(): CompoundTag = CompoundTag().apply {
         putString("site_id", siteId.toString())
@@ -136,7 +143,6 @@ data class RunSiteRecord(
         putLong("created_game_time", createdGameTime)
         putLong("updated_game_time", updatedGameTime)
         putLong("cooldown_until_game_time", cooldownUntilGameTime)
-        put("touched_chunks", encodeChunks(touchedChunks))
     }
 
     companion object {
@@ -161,8 +167,7 @@ data class RunSiteRecord(
                 spawnPos = if (tag.contains("spawn_pos")) decodeBlockPos(tag.getCompound("spawn_pos")) else null,
                 createdGameTime = tag.getLong("created_game_time"),
                 updatedGameTime = tag.getLong("updated_game_time"),
-                cooldownUntilGameTime = tag.getLong("cooldown_until_game_time"),
-                touchedChunks = decodeChunks(tag.getList("touched_chunks", CompoundTag.TAG_COMPOUND.toInt()))
+                cooldownUntilGameTime = tag.getLong("cooldown_until_game_time")
             )
         }
 
@@ -191,24 +196,6 @@ data class RunSiteRecord(
             maxY = tag.getInt("max_y"),
             maxZ = tag.getInt("max_z")
         )
-
-        private fun encodeChunks(chunks: Set<ChunkPos>): ListTag = ListTag().also { list ->
-            chunks.forEach { chunk ->
-                list.add(CompoundTag().apply {
-                    putInt("x", chunk.x)
-                    putInt("z", chunk.z)
-                })
-            }
-        }
-
-        private fun decodeChunks(list: ListTag): LinkedHashSet<ChunkPos> {
-            val chunks = linkedSetOf<ChunkPos>()
-            for (index in 0 until list.size) {
-                val tag = list.getCompound(index)
-                chunks += ChunkPos(tag.getInt("x"), tag.getInt("z"))
-            }
-            return chunks
-        }
 
         private fun parseLevelKey(raw: String): ResourceKey<Level>? {
             if (raw.isBlank()) return null

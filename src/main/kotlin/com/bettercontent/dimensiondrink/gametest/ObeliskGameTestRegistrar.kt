@@ -10,6 +10,7 @@ object ObeliskGameTestRegistrar {
     @SubscribeEvent
     fun onRegisterGameTests(event: RegisterGameTestsEvent) {
         when (selection) {
+            "smoke" -> event.register(ObeliskSmokeGameTests::class.java)
             "run" -> event.register(ObeliskRunLifecycleGameTests::class.java)
             "activation" -> event.register(ObeliskActivationGameTests::class.java)
             "rewards" -> event.register(ObeliskRewardsGameTests::class.java)
@@ -20,6 +21,7 @@ object ObeliskGameTestRegistrar {
             "commands" -> event.register(ObeliskCommandGameTests::class.java)
             "runtime" -> event.register(ObeliskRuntimeGameTests::class.java)
             else -> {
+                event.register(ObeliskSmokeGameTests::class.java)
                 event.register(ObeliskRunLifecycleGameTests::class.java)
                 event.register(ObeliskActivationGameTests::class.java)
                 event.register(ObeliskRewardsGameTests::class.java)

@@ -1,12 +1,19 @@
 package com.bettercontent.dimensiondrink.commands
 
+import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
+import com.mojang.logging.LogUtils
+import com.bettercontent.dimensiondrink.api.RunBeginResult
 import com.bettercontent.dimensiondrink.data.ObeliskDataManager
 import com.bettercontent.dimensiondrink.content.ObeliskBlockEntity
 import com.bettercontent.dimensiondrink.runtime.ObeliskRuntimeService
 import com.bettercontent.dimensiondrink.runtime.backend.RunBackendManager
+import com.bettercontent.dimensiondrink.runtime.backend.RunSiteSavedData
+import com.bettercontent.dimensiondrink.runtime.backend.SiteState
 import com.bettercontent.dimensiondrink.runtime.run.RunRegistry
+import com.bettercontent.dimensiondrink.runtime.run.RunSavedData
 import net.minecraft.commands.Commands
+import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.arguments.UuidArgument
 import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
@@ -17,9 +24,11 @@ import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.material.Fluids
 import net.minecraftforge.event.RegisterCommandsEvent
 import net.minecraftforge.eventbus.api.SubscribeEvent
+import java.util.UUID
 import kotlin.math.sqrt
 
 object ObeliskCommands {
+    private val logger = LogUtils.getLogger()
 
     @SubscribeEvent
     fun onRegisterCommands(event: RegisterCommandsEvent) {
@@ -171,7 +180,108 @@ object ObeliskCommands {
             }
         )
 
+        val smoke = Commands.literal("smoke")
+        smoke.then(
+            Commands.literal("status").executes { ctx ->
+                val sites = RunSiteSavedData.get(ctx.source.server).snapshot()
+                val states = sites.groupingBy { it.state }.eachCount()
+                ctx.source.sendSuccess({
+                    Component.literal(
+                        "FONT_SMOKE STATUS ${RunRegistry.describePreparedInstances()} " +
+                            "sites=${sites.size} prepared=${states[SiteState.PREPARED] ?: 0} " +
+                            "active=${states[SiteState.ACTIVE] ?: 0}"
+                    )
+                }, false)
+                1
+            }
+        )
+        smoke.then(
+            Commands.literal("cleanup").executes { ctx ->
+                val runIds = RunRegistry.snapshot().map { it.id }
+                val cleaned = runIds.count { RunRegistry.finishRun(ctx.source.server, it) }
+                ctx.source.sendSuccess({ Component.literal("FONT_SMOKE CLEANUP cleaned=$cleaned") }, true)
+                cleaned.coerceAtLeast(1)
+            }
+        )
+        smoke.then(
+            Commands.literal("run")
+                .executes { ctx -> runConsoleSmoke(ctx.source, defaultSmokeTemplate(ctx.source), 1) }
+                .then(
+                    Commands.argument("template", StringArgumentType.word())
+                        .executes { ctx ->
+                            runConsoleSmoke(ctx.source, StringArgumentType.getString(ctx, "template"), 1)
+                        }
+                        .then(
+                            Commands.argument("cycles", IntegerArgumentType.integer(1, 100)).executes { ctx ->
+                                runConsoleSmoke(
+                                    ctx.source,
+                                    StringArgumentType.getString(ctx, "template"),
+                                    IntegerArgumentType.getInteger(ctx, "cycles")
+                                )
+                            }
+                        )
+                )
+        )
+        root.then(smoke)
+
         event.dispatcher.register(root)
+    }
+
+    private fun defaultSmokeTemplate(source: CommandSourceStack): String {
+        return ObeliskDataManager.enabledDimensionDrinks()
+            .firstOrNull { RunBackendManager.backend.validateTemplate(source.server, it.instanceTemplateId) == null }
+            ?.id ?: "end"
+    }
+
+    private fun runConsoleSmoke(source: CommandSourceStack, definitionId: String, cycles: Int): Int {
+        val createdRunIds = linkedSetOf<UUID>()
+        val usedSiteIds = linkedSetOf<UUID>()
+        val started = System.nanoTime()
+        return try {
+            repeat(cycles) { cycle ->
+                val result = RunRegistry.beginRun(source.server, UUID.randomUUID(), definitionId)
+                val handle = (result as? RunBeginResult.Accepted)?.run
+                    ?: error("cycle ${cycle + 1}: ${(result as RunBeginResult.Rejected).reason}")
+                createdRunIds += handle.runId
+                usedSiteIds += handle.instanceId
+
+                val record = RunRegistry.get(handle.runId) ?: error("cycle ${cycle + 1}: registry record missing")
+                check(record.backendLevelKey?.let(source.server::getLevel) != null) {
+                    "cycle ${cycle + 1}: target dimension is not loaded"
+                }
+                check(record.backendSiteBounds != null) { "cycle ${cycle + 1}: site bounds missing" }
+                check(RunSavedData.get(source.server).snapshot().any { it.id == handle.runId }) {
+                    "cycle ${cycle + 1}: persisted run record missing"
+                }
+                check(RunSiteSavedData.get(source.server).get(handle.instanceId)?.state == SiteState.ACTIVE) {
+                    "cycle ${cycle + 1}: backend site is not active"
+                }
+                check(RunRegistry.finishRun(source.server, handle.runId)) {
+                    "cycle ${cycle + 1}: cleanup rejected"
+                }
+                createdRunIds -= handle.runId
+                check(RunRegistry.get(handle.runId) == null) { "cycle ${cycle + 1}: registry leak" }
+                check(RunSavedData.get(source.server).snapshot().none { it.id == handle.runId }) {
+                    "cycle ${cycle + 1}: saved-data leak"
+                }
+                check(RunSiteSavedData.get(source.server).get(handle.instanceId)?.state == SiteState.PREPARED) {
+                    "cycle ${cycle + 1}: site was not returned to reusable state"
+                }
+            }
+            check(usedSiteIds.size == 1) { "site reuse failed: allocated ${usedSiteIds.size} sites" }
+            val elapsedMs = (System.nanoTime() - started) / 1_000_000
+            source.sendSuccess({
+                Component.literal(
+                    "FONT_SMOKE PASS template=$definitionId cycles=$cycles site=${usedSiteIds.single()} elapsedMs=$elapsedMs"
+                )
+            }, true)
+            1
+        } catch (failure: Throwable) {
+            createdRunIds.forEach { RunRegistry.finishRun(source.server, it) }
+            logger.error("FONT_SMOKE FAIL template={} cycles={}", definitionId, cycles, failure)
+            source.sendFailure(Component.literal("FONT_SMOKE FAIL ${failure.message ?: failure.javaClass.simpleName}"))
+            0
+        }
     }
 
     private fun spawnDebugObelisk(player: ServerPlayer, requestedTemplate: String?): Int {

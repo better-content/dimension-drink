@@ -13,7 +13,7 @@ ext {
 apply from: rootProject.file('gradle/forge-module.gradle')
 
 def dimensionDrinkGameTestNamespaces = (findProperty('dimensionDrinkGameTestNamespaces') ?: modId).toString()
-def dimensionDrinkGameTestSelection = (findProperty('dimensionDrinkGameTestSelection') ?: 'all').toString()
+def dimensionDrinkGameTestSelection = (findProperty('dimensionDrinkGameTestSelection') ?: 'smoke').toString()
 
 gradle.projectsEvaluated {
     minecraft.runs.configureEach {
@@ -28,8 +28,10 @@ dependencies {
 
     compileOnly fg.deobf(mantleDep)
     compileOnly fg.deobf(tconstructDep)
-    runtimeOnly fg.deobf(mantleDep)
-    runtimeOnly fg.deobf(tconstructDep)
+    if ((findProperty('dimensionDrinkIncludeCompatRuntime') ?: 'false').toString().toBoolean()) {
+        runtimeOnly fg.deobf(mantleDep)
+        runtimeOnly fg.deobf(tconstructDep)
+    }
 }
 
 tasks.register('verifyFast') {

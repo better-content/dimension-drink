@@ -213,6 +213,121 @@ object ObeliskGameTestSupport {
         action()
     }
 
+    fun smokeHeadlessRoundTrip(helper: GameTestHelper) {
+        val server = helper.level.server
+        val client = connectHeadlessPlayer(helper)
+        val player = client.player
+        val originLevel = helper.level
+        val originPos = helper.absolutePos(BlockPos(3, 2, 3))
+        var runId: UUID? = null
+        try {
+            placeChargedDefinitionObelisk(helper, originPos, "end")
+            val obelisk = helper.level.getBlockEntity(originPos) as ObeliskBlockEntity
+            val result = RunRegistry.activateObelisk(player, obelisk, originPos)
+            helper.assertTrue(result?.startsWith("Drinking from ") == true, "Expected immediate headless entry, got: $result")
+            client.pump(server)
+
+            val handle = requireNotNull(RunRegistry.getRun(player.uuid)) { "Expected player-to-run ownership after entry" }
+            runId = handle.runId
+            val record = requireNotNull(RunRegistry.get(handle.runId)) { "Expected active run record" }
+            helper.assertTrue(record.state == RunState.ACTIVE, "Expected active state after entry")
+            helper.assertTrue(player.serverLevel().dimension() == Level.END, "Expected player in canonical End dimension")
+            val spawn = requireNotNull(record.spawnPos) { "Expected resolved arrival position" }
+            val destination = requireNotNull(server.getLevel(Level.END)) { "Expected End level to be loaded" }
+            helper.assertTrue(
+                destination.getBlockState(spawn.below()).`is`(ModBlocks.RETURN_FONT.get()),
+                "Expected return font below arrival position"
+            )
+
+            helper.assertTrue(RunRegistry.returnPlayer(player), "Expected return teleport to succeed")
+            client.pump(server)
+            helper.assertTrue(player.serverLevel().dimension() == originLevel.dimension(), "Expected return to origin dimension")
+            helper.assertTrue(player.blockPosition().closerThan(originPos, 4.0), "Expected return beside origin font")
+            helper.assertTrue(RunRegistry.get(handle.runId) == null, "Expected final return to close session")
+            helper.assertTrue(RunRegistry.getRun(player.uuid) == null, "Expected player ownership to clear")
+            helper.assertTrue(obelisk.activeRunId == null, "Expected origin font run id to clear")
+            helper.assertTrue(RunSavedData.get(server).snapshot().none { it.id == handle.runId }, "Expected saved run to clear")
+            client.close(server)
+            helper.succeed()
+        } catch (failure: Throwable) {
+            runId?.let { RunRegistry.finishRun(server, it) }
+            client.close(server)
+            throw failure
+        }
+    }
+
+    fun smokeRepeatedRoundTrips(helper: GameTestHelper) {
+        val server = helper.level.server
+        val client = connectHeadlessPlayer(helper)
+        val player = client.player
+        val originPos = helper.absolutePos(BlockPos(6, 2, 3))
+        val siteIds = linkedSetOf<UUID>()
+        val spawnPositions = linkedSetOf<BlockPos>()
+        var currentRunId: UUID? = null
+        try {
+            placeChargedDefinitionObelisk(helper, originPos, "end")
+            val obelisk = helper.level.getBlockEntity(originPos) as ObeliskBlockEntity
+            repeat(20) { cycle ->
+                val result = RunRegistry.activateObelisk(player, obelisk, originPos)
+                helper.assertTrue(result?.startsWith("Drinking from ") == true, "Cycle ${cycle + 1} entry failed: $result")
+                client.pump(server)
+                val handle = requireNotNull(RunRegistry.getRun(player.uuid)) { "Cycle ${cycle + 1} ownership missing" }
+                currentRunId = handle.runId
+                siteIds += handle.instanceId
+                spawnPositions += requireNotNull(RunRegistry.get(handle.runId)?.spawnPos) {
+                    "Cycle ${cycle + 1} arrival position missing"
+                }
+                helper.assertTrue(player.serverLevel().dimension() == Level.END, "Cycle ${cycle + 1} did not enter End")
+                helper.assertTrue(RunRegistry.returnPlayer(player), "Cycle ${cycle + 1} return failed")
+                client.pump(server)
+                helper.assertTrue(RunRegistry.get(handle.runId) == null, "Cycle ${cycle + 1} leaked run")
+                helper.assertTrue(RunRegistry.getRun(player.uuid) == null, "Cycle ${cycle + 1} leaked player ownership")
+                currentRunId = null
+            }
+            helper.assertTrue(siteIds.size == 1, "Expected one reusable site across 20 cycles, got ${siteIds.size}")
+            helper.assertTrue(
+                spawnPositions.size == 1,
+                "Expected stable arrival position across 20 cycles, got $spawnPositions"
+            )
+            helper.assertTrue(obelisk.activeRunId == null, "Expected font to be idle after soak")
+            client.close(server)
+            helper.succeed()
+        } catch (failure: Throwable) {
+            currentRunId?.let { RunRegistry.finishRun(server, it) }
+            client.close(server)
+            throw failure
+        }
+    }
+
+    fun smokeExternalDimensionCleanup(helper: GameTestHelper) {
+        val server = helper.level.server
+        val client = connectHeadlessPlayer(helper)
+        val player = client.player
+        val originPos = helper.absolutePos(BlockPos(3, 2, 6))
+        var runId: UUID? = null
+        try {
+            placeChargedDefinitionObelisk(helper, originPos, "end")
+            val obelisk = helper.level.getBlockEntity(originPos) as ObeliskBlockEntity
+            val result = RunRegistry.activateObelisk(player, obelisk, originPos)
+            helper.assertTrue(result?.startsWith("Drinking from ") == true, "Expected entry before escape test")
+            client.pump(server)
+            runId = requireNotNull(RunRegistry.getRun(player.uuid)).runId
+
+            player.teleportTo(helper.level, originPos.x + 8.5, originPos.y + 1.0, originPos.z + 0.5, 0.0f, 0.0f)
+            client.pump(server)
+            helper.assertTrue(RunRegistry.getRun(player.uuid) == null, "Expected external dimension change to clear ownership")
+            helper.assertTrue(RunRegistry.get(runId) == null, "Expected escaped final player to close session")
+            helper.assertTrue(obelisk.activeRunId == null, "Expected escaped session to clear origin font")
+            runId = null
+            client.close(server)
+            helper.succeed()
+        } catch (failure: Throwable) {
+            runId?.let { RunRegistry.finishRun(server, it) }
+            client.close(server)
+            throw failure
+        }
+    }
+
     fun runCreationPersistsOwnedInstanceMetadata(helper: GameTestHelper) {
         val server = helper.level.server
         waitForPreparedTemplate(helper, "end") {

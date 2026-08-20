@@ -1,7 +1,5 @@
 package com.bettercontent.dimensiondrink.runtime.run
 
-import com.mojang.logging.LogUtils
-import com.bettercontent.dimensiondrink.ObeliskConstants
 import com.bettercontent.dimensiondrink.api.RunBeginResult
 import com.bettercontent.dimensiondrink.api.RunHandle
 import com.bettercontent.dimensiondrink.api.RunService
@@ -13,23 +11,17 @@ import com.bettercontent.dimensiondrink.data.ObeliskDataManager
 import com.bettercontent.dimensiondrink.runtime.backend.ActiveSiteHandle
 import com.bettercontent.dimensiondrink.runtime.backend.ActiveSiteResult
 import com.bettercontent.dimensiondrink.runtime.backend.EnterRunResult
-import com.bettercontent.dimensiondrink.runtime.backend.PreparedSiteHandle
 import com.bettercontent.dimensiondrink.runtime.backend.PreparedSiteResult
 import com.bettercontent.dimensiondrink.runtime.backend.PreparedSiteStatus
 import com.bettercontent.dimensiondrink.runtime.backend.ReturnRunResult
 import com.bettercontent.dimensiondrink.runtime.backend.RunBackendManager
-import com.bettercontent.dimensiondrink.runtime.backend.SiteBounds
-import com.bettercontent.dimensiondrink.runtime.reward.RewardSystem
+import com.mojang.logging.LogUtils
 import net.minecraft.core.BlockPos
-import net.minecraft.network.chat.Component
 import net.minecraft.resources.ResourceKey
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerPlayer
-import net.minecraft.world.effect.MobEffectInstance
-import net.minecraft.world.effect.MobEffects
 import net.minecraft.world.level.Level
-import net.minecraftforge.event.TickEvent
-import net.minecraftforge.event.entity.living.LivingFallEvent
+import net.minecraftforge.common.MinecraftForge
 import net.minecraftforge.event.entity.living.LivingDeathEvent
 import net.minecraftforge.event.entity.player.PlayerEvent
 import net.minecraftforge.event.server.ServerStartedEvent
@@ -37,55 +29,35 @@ import net.minecraftforge.event.server.ServerStoppedEvent
 import net.minecraftforge.event.server.ServerStoppingEvent
 import net.minecraftforge.eventbus.api.EventPriority
 import net.minecraftforge.eventbus.api.SubscribeEvent
-import net.minecraftforge.common.MinecraftForge
 import java.util.UUID
-import kotlin.math.exp
 
+/**
+ * Event-driven ownership for dimensional-font teleports.
+ *
+ * There is deliberately no tick path here. World generation and teleportation are delegated to
+ * the backend; this object only owns the small amount of state needed to return a player safely.
+ */
 object RunRegistry : RunService {
-
-    private const val RUN_SAVE_INTERVAL_TICKS = 100L
-    private const val ENTRY_WARMUP_TICKS = 30L
-    private const val ENTRY_DEBUFF_TICKS = 12
-    private const val RETURN_DEBUFF_TICKS = 20
+    private const val MAX_ACTIVE_SESSIONS = 128
 
     private val logger = LogUtils.getLogger()
     private val backend = RunBackendManager.backend
     private val runs = linkedMapOf<UUID, RunRecord>()
-    private val dirtyRunIds = linkedSetOf<UUID>()
-    private val fallDamageSuppressedPlayers = linkedSetOf<UUID>()
-    private val pendingDeathReturns = linkedMapOf<UUID, DeathReturnTarget>()
-    private val pendingEntryWarmups = linkedMapOf<UUID, EntryWarmup>()
-    private var shuttingDown = false
+    private val playerRunIds = linkedMapOf<UUID, UUID>()
+    private val returningPlayers = linkedSetOf<UUID>()
+    private var totalEntries = 0L
+    private var totalReturns = 0L
+    private var forcedCleanups = 0L
 
-    private sealed interface RunEntryAttempt {
-        data object Entered : RunEntryAttempt
-        data class Waiting(val message: String) : RunEntryAttempt
-        data class Rejected(val message: String) : RunEntryAttempt
-    }
-
-    private data class DeathReturnTarget(
-        val levelKey: ResourceKey<Level>,
-        val pos: BlockPos
-    )
-
-    private data class EntryWarmup(
-        val runId: UUID,
-        val startedGameTime: Long,
-        val bloodCost: Double,
-        val message: String
-    )
-
-    override fun getRun(playerId: UUID): RunHandle? {
-        return runs.values.firstOrNull { playerId in it.activePlayers || playerId in it.pendingPlayers }?.toHandle()
-    }
+    override fun getRun(playerId: UUID): RunHandle? = mutableRunForPlayer(playerId)?.toHandle()
 
     override fun getRunById(runId: UUID): RunHandle? = runs[runId]?.toHandle()
 
     fun get(runId: UUID): RunRecord? = runs[runId]?.deepCopy()
 
-    fun snapshot(): List<RunRecord> = runs.values.map { it.deepCopy() }
+    fun snapshot(): List<RunRecord> = runs.values.map(RunRecord::deepCopy)
 
-    fun currentRuns(): Collection<RunRecord> = runs.values.toList()
+    fun currentRuns(): Collection<RunRecord> = runs.values.map(RunRecord::deepCopy)
 
     fun isPreparedInstanceReady(templateId: String): Boolean {
         val targetId = CanonicalTargetResolver.targetId(templateId)
@@ -95,230 +67,160 @@ object RunRegistry : RunService {
         }
     }
 
-    fun describePreparedInstances(): String = "backend=${backend.javaClass.simpleName}"
+    fun describePreparedInstances(): String =
+        "backend=${backend.javaClass.simpleName} sessions=${runs.size} players=${playerRunIds.size} " +
+            "entries=$totalEntries returns=$totalReturns forcedCleanups=$forcedCleanups"
 
     fun returnPlayer(player: ServerPlayer, disqualify: Boolean = true): Boolean {
-        val recordBeforeReturn = mutableRunForPlayer(player.uuid)
-        val qualifiedReturnContext = recordBeforeReturn
+        val record = mutableRunForPlayer(player.uuid)
+        val returnContext = record
             ?.takeIf { !disqualify && player.uuid in it.survivors && player.uuid !in it.disqualifiedPlayers }
             ?.let(FontEventContextResolver::resolve)
-        return when (backend.returnPlayer(player)) {
+
+        returningPlayers += player.uuid
+        val result = try {
+            backend.returnPlayer(player)
+        } finally {
+            returningPlayers -= player.uuid
+        }
+
+        detachPlayer(record, player.uuid, disqualify)
+        backend.clearPlayer(player.uuid)
+        when (result) {
             ReturnRunResult.Returned -> {
+                totalReturns++
                 player.fallDistance = 0.0f
-                val record = recordBeforeReturn
-                if (record != null) {
-                    clearEntryWarmup(player)
-                    removePlayer(record, player.uuid, disqualify = disqualify)
-                    persistRunNow(player.server, record)
-                }
-                applyDrinkDebuffs(player, RETURN_DEBUFF_TICKS)
-                if (record != null && qualifiedReturnContext != null) {
+                if (record != null && returnContext != null) {
                     MinecraftForge.EVENT_BUS.post(
                         FontAggregateReturnEvent(
                             player = player,
                             runId = record.id,
-                            definitionId = qualifiedReturnContext.definitionId,
-                            targetDimension = qualifiedReturnContext.targetDimension,
-                            aggregateId = qualifiedReturnContext.aggregateId
+                            definitionId = returnContext.definitionId,
+                            targetDimension = returnContext.targetDimension,
+                            aggregateId = returnContext.aggregateId
                         )
                     )
                 }
-                true
             }
-            ReturnRunResult.NotBound -> false
-            is ReturnRunResult.Rejected -> false
+            ReturnRunResult.NotBound,
+            is ReturnRunResult.Rejected -> forcedCleanups++
         }
+        persistOrClose(player.server, record, "player-return")
+        return result == ReturnRunResult.Returned
     }
 
-    fun drinkReturnFont(player: ServerPlayer): String {
-        applyEntryWarmupEffects(player)
-        return if (returnPlayer(player)) {
-            "Drinking from return font..."
-        } else {
-            "The return font has nowhere to send you."
-        }
+    fun drinkReturnFont(player: ServerPlayer): String = if (returnPlayer(player)) {
+        "Drinking from return font..."
+    } else {
+        "The return font has nowhere to send you."
     }
 
     fun clearPlayerAssignment(server: MinecraftServer, playerId: UUID): Boolean {
         val record = mutableRunForPlayer(playerId) ?: return false
-        removePlayer(record, playerId, disqualify = true)
-        clearEntryWarmup(server, playerId)
+        detachPlayer(record, playerId, disqualify = true)
         backend.clearPlayer(playerId)
-        persistRunNow(server, record)
+        forcedCleanups++
+        persistOrClose(server, record, "assignment-cleared")
         return true
     }
 
     override fun beginRun(server: MinecraftServer, obeliskId: UUID, definitionId: String): RunBeginResult {
-        val created = createRun(
-            server = server,
-            obeliskId = obeliskId,
-            definitionId = definitionId,
-            originLevelKey = null,
-            originObeliskPos = null,
-            queuedPlayerId = null
-        ) ?: return RunBeginResult.Rejected("Run is unavailable for ${displayName(definitionId)} right now")
+        val created = createRun(server, obeliskId, definitionId, null, null, null)
+            ?: return RunBeginResult.Rejected("Run is unavailable for ${displayName(definitionId)} right now")
         return RunBeginResult.Accepted(created.toHandle())
     }
 
-    override fun finishRun(server: MinecraftServer, runId: UUID): Boolean = finishRun(server, runId, "finished")
+    override fun finishRun(server: MinecraftServer, runId: UUID): Boolean = closeRun(server, runId, "finished")
 
-    private fun finishRun(server: MinecraftServer, runId: UUID, destroyReason: String): Boolean {
-        val record = runs[runId] ?: return false
-        if (record.state == RunState.FINISHED || record.state == RunState.FINISHING) {
-            return false
-        }
+    internal fun recordDamage(playerId: UUID, levelKey: ResourceKey<Level>, amount: Float): Boolean = false
 
-        record.state = RunState.FINISHING
-        record.updatedGameTime = currentGameTime(server)
-        returnPlayers(server, record, null, disqualify = false)
-        if (RewardSystem.spawnRewards(server, record)) {
-            record.rewardsGranted = true
-        }
-        clearOriginObelisk(server, record, startCooldown = true)
-        activeHandle(server, record)?.let { backend.destroyRun(server, it, destroyReason) }
-        runs.remove(runId)
-        deleteRunNow(server, runId)
-        return true
-    }
+    internal fun recordKill(server: MinecraftServer, playerId: UUID, levelKey: ResourceKey<Level>): Boolean = false
 
-    internal fun recordDamage(playerId: UUID, levelKey: ResourceKey<Level>, amount: Float): Boolean {
-        if (amount <= 0f) return false
-        val record = mutableRunForPlayer(playerId) ?: return false
-        if (record.backendLevelKey != levelKey || record.state != RunState.ACTIVE) {
-            return false
-        }
-
-        record.totalDamageDealt += amount
-        record.updatedGameTime = record.updatedGameTime.coerceAtLeast(record.createdGameTime)
-        markRunDirty(record.id)
-        return true
-    }
-
-    internal fun recordKill(server: MinecraftServer, playerId: UUID, levelKey: ResourceKey<Level>): Boolean {
-        val record = mutableRunForPlayer(playerId) ?: return false
-        if (record.backendLevelKey != levelKey || record.state != RunState.ACTIVE) {
-            return false
-        }
-
-        return recordMonsterKill(server, record)
-    }
-
-    internal fun recordMonsterDeath(server: MinecraftServer, levelKey: ResourceKey<Level>, pos: BlockPos): Boolean {
-        val record = runs.values.firstOrNull { candidate ->
-            candidate.state == RunState.ACTIVE &&
-                candidate.backendLevelKey == levelKey &&
-                candidate.backendSiteBounds?.contains(pos) == true
-        } ?: return false
-
-        return recordMonsterKill(server, record)
-    }
+    internal fun recordMonsterDeath(server: MinecraftServer, levelKey: ResourceKey<Level>, pos: BlockPos): Boolean = false
 
     fun activateObelisk(player: ServerPlayer, obelisk: ObeliskBlockEntity, pos: BlockPos): String? {
-        val server = player.server
-        val existingPlayerRun = getRun(player.uuid)
-        if (existingPlayerRun != null) {
-            return if (existingPlayerRun.obeliskId == obelisk.obeliskId) {
-                "You are already bound to this font run."
+        val current = mutableRunForPlayer(player.uuid)
+        if (current != null) {
+            return if (current.obeliskId == obelisk.obeliskId) {
+                "You are already bound to this font."
             } else {
-                "You are already bound to another font run."
+                "You are already bound to another font."
             }
         }
 
-        val existingRun = obelisk.activeRunId?.let { runs[it] }
-        if (existingRun != null && existingRun.state != RunState.FINISHED && existingRun.state != RunState.FAILED) {
-            if (existingRun.pendingPlayers.add(player.uuid)) {
-                markEligible(existingRun, player.uuid)
-                existingRun.updatedGameTime = currentGameTime(server)
-                persistRunNow(server, existingRun)
-            }
-            startEntryWarmup(server, existingRun, player, 0.0, "Drinking from active ${displayName(existingRun.definitionId)}...")
-            return when (val entry = tryQueueEntry(server, existingRun, player)) {
-                RunEntryAttempt.Entered -> "Drinking from active ${displayName(existingRun.definitionId)}..."
-                is RunEntryAttempt.Waiting -> entry.message
-                is RunEntryAttempt.Rejected -> entry.message
-            }
+        val existing = obelisk.activeRunId?.let(runs::get)
+        if (existing != null) {
+            return enterPlayer(player.server, existing, player)
+        }
+        if (obelisk.activeRunId != null) {
+            obelisk.setActiveRun(null)
         }
 
-        val instanceTemplateId = templateIdForDefinition(obelisk.definitionId)
-        val validationError = backend.validateTemplate(server, instanceTemplateId)
-        if (validationError != null) {
-            return "Cannot open ${displayName(obelisk.definitionId)} run: $validationError"
+        if (runs.size >= MAX_ACTIVE_SESSIONS) {
+            logger.warn("Rejecting font teleport: active session limit reached sessions={}", runs.size)
+            return "Too many dimensional fonts are active right now."
         }
-        val startBloodMinimum = obelisk.getBloodStartCost()
-        if (obelisk.bloodStored < startBloodMinimum) {
-            return "The font needs ${startBloodMinimum.toInt()} mB of trip juice to open."
+        val templateId = templateIdForDefinition(obelisk.definitionId)
+        backend.validateTemplate(player.server, templateId)?.let {
+            return "Cannot open ${displayName(obelisk.definitionId)}: $it"
         }
+        if (obelisk.bloodStored < obelisk.getBloodStartCost()) {
+            return "The font needs ${obelisk.getBloodStartCost().toInt()} mB of trip juice to open."
+        }
+
         val created = createRun(
-            server = server,
+            server = player.server,
             obeliskId = obelisk.obeliskId,
             definitionId = obelisk.definitionId,
             originLevelKey = player.serverLevel().dimension(),
             originObeliskPos = pos,
-            queuedPlayerId = player.uuid
+            ownerId = player.uuid
         ) ?: return "Run is unavailable for ${displayName(obelisk.definitionId)} right now"
         obelisk.setActiveRun(created.id)
-        markEligible(created, player.uuid)
-        startEntryWarmup(server, created, player, 0.0, "Drinking from ${displayName(created.definitionId)}...")
-        return when (val entry = tryQueueEntry(server, created, player)) {
-            RunEntryAttempt.Entered -> "Drinking from ${displayName(created.definitionId)}..."
-            is RunEntryAttempt.Waiting -> entry.message
-            is RunEntryAttempt.Rejected -> {
-                discardEmptyRun(server, created, "initial-entry-rejected")
-                entry.message
-            }
+        val message = enterPlayer(player.server, created, player)
+        if (playerRunIds[player.uuid] != created.id) {
+            closeRun(player.server, created.id, "initial-entry-rejected")
         }
+        return message
     }
 
     @SubscribeEvent
     fun onServerStarted(event: ServerStartedEvent) {
-        shuttingDown = false
-        restoreFromSavedData(event.server)
+        runs.clear()
+        playerRunIds.clear()
+        returningPlayers.clear()
+        val restored = RunSavedData.get(event.server).values()
+            .filter { it.state != RunState.FINISHED && it.state != RunState.FAILED }
+            .sortedByDescending { it.updatedGameTime }
+            .take(MAX_ACTIVE_SESSIONS)
+        restored.forEach { saved ->
+            val record = saved.deepCopy()
+            record.pendingPlayers.clear()
+            runs[record.id] = record
+            record.activePlayers.forEach { playerRunIds[it] = record.id }
+        }
+        RunSavedData.get(event.server).replaceAll(runs.values)
+        if (restored.isNotEmpty()) {
+            logger.info("Restored {} dimensional font sessions with no tick tasks", restored.size)
+        }
     }
 
     @SubscribeEvent
-    fun onServerTick(event: TickEvent.ServerTickEvent) {
-        if (event.phase != TickEvent.Phase.END || shuttingDown) {
-            return
+    fun onPlayerLoggedIn(event: PlayerEvent.PlayerLoggedInEvent) {
+        val player = event.entity as? ServerPlayer ?: return
+        val record = mutableRunForPlayer(player.uuid) ?: return
+        val handle = activeHandle(player.server, record)
+        if (handle == null || !backend.isPlayerInRun(player, handle)) {
+            clearPlayerAssignment(player.server, player.uuid)
         }
-
-        val server = event.server
-        backend.tick(server)
-        if (runs.isEmpty()) {
-            flushDirtyRuns(server, force = false)
-            return
-        }
-        runs.values.toList().forEach { record ->
-            tickRun(server, record)
-        }
-        flushDirtyRuns(server, force = false)
     }
 
     @SubscribeEvent
     fun onPlayerLoggedOut(event: PlayerEvent.PlayerLoggedOutEvent) {
         val player = event.entity as? ServerPlayer ?: return
-        val run = runs.values.firstOrNull { player.uuid in it.activePlayers || player.uuid in it.pendingPlayers } ?: return
+        if (mutableRunForPlayer(player.uuid) == null) return
         if (!returnPlayer(player)) {
-            removePlayer(run, player.uuid, disqualify = true)
-            backend.clearPlayer(player.uuid)
-            persistRunNow(player.server, run)
-        }
-        fallDamageSuppressedPlayers.remove(player.uuid)
-        clearEntryWarmup(player)
-    }
-
-    @SubscribeEvent(priority = EventPriority.HIGHEST)
-    fun onPlayerTick(event: TickEvent.PlayerTickEvent) {
-        if (event.phase != TickEvent.Phase.START || shuttingDown) {
-            return
-        }
-    }
-
-    @SubscribeEvent(priority = EventPriority.HIGHEST)
-    fun onLivingFall(event: LivingFallEvent) {
-        val player = event.entity as? ServerPlayer ?: return
-        if (fallDamageSuppressedPlayers.remove(player.uuid)) {
-            player.fallDistance = 0.0f
-            event.isCanceled = true
+            clearPlayerAssignment(player.server, player.uuid)
         }
     }
 
@@ -326,54 +228,43 @@ object RunRegistry : RunService {
     fun onLivingDeath(event: LivingDeathEvent) {
         val player = event.entity as? ServerPlayer ?: return
         val record = mutableRunForPlayer(player.uuid) ?: return
-        markRunDeath(player, record)
-    }
-
-    @SubscribeEvent(priority = EventPriority.LOWEST)
-    fun onPlayerRespawn(event: PlayerEvent.PlayerRespawnEvent) {
-        val player = event.entity as? ServerPlayer ?: return
-        val target = pendingDeathReturns.remove(player.uuid) ?: return
-        clearEntryWarmup(player)
-        val level = player.server.getLevel(target.levelKey) ?: return
-        val x = target.pos.x + 0.5
-        val y = target.pos.y + 1.0
-        val z = target.pos.z + 0.5
-        player.fallDistance = 0.0f
-        player.teleportTo(level, x, y, z, player.yRot, player.xRot)
-        player.connection.resetPosition()
+        detachPlayer(record, player.uuid, disqualify = true)
+        backend.clearPlayer(player.uuid)
+        forcedCleanups++
+        persistOrClose(player.server, record, "player-death")
     }
 
     @SubscribeEvent
+    fun onPlayerChangedDimension(event: PlayerEvent.PlayerChangedDimensionEvent) {
+        val player = event.entity as? ServerPlayer ?: return
+        if (player.uuid in returningPlayers) return
+        val record = mutableRunForPlayer(player.uuid) ?: return
+        if (event.to != record.backendLevelKey) {
+            detachPlayer(record, player.uuid, disqualify = true)
+            backend.clearPlayer(player.uuid)
+            forcedCleanups++
+            persistOrClose(player.server, record, "external-dimension-change")
+        }
+    }
+
+    // Kept as a source-compatible no-op for older GameTests; death cleanup is immediate now.
+    fun onPlayerRespawn(@Suppress("UNUSED_PARAMETER") event: PlayerEvent.PlayerRespawnEvent) = Unit
+
+    @SubscribeEvent
     fun onServerStopping(event: ServerStoppingEvent) {
-        shuttingDown = true
-        if (runs.isEmpty()) {
-            return
-        }
-        logger.info("Server stopping; clearing run registry runs={}", runs.size)
-        runs.values.toList().forEach { record ->
-            clearOriginObelisk(event.server, record, startCooldown = false)
-        }
-        runs.clear()
-        dirtyRunIds.clear()
-        pendingEntryWarmups.clear()
+        runs.keys.toList().forEach { closeRun(event.server, it, "server-stopping") }
         RunSavedData.get(event.server).replaceAll(emptyList())
     }
 
     @SubscribeEvent
     fun onServerStopped(@Suppress("UNUSED_PARAMETER") event: ServerStoppedEvent) {
-        shuttingDown = false
         runs.clear()
-        dirtyRunIds.clear()
-        pendingEntryWarmups.clear()
+        playerRunIds.clear()
+        returningPlayers.clear()
     }
 
     fun restoreFromSavedData(server: MinecraftServer) {
-        runs.clear()
-        dirtyRunIds.clear()
-        pendingEntryWarmups.clear()
-        RunSavedData.get(server).values().forEach { record ->
-            runs[record.id] = record.deepCopy()
-        }
+        onServerStarted(ServerStartedEvent(server))
     }
 
     private fun createRun(
@@ -382,50 +273,28 @@ object RunRegistry : RunService {
         definitionId: String,
         originLevelKey: ResourceKey<Level>?,
         originObeliskPos: BlockPos?,
-        queuedPlayerId: UUID?
+        ownerId: UUID?
     ): RunRecord? {
+        if (runs.size >= MAX_ACTIVE_SESSIONS) return null
         val runId = UUID.randomUUID()
         val templateId = templateIdForDefinition(definitionId)
-        val prepared = when (val requested = backend.requestPreparedSite(server, templateId, originLevelKey, originObeliskPos)) {
-            is PreparedSiteResult.Accepted -> requested.handle
+        val prepared = when (val result = backend.requestPreparedSite(server, templateId, originLevelKey, originObeliskPos)) {
+            is PreparedSiteResult.Accepted -> result.handle
             is PreparedSiteResult.Rejected -> {
-                logger.warn("Font backend rejected site request definition={} template={} reason={}", definitionId, templateId, requested.reason)
+                logger.warn("Font backend rejected template={} reason={}", templateId, result.reason)
                 return null
             }
         }
-
-        var spawnPos: BlockPos? = null
-        var backendLevelKey: ResourceKey<Level>? = prepared.backendLevelKey
-        var backendCenter: BlockPos? = prepared.siteCenter
-        var backendBounds: SiteBounds? = prepared.siteBounds
-        var initialState = RunState.ALLOCATED
-
-        when (val status = backend.pollPreparedSite(server, prepared)) {
-            is PreparedSiteStatus.Ready -> {
-                val active = when (val activated = backend.activateRun(server, prepared, runId, queuedPlayerId)) {
-                    is ActiveSiteResult.Accepted -> activated
-                    is ActiveSiteResult.Rejected -> {
-                        logger.warn("Font backend activation rejected run={} template={} reason={}", runId, templateId, activated.reason)
-                        return null
-                    }
-                }
-                backendLevelKey = active.handle.backendLevelKey
-                backendCenter = active.handle.siteCenter
-                backendBounds = active.handle.siteBounds
-                spawnPos = active.spawnPos.takeIf { it != BlockPos.ZERO } ?: status.spawnPos.takeIf { it != BlockPos.ZERO }
-                initialState = RunState.ALLOCATED
-            }
-            is PreparedSiteStatus.Preparing -> {
-                logger.warn("Font backend unexpectedly returned preparing template={} detail={}", templateId, status.detail)
-                return null
-            }
-            is PreparedSiteStatus.Failed -> {
-                logger.warn("Font backend site failed template={} reason={}", templateId, status.reason)
+        val ready = backend.pollPreparedSite(server, prepared) as? PreparedSiteStatus.Ready ?: return null
+        val active = when (val result = backend.activateRun(server, prepared, runId, ownerId)) {
+            is ActiveSiteResult.Accepted -> result
+            is ActiveSiteResult.Rejected -> {
+                logger.warn("Font backend activation rejected run={} reason={}", runId, result.reason)
                 return null
             }
         }
-
-        val record = RunRecord(
+        val now = currentGameTime(server)
+        return RunRecord(
             id = runId,
             instanceId = prepared.siteId,
             obeliskId = obeliskId,
@@ -433,214 +302,125 @@ object RunRegistry : RunService {
             instanceTemplateId = templateId,
             originLevelKey = originLevelKey,
             originObeliskPos = originObeliskPos,
-            backendLevelKey = backendLevelKey,
-            backendSiteCenter = backendCenter,
-            backendSiteBounds = backendBounds,
-            spawnPos = spawnPos,
-            createdGameTime = currentGameTime(server),
-            updatedGameTime = currentGameTime(server),
-            state = initialState
-        )
-        if (queuedPlayerId != null) {
-            record.pendingPlayers += queuedPlayerId
-        }
-        runs[record.id] = record
-        persistRunNow(server, record)
-        logger.info(
-            "Created font run {} definition={} template={} site={} level={} center={} spawnReady={}",
-            runId,
-            definitionId,
-            templateId,
-            prepared.siteId,
-            prepared.backendLevelKey.location(),
-            prepared.siteCenter,
-            spawnPos != null
-        )
-        return record
-    }
-
-    private fun tickRun(server: MinecraftServer, record: RunRecord) {
-        when (record.state) {
-            RunState.ALLOCATED,
-            RunState.WARMING_UP -> warmUpRun(server, record)
-            RunState.ACTIVE -> {
-                warmUpRun(server, record)
-                tickActiveRun(server, record)
-            }
-            RunState.COLLAPSING,
-            RunState.FINISHING,
-            RunState.FINISHED,
-            RunState.FAILED -> Unit
+            backendLevelKey = active.handle.backendLevelKey,
+            backendSiteCenter = active.handle.siteCenter,
+            backendSiteBounds = active.handle.siteBounds,
+            spawnPos = active.spawnPos.takeIf { it != BlockPos.ZERO }
+                ?: ready.spawnPos.takeIf { it != BlockPos.ZERO },
+            createdGameTime = now,
+            updatedGameTime = now,
+            state = RunState.ALLOCATED
+        ).also {
+            runs[it.id] = it
+            RunSavedData.get(server).upsert(it)
         }
     }
 
-    private fun warmUpRun(server: MinecraftServer, record: RunRecord) {
-        record.pendingPlayers.toList().forEach { playerId ->
-            val player = server.playerList.getPlayer(playerId) ?: return@forEach
-            tryQueueEntry(server, record, player)
-        }
-    }
-
-    private fun tickActiveRun(server: MinecraftServer, record: RunRecord) {
-        val obelisk = getOriginObelisk(server, record)
-        if (obelisk == null) {
-            collapseRun(server, record, "Origin font was destroyed!")
-            return
-        }
-
+    private fun enterPlayer(server: MinecraftServer, record: RunRecord, player: ServerPlayer): String {
         val handle = activeHandle(server, record)
-        var playerCount = 0
-        record.activePlayers.toList().forEach { playerId ->
-            val player = server.playerList.getPlayer(playerId) ?: return@forEach
-            if (handle == null || !backend.isPlayerInRun(player, handle)) {
-                return@forEach
-            }
-            playerCount++
-        }
-
-        if (playerCount <= 0) {
-            record.emptyTicks++
-            if (record.emptyTicks >= ObeliskConstants.RUN_EMPTY_CLEANUP_DELAY_TICKS) {
-                finishRun(server, record.id)
-                return
-            }
-            record.updatedGameTime = currentGameTime(server)
-            markRunDirty(record.id)
-            return
-        }
-
-        record.emptyTicks = 0L
-        record.ticksElapsed++
-        if (record.ticksElapsed % ObeliskConstants.DRAIN_EXPONENTIAL_INTERVAL_TICKS.toLong() == 0L) {
-            record.drainMultiplier = exp(obelisk.getModifiedDrainFactor() * record.ticksElapsed.toDouble())
-        }
-        val baseDrain = obelisk.getModifiedBaseDrain() + (playerCount * obelisk.getModifiedPlayerDrain())
-        val drainAmount = (baseDrain * record.drainMultiplier).coerceAtLeast(0.01)
-        val drained = obelisk.drainBlood(drainAmount)
-        record.updatedGameTime = currentGameTime(server)
-        if (!drained) {
-            collapseRun(server, record, "The font runs out of trip juice.", "juice-depleted")
-            return
-        }
-        markRunDirty(record.id)
-    }
-
-    private fun collapseRun(server: MinecraftServer, record: RunRecord, message: String, destroyReason: String = "collapsed") {
-        if (record.state == RunState.COLLAPSING || record.state == RunState.FINISHING) {
-            return
-        }
-        record.state = RunState.COLLAPSING
-        returnPlayers(server, record, message, disqualify = true)
-        finishRun(server, record.id, destroyReason)
-    }
-
-    private fun returnPlayers(server: MinecraftServer, record: RunRecord, message: String?, disqualify: Boolean) {
-        val onlinePlayers = (record.activePlayers + record.pendingPlayers)
-            .mapNotNull { server.playerList.getPlayer(it) }
-        onlinePlayers.forEach { player ->
-            val returned = returnPlayer(player, disqualify = disqualify)
-            if (!returned && message != null) {
-                logger.warn("Could not return player {} for font run {}", player.gameProfile.name, record.id)
-            }
-        }
-        record.pendingPlayers.clear()
-        record.activePlayers.clear()
-    }
-
-    private fun markRunDeath(player: ServerPlayer, record: RunRecord) {
-        val originLevelKey = record.originLevelKey
-        val originPos = record.originObeliskPos
-        if (originLevelKey != null && originPos != null) {
-            pendingDeathReturns[player.uuid] = DeathReturnTarget(originLevelKey, originPos)
-        }
-        removePlayer(record, player.uuid, disqualify = true)
-        backend.clearPlayer(player.uuid)
-        record.updatedGameTime = currentGameTime(player.server)
-        persistRunNow(player.server, record)
-        logger.info("Player {} died in dimensional font run {}; disqualified from rewards", player.gameProfile.name, record.id)
-    }
-
-    private fun tryQueueEntry(server: MinecraftServer, record: RunRecord, player: ServerPlayer): RunEntryAttempt {
-        val warmup = pendingEntryWarmups[player.uuid]
-        if (warmup == null || warmup.runId != record.id) {
-            startEntryWarmup(server, record, player, 0.0, "Drinking from ${displayName(record.definitionId)}...")
-            return RunEntryAttempt.Waiting(pendingEntryWarmups[player.uuid]?.message ?: "Drinking...")
-        }
-        applyEntryWarmupEffects(player)
-        val elapsed = currentGameTime(server) - warmup.startedGameTime
-        if (elapsed < ENTRY_WARMUP_TICKS) {
-            return RunEntryAttempt.Waiting(warmup.message)
-        }
-        val handle = activeHandle(server, record)
-        if (handle == null) {
-            refundEntryCost(server, record, player)
-            clearEntryWarmup(player)
-            removePlayer(record, player.uuid)
-            persistRunNow(server, record)
-            return RunEntryAttempt.Rejected("Run is unavailable right now - backend site is missing")
-        }
-        if (backend.isPlayerInRun(player, handle)) {
-            clearEntryWarmup(player)
-            record.pendingPlayers.remove(player.uuid)
-            record.activePlayers.add(player.uuid)
-            record.state = RunState.ACTIVE
-            refreshSpawnPos(server, record)
-            record.updatedGameTime = currentGameTime(server)
-            persistRunNow(server, record)
-            postFontEnterEvent(player, record)
-            return RunEntryAttempt.Entered
-        }
+            ?: return "The dimensional font destination is unavailable."
         return when (val result = backend.enterPlayer(player, handle)) {
             EnterRunResult.Entered -> {
-                logger.info("Entered player {} into font run {} site {}", player.gameProfile.name, record.id, record.instanceId)
-                clearEntryWarmup(player)
-                record.pendingPlayers.remove(player.uuid)
-                record.activePlayers.add(player.uuid)
-                markEligible(record, player.uuid)
+                record.activePlayers += player.uuid
+                record.participants += player.uuid
+                record.survivors += player.uuid
+                record.disqualifiedPlayers -= player.uuid
                 record.state = RunState.ACTIVE
-                refreshSpawnPos(server, record)
                 record.updatedGameTime = currentGameTime(server)
-                persistRunNow(server, record)
+                playerRunIds[player.uuid] = record.id
+                refreshSpawnPos(server, record)
+                RunSavedData.get(server).upsert(record)
+                totalEntries++
                 postFontEnterEvent(player, record)
-                RunEntryAttempt.Entered
+                "Drinking from ${displayName(record.definitionId)}..."
             }
             is EnterRunResult.Rejected -> {
-                logger.warn(
-                    "Rejected player {} entry into font run {} site {} reason={}",
-                    player.gameProfile.name,
-                    record.id,
-                    record.instanceId,
-                    result.reason
-                )
-                refundEntryCost(server, record, player)
-                clearEntryWarmup(player)
-                removePlayer(record, player.uuid)
-                persistRunNow(server, record)
-                RunEntryAttempt.Rejected("Run is unavailable right now - ${result.reason}")
+                logger.warn("Rejected player {} entry run={} reason={}", player.gameProfile.name, record.id, result.reason)
+                "The dimensional font destination is unavailable: ${result.reason}"
             }
+        }
+    }
+
+    private fun closeRun(server: MinecraftServer, runId: UUID, reason: String): Boolean {
+        val record = runs[runId] ?: return false
+        if (record.state == RunState.FINISHING || record.state == RunState.FINISHED) return false
+        record.state = RunState.FINISHING
+        (record.activePlayers + record.pendingPlayers).toList().forEach { playerId ->
+            val player = server.playerList.getPlayer(playerId)
+            if (player != null) {
+                returningPlayers += playerId
+                try {
+                    backend.returnPlayer(player)
+                } finally {
+                    returningPlayers -= playerId
+                }
+            }
+            backend.clearPlayer(playerId)
+            playerRunIds.remove(playerId)
+        }
+        record.activePlayers.clear()
+        record.pendingPlayers.clear()
+        clearOriginObelisk(server, record)
+        activeHandle(server, record)?.let { backend.destroyRun(server, it, reason) }
+        runs.remove(runId)
+        RunSavedData.get(server).remove(runId)
+        return true
+    }
+
+    private fun persistOrClose(server: MinecraftServer, record: RunRecord?, reason: String) {
+        if (record == null) return
+        if (record.activePlayers.isEmpty() && record.pendingPlayers.isEmpty()) {
+            closeRun(server, record.id, reason)
+        } else {
+            record.updatedGameTime = currentGameTime(server)
+            RunSavedData.get(server).upsert(record)
+        }
+    }
+
+    private fun detachPlayer(record: RunRecord?, playerId: UUID, disqualify: Boolean) {
+        playerRunIds.remove(playerId)
+        if (record == null) return
+        record.activePlayers.remove(playerId)
+        record.pendingPlayers.remove(playerId)
+        if (disqualify) {
+            record.survivors.remove(playerId)
+            record.disqualifiedPlayers += playerId
+        }
+    }
+
+    private fun mutableRunForPlayer(playerId: UUID): RunRecord? {
+        val runId = playerRunIds[playerId] ?: return null
+        return runs[runId] ?: run {
+            playerRunIds.remove(playerId)
+            null
+        }
+    }
+
+    private fun activeHandle(server: MinecraftServer, record: RunRecord): ActiveSiteHandle? {
+        return backend.findActiveHandle(server, record.instanceId) ?: run {
+            val levelKey = record.backendLevelKey ?: return null
+            val center = record.backendSiteCenter ?: return null
+            val bounds = record.backendSiteBounds ?: return null
+            ActiveSiteHandle(record.instanceId, record.id, record.instanceTemplateId, levelKey, center, bounds)
         }
     }
 
     private fun refreshSpawnPos(server: MinecraftServer, record: RunRecord) {
-        val prepared = preparedHandleFromRecord(record) ?: return
-        val status = backend.pollPreparedSite(server, prepared) as? PreparedSiteStatus.Ready ?: return
-        val spawn = status.spawnPos.takeIf { it != BlockPos.ZERO } ?: return
-        if (record.spawnPos != spawn) {
-            record.spawnPos = spawn.immutable()
-            markRunDirty(record.id)
-        }
+        val status = backend.pollPreparedSite(
+            server,
+            com.bettercontent.dimensiondrink.runtime.backend.PreparedSiteHandle(
+                record.instanceId,
+                record.instanceTemplateId,
+                record.backendLevelKey ?: return,
+                record.backendSiteCenter ?: return,
+                record.backendSiteBounds ?: return
+            )
+        ) as? PreparedSiteStatus.Ready ?: return
+        status.spawnPos.takeIf { it != BlockPos.ZERO }?.let { record.spawnPos = it.immutable() }
     }
 
     private fun postFontEnterEvent(player: ServerPlayer, record: RunRecord) {
-        val context = FontEventContextResolver.resolve(record)
-        if (context == null) {
-            logger.warn(
-                "Skipping Font enter event for run {} definition={} because its destination aggregate is not configured",
-                record.id,
-                record.definitionId
-            )
-            return
-        }
+        val context = FontEventContextResolver.resolve(record) ?: return
         MinecraftForge.EVENT_BUS.post(
             FontEnterEvent(
                 player = player,
@@ -652,170 +432,17 @@ object RunRegistry : RunService {
         )
     }
 
-    private fun discardEmptyRun(server: MinecraftServer, record: RunRecord, reason: String) {
-        if (record.activePlayers.isNotEmpty() || record.pendingPlayers.isNotEmpty()) {
-            return
-        }
-        logger.warn("Discarding empty font run {} definition={} site={} reason={}", record.id, record.definitionId, record.instanceId, reason)
-        clearOriginObelisk(server, record, startCooldown = false)
-        activeHandle(server, record)?.let { backend.destroyRun(server, it, reason) }
-        runs.remove(record.id)
-        deleteRunNow(server, record.id)
+    private fun clearOriginObelisk(server: MinecraftServer, record: RunRecord) {
+        val level = record.originLevelKey?.let(server::getLevel) ?: return
+        val obelisk = record.originObeliskPos?.let(level::getBlockEntity) as? ObeliskBlockEntity ?: return
+        if (obelisk.activeRunId == record.id) obelisk.setActiveRun(null)
     }
 
-    private fun startEntryWarmup(server: MinecraftServer, record: RunRecord, player: ServerPlayer, bloodCost: Double, message: String) {
-        val current = pendingEntryWarmups[player.uuid]
-        if (current?.runId == record.id) {
-            applyEntryWarmupEffects(player)
-            return
-        }
-        pendingEntryWarmups[player.uuid] = EntryWarmup(
-            runId = record.id,
-            startedGameTime = currentGameTime(server),
-            bloodCost = bloodCost,
-            message = message
-        )
-        record.state = RunState.WARMING_UP
-        applyEntryWarmupEffects(player)
-    }
+    private fun templateIdForDefinition(definitionId: String): String =
+        ObeliskDataManager.getObelisk(definitionId)?.instanceTemplateId ?: definitionId
 
-    private fun applyEntryWarmupEffects(player: ServerPlayer) {
-        applyDrinkDebuffs(player, ENTRY_DEBUFF_TICKS)
-        player.foodData.addExhaustion(0.16f)
-    }
-
-    private fun applyDrinkDebuffs(player: ServerPlayer, durationTicks: Int) {
-        player.addEffect(MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, durationTicks, 3, false, false, true))
-        player.addEffect(MobEffectInstance(MobEffects.DARKNESS, durationTicks, 0, false, false, true))
-    }
-
-    private fun clearEntryWarmup(player: ServerPlayer) {
-        pendingEntryWarmups.remove(player.uuid)
-        player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN)
-        player.removeEffect(MobEffects.DARKNESS)
-    }
-
-    private fun clearEntryWarmup(server: MinecraftServer, playerId: UUID) {
-        pendingEntryWarmups.remove(playerId)
-        server.playerList.getPlayer(playerId)?.let(::clearEntryWarmup)
-    }
-
-    private fun refundEntryCost(server: MinecraftServer, record: RunRecord, player: ServerPlayer) {
-        val cost = pendingEntryWarmups[player.uuid]?.bloodCost ?: 0.0
-        if (cost <= 0.0) return
-        getOriginObelisk(server, record)?.restoreRunBlood(cost)
-    }
-
-    private fun preparedHandleFromRecord(record: RunRecord): PreparedSiteHandle? {
-        val levelKey = record.backendLevelKey ?: return null
-        val center = record.backendSiteCenter ?: return null
-        val bounds = record.backendSiteBounds ?: return null
-        return PreparedSiteHandle(record.instanceId, record.instanceTemplateId, levelKey, center, bounds)
-    }
-
-    private fun activeHandle(server: MinecraftServer, record: RunRecord): ActiveSiteHandle? {
-        return backend.findActiveHandle(server, record.instanceId) ?: activeHandleFromRecord(record)
-    }
-
-    private fun activeHandleFromRecord(record: RunRecord): ActiveSiteHandle? {
-        val levelKey = record.backendLevelKey ?: return null
-        val center = record.backendSiteCenter ?: return null
-        val bounds: SiteBounds = record.backendSiteBounds ?: return null
-        return ActiveSiteHandle(record.instanceId, record.id, record.instanceTemplateId, levelKey, center, bounds)
-    }
-
-    private fun clearOriginObelisk(server: MinecraftServer, record: RunRecord, startCooldown: Boolean) {
-        val obelisk = getOriginObelisk(server, record) ?: return
-        if (obelisk.activeRunId == record.id) {
-            obelisk.setActiveRun(null)
-        }
-        if (startCooldown) {
-            obelisk.startCooldown()
-        }
-    }
-
-    private fun getOriginObelisk(server: MinecraftServer, record: RunRecord): ObeliskBlockEntity? {
-        val levelKey = record.originLevelKey ?: return null
-        val pos = record.originObeliskPos ?: return null
-        val level = server.getLevel(levelKey) ?: return null
-        return level.getBlockEntity(pos) as? ObeliskBlockEntity
-    }
-
-    private fun restoreKillEnergy(server: MinecraftServer, record: RunRecord) {
-        val obelisk = getOriginObelisk(server, record) ?: return
-        val restoreAmount = (obelisk.getMaxBlood() * 0.02).coerceAtLeast(1.0)
-        obelisk.restoreRunBlood(restoreAmount)
-    }
-
-    private fun recordMonsterKill(server: MinecraftServer, record: RunRecord): Boolean {
-        record.monstersKilled++
-        record.updatedGameTime = currentGameTime(server)
-        restoreKillEnergy(server, record)
-        markRunDirty(record.id)
-        return true
-    }
-
-    private fun markEligible(record: RunRecord, playerId: UUID) {
-        record.participants += playerId
-        record.survivors += playerId
-        record.disqualifiedPlayers.remove(playerId)
-    }
-
-    private fun removePlayer(record: RunRecord, playerId: UUID, disqualify: Boolean = false) {
-        record.activePlayers.remove(playerId)
-        record.pendingPlayers.remove(playerId)
-        pendingEntryWarmups.remove(playerId)
-        if (disqualify) {
-            record.survivors.remove(playerId)
-            record.disqualifiedPlayers += playerId
-        }
-        record.updatedGameTime = record.updatedGameTime.coerceAtLeast(record.createdGameTime)
-    }
-
-    private fun mutableRunForPlayer(playerId: UUID): RunRecord? {
-        return runs.values.firstOrNull { playerId in it.activePlayers || playerId in it.pendingPlayers }
-    }
-
-    private fun templateIdForDefinition(definitionId: String): String {
-        return ObeliskDataManager.getObelisk(definitionId)?.instanceTemplateId ?: definitionId
-    }
-
-    private fun displayName(definitionId: String): String {
-        return ObeliskDataManager.getObelisk(definitionId)?.displayName ?: definitionId
-    }
+    private fun displayName(definitionId: String): String =
+        ObeliskDataManager.getObelisk(definitionId)?.displayName ?: definitionId
 
     private fun currentGameTime(server: MinecraftServer): Long = server.overworld().gameTime
-
-    private fun markRunDirty(runId: UUID) {
-        dirtyRunIds += runId
-    }
-
-    private fun persistRunNow(server: MinecraftServer, record: RunRecord) {
-        RunSavedData.get(server).upsert(record)
-        dirtyRunIds.remove(record.id)
-    }
-
-    private fun deleteRunNow(server: MinecraftServer, runId: UUID) {
-        RunSavedData.get(server).remove(runId)
-        dirtyRunIds.remove(runId)
-    }
-
-    private fun flushDirtyRuns(server: MinecraftServer, force: Boolean) {
-        if (dirtyRunIds.isEmpty()) {
-            return
-        }
-        if (!force && currentGameTime(server) % RUN_SAVE_INTERVAL_TICKS != 0L) {
-            return
-        }
-        val data = RunSavedData.get(server)
-        dirtyRunIds.toList().forEach { runId ->
-            val record = runs[runId]
-            if (record == null) {
-                data.remove(runId)
-            } else {
-                data.upsert(record)
-            }
-        }
-        dirtyRunIds.clear()
-    }
 }

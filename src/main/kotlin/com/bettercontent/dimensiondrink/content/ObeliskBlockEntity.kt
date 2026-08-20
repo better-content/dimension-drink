@@ -5,7 +5,6 @@ import com.bettercontent.dimensiondrink.compat.StillBeatingHeartCompat
 import com.bettercontent.dimensiondrink.data.ObeliskDataManager
 import com.bettercontent.dimensiondrink.registry.ModBlockEntities
 import com.bettercontent.dimensiondrink.registry.ModBlocks
-import com.bettercontent.dimensiondrink.runtime.energy.FERegenerationHandler
 import com.bettercontent.dimensiondrink.runtime.ObeliskRuntimeService
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
@@ -171,10 +170,6 @@ class ObeliskBlockEntity(
     private val energyCapability: LazyOptional<IEnergyStorage> = LazyOptional.of { energyStorage }
     private val fluidCapability: LazyOptional<IFluidHandler> = LazyOptional.of { fluidStorage }
     private val itemCapability: LazyOptional<IItemHandler> = LazyOptional.of { limitedItemHandler }
-
-    init {
-        FERegenerationHandler.registerObelisk(this)
-    }
 
     fun isRunActive(): Boolean = activeRunId != null
 
@@ -693,6 +688,5 @@ class ObeliskBlockEntity(
     override fun setRemoved() {
         ObeliskRuntimeService.unregisterLoaded(this)
         super.setRemoved()
-        FERegenerationHandler.unregisterObelisk(this)
     }
 }

@@ -14,7 +14,6 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.util.RandomSource
 import net.minecraft.world.entity.Mob
-import net.minecraft.world.level.ChunkPos
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.LiquidBlock
@@ -29,13 +28,12 @@ import kotlin.math.roundToInt
 
 object CanonicalDimensionBackend : RunWorldBackend {
     private const val SPAWN_CLEARANCE = 3
-    private const val SITE_SAVE_INTERVAL_TICKS = 100L
+    private const val MAX_SAVED_SITES = 256
     private val LIFE_ESSENCE_FLOWING_ID = ResourceLocation("bloodmagic", "life_essence_fluid_flowing")
 
     private val logger = LogUtils.getLogger()
     private val playerBindings = linkedMapOf<UUID, UUID>()
     private val configCache = linkedMapOf<String, BackendConfig>()
-    private var siteStateDirty = false
 
     override fun validateTemplate(server: MinecraftServer, templateId: String): String? {
         val target = CanonicalTargetResolver.targetLevelKey(templateId) ?: return "target dimension for '$templateId' is unknown"
@@ -62,6 +60,9 @@ object CanonicalDimensionBackend : RunWorldBackend {
         val provisionalCenter = BlockPos(mapped.x, emergencySpawnY(level), mapped.z)
         val now = gameTime(server)
         val existing = reusableSite(data, templateId, originLevelKey, originObeliskPos)
+        if (existing == null) {
+            data.pruneInactive(MAX_SAVED_SITES - 1)
+        }
         val record = existing ?: RunSiteRecord(
             siteId = UUID.randomUUID(),
             templateId = templateId,
@@ -125,9 +126,6 @@ object CanonicalDimensionBackend : RunWorldBackend {
             ?: return EnterRunResult.Rejected("target dimension ${record.backendLevelKey.location()} is not loaded")
         val spawn = resolveArrival(level, record, configFor(record.templateId))
         val landing = normalizedArrivalTeleportPos(level, spawn)
-        if (record.touchedChunks.add(ChunkPos(spawn))) {
-            markSiteDirty(player.server)
-        }
         record.updatedGameTime = gameTime(player.server)
         player.teleportTo(level, landing.x + 0.5, landing.y.toDouble(), landing.z + 0.5, player.yRot, player.xRot)
         playEntrySounds(level, spawn)
@@ -165,7 +163,7 @@ object CanonicalDimensionBackend : RunWorldBackend {
             despawnRunMobs(level, record)
         }
         playerBindings.entries.removeIf { (_, siteId) -> siteId == record.siteId }
-        record.state = SiteState.SCARRED
+        record.state = SiteState.PREPARED
         record.runId = null
         record.ownerId = null
         record.updatedGameTime = gameTime(server)
@@ -179,26 +177,7 @@ object CanonicalDimensionBackend : RunWorldBackend {
         )
     }
 
-    override fun tick(server: MinecraftServer) {
-        val data = RunSiteSavedData.get(server)
-        val activeSites = data.values().filter { it.state == SiteState.ACTIVE }
-        activeSites.forEach { record -> record.updatedGameTime = gameTime(server) }
-        if (activeSites.isNotEmpty()) {
-            val activeByDimension = activeSites.groupBy { it.backendLevelKey }
-            server.playerList.players.forEach { player ->
-                activeByDimension[player.serverLevel().dimension()]?.forEach { record ->
-                    if (record.siteBounds.contains(player.blockPosition())) {
-                        if (record.touchedChunks.add(ChunkPos(player.blockPosition()))) {
-                            markSiteDirty(server)
-                        }
-                        playerBindings[player.uuid] = record.siteId
-                    }
-                }
-            }
-        }
-
-        flushDirtySites(server, force = false)
-    }
+    override fun tick(server: MinecraftServer) = Unit
 
     override fun clearPlayer(playerId: UUID) {
         playerBindings.remove(playerId)
@@ -234,8 +213,8 @@ object CanonicalDimensionBackend : RunWorldBackend {
     }
 
     private fun resolveArrival(level: ServerLevel, record: RunSiteRecord, config: BackendConfig): BlockPos {
-        val resolvedFloor = if (record.touchedChunks.isNotEmpty() && record.spawnPos != null) {
-            record.spawnPos!!.below()
+        val resolvedFloor = if (record.spawnPos != null) {
+            record.spawnPos!!.below(2)
         } else {
             val desired = record.siteCenter
             findSafeFloor(level, desired.x, desired.z, config.spawnSearchRadius)
@@ -393,24 +372,8 @@ object CanonicalDimensionBackend : RunWorldBackend {
         }
     }
 
-    private fun markSiteDirty(server: MinecraftServer, immediate: Boolean = false) {
-        if (immediate) {
-            RunSiteSavedData.get(server).setDirty()
-            siteStateDirty = false
-            return
-        }
-        siteStateDirty = true
-    }
-
-    private fun flushDirtySites(server: MinecraftServer, force: Boolean) {
-        if (!siteStateDirty) {
-            return
-        }
-        if (!force && gameTime(server) % SITE_SAVE_INTERVAL_TICKS != 0L) {
-            return
-        }
+    private fun markSiteDirty(server: MinecraftServer, @Suppress("UNUSED_PARAMETER") immediate: Boolean = false) {
         RunSiteSavedData.get(server).setDirty()
-        siteStateDirty = false
     }
 
     private fun gameTime(server: MinecraftServer): Long = server.overworld().gameTime
