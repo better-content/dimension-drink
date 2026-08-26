@@ -22,13 +22,7 @@ internal object ArrivalSiteLayout {
         }
     }
 
-    private val scatterOffsets = floorOffsets.filter { offset ->
-        (offset.x != 0 || offset.z != 0) && maxOf(kotlin.math.abs(offset.x), kotlin.math.abs(offset.z)) == FLOOR_RADIUS
-    }
-
     fun floorOffsets(): List<BlockPos> = floorOffsets
-
-    fun scatterOffsets(): List<BlockPos> = scatterOffsets
 
     fun verdigrisCopperIds(): Set<String> = verdigrisCopperIds
 

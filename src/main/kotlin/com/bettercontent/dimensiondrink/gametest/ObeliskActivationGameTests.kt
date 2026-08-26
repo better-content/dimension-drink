@@ -11,9 +11,9 @@ class ObeliskActivationGameTests {
         ObeliskGameTestSupport.chargedObeliskActivatesRunAndReturnsPlayer(helper)
     }
 
-    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_activation_minimum_blood", timeoutTicks = 800)
-    fun font_requires_visible_blood_to_start_run(helper: GameTestHelper) {
-        ObeliskGameTestSupport.fontRequiresVisibleBloodToStartRun(helper)
+    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_activation_minimum_charge", timeoutTicks = 800)
+    fun font_requires_visible_charge_to_start_run(helper: GameTestHelper) {
+        ObeliskGameTestSupport.fontRequiresVisibleChargeToStartRun(helper)
     }
 
     @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_activation_relocated", timeoutTicks = 3600)

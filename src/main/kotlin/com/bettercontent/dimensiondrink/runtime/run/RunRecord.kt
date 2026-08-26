@@ -30,8 +30,6 @@ data class RunRecord(
     var monstersKilled: Int = 0,
     var totalDamageDealt: Float = 0f,
     var ticksElapsed: Long = 0L,
-    var drainMultiplier: Double = 1.0,
-    var emptyTicks: Long = 0L,
     var rewardsGranted: Boolean = false,
     var state: RunState = RunState.ALLOCATED
 ) {
@@ -64,8 +62,6 @@ data class RunRecord(
         putInt("monsters_killed", monstersKilled)
         putFloat("total_damage_dealt", totalDamageDealt)
         putLong("ticks_elapsed", ticksElapsed)
-        putDouble("drain_multiplier", drainMultiplier)
-        putLong("empty_ticks", emptyTicks)
         putBoolean("rewards_granted", rewardsGranted)
         originLevelKey?.location()?.toString()?.let { putString("origin_level_key", it) }
         originObeliskPos?.let { put("origin_obelisk_pos", encodeBlockPos(it)) }
@@ -123,8 +119,6 @@ data class RunRecord(
                 monstersKilled = if (tag.contains("monsters_killed")) tag.getInt("monsters_killed") else 0,
                 totalDamageDealt = if (tag.contains("total_damage_dealt")) tag.getFloat("total_damage_dealt") else 0f,
                 ticksElapsed = tag.getLong("ticks_elapsed"),
-                drainMultiplier = if (tag.contains("drain_multiplier")) tag.getDouble("drain_multiplier") else 1.0,
-                emptyTicks = tag.getLong("empty_ticks"),
                 rewardsGranted = tag.contains("rewards_granted") && tag.getBoolean("rewards_granted"),
                 state = runCatching { RunState.valueOf(tag.getString("state")) }.getOrDefault(RunState.ALLOCATED)
             )

@@ -12,6 +12,11 @@ class ObeliskSmokeGameTests {
         ObeliskGameTestSupport.smokeHeadlessRoundTrip(helper)
     }
 
+    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "font_smoke", timeoutTicks = 1200)
+    fun entry_cost_and_active_drain_close_dry_run(helper: GameTestHelper) {
+        ObeliskGameTestSupport.smokeEntryCostAndActiveDrainCloseDryRun(helper)
+    }
+
     @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "font_smoke", timeoutTicks = 2400)
     fun repeated_round_trips_reuse_site_without_session_leaks(helper: GameTestHelper) {
         ObeliskGameTestSupport.smokeRepeatedRoundTrips(helper)

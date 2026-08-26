@@ -59,19 +59,14 @@ import net.minecraft.world.level.levelgen.structure.BoundingBox
 import net.minecraft.util.RandomSource
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.Items
-import net.minecraft.world.level.material.Fluids
 import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.Vec3
-import net.minecraftforge.common.capabilities.ForgeCapabilities
 import net.minecraftforge.common.MinecraftForge
 import net.minecraftforge.network.NetworkHooks
 import net.minecraftforge.event.entity.living.LivingDeathEvent
 import net.minecraftforge.event.entity.player.PlayerEvent
 import net.minecraftforge.eventbus.api.SubscribeEvent
 import net.minecraftforge.fml.ModList
-import net.minecraftforge.fluids.FluidStack
-import net.minecraftforge.fluids.capability.IFluidHandler
-import net.minecraftforge.registries.ForgeRegistries
 import java.nio.file.Files
 import java.nio.file.Path
 import java.lang.reflect.Proxy
@@ -250,6 +245,60 @@ object ObeliskGameTestSupport {
             helper.assertTrue(RunSavedData.get(server).snapshot().none { it.id == handle.runId }, "Expected saved run to clear")
             client.close(server)
             helper.succeed()
+        } catch (failure: Throwable) {
+            runId?.let { RunRegistry.finishRun(server, it) }
+            client.close(server)
+            throw failure
+        }
+    }
+
+    fun smokeEntryCostAndActiveDrainCloseDryRun(helper: GameTestHelper) {
+        val server = helper.level.server
+        val client = connectHeadlessPlayer(helper)
+        val player = client.player
+        val originLevel = helper.level
+        val originPos = helper.absolutePos(BlockPos(9, 2, 3))
+        var runId: UUID? = null
+        try {
+            placeChargedDefinitionObelisk(helper, originPos, "end")
+            val obelisk = helper.level.getBlockEntity(originPos) as ObeliskBlockEntity
+            val entryCost = obelisk.getStartChargeCost()
+            val fundedCharge = kotlin.math.ceil(entryCost).toInt() + 1
+            obelisk.setChargeStoredForDebug(fundedCharge)
+
+            val result = RunRegistry.activateObelisk(player, obelisk, originPos)
+            helper.assertTrue(result?.startsWith("Drinking from ") == true, "Expected funded entry, got: $result")
+            runId = requireNotNull(RunRegistry.getRun(player.uuid)).runId
+            helper.assertTrue(
+                obelisk.getChargeStored() < fundedCharge,
+                "Expected successful backend entry to consume the opening charge"
+            )
+
+            waitUntil(helper, 80, failureMessage = {
+                val record = runId?.let(RunRegistry::get)
+                "Expected active drain to deplete the font and close the run " +
+                    "(charge=${obelisk.getChargeStored()}, state=${record?.state}, ticks=${record?.ticksElapsed}, " +
+                    "activePlayers=${record?.activePlayers?.size}, playerDimension=${player.serverLevel().dimension().location()}, " +
+                    "playerPos=${player.blockPosition()}, baseDrain=${obelisk.getModifiedBaseDrain()}, " +
+                    "playerDrain=${obelisk.getModifiedPlayerDrain()})"
+            }, condition = {
+                client.pump(server)
+                val currentRunId = runId
+                currentRunId != null &&
+                    RunRegistry.get(currentRunId) == null &&
+                    obelisk.activeRunId == null &&
+                    player.serverLevel().dimension() == originLevel.dimension()
+            }, onSuccess = {
+                helper.assertTrue(RunRegistry.getRun(player.uuid) == null, "Expected dry closure to clear player ownership")
+                helper.assertTrue(
+                    obelisk.getChargeStored() < entryCost,
+                    "Expected a dry-closed font to remain below its next entry cost while passive recharge resumes"
+                )
+                helper.assertTrue(obelisk.isCharging(), "Expected passive recharge to resume after dry closure")
+                runId = null
+                client.close(server)
+                helper.succeed()
+            })
         } catch (failure: Throwable) {
             runId?.let { RunRegistry.finishRun(server, it) }
             client.close(server)
@@ -454,7 +503,7 @@ object ObeliskGameTestSupport {
             val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
             helper.assertTrue(obelisk != null, "Expected placed obelisk block entity to exist")
             prepareTestObelisk(obelisk!!)
-            obelisk.regenerateEnergy(obelisk.getMaxEnergyStored())
+            obelisk.regenerateCharge(obelisk.getMaxChargeStored())
 
             waitForPreparedTemplate(helper, "end") {
                 val activationResult = ModBlocks.OBELISK.get().use(
@@ -474,7 +523,7 @@ object ObeliskGameTestSupport {
                     client.pump(server)
                     val liveObelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
                     if (liveObelisk != null) {
-                        liveObelisk.setEnergyStoredForDebug(liveObelisk.getMaxEnergyStored())
+                        liveObelisk.setChargeStoredForDebug(liveObelisk.getMaxChargeStored())
                     }
                     val activeRunId = (helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)?.activeRunId
                     val run = activeRunId?.let(RunRegistry::get)
@@ -484,7 +533,7 @@ object ObeliskGameTestSupport {
                         client.pump(server)
                         val liveObelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
                         if (liveObelisk != null) {
-                            liveObelisk.setEnergyStoredForDebug(liveObelisk.getMaxEnergyStored())
+                            liveObelisk.setChargeStoredForDebug(liveObelisk.getMaxChargeStored())
                         }
                         val activeRunId = (helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity)?.activeRunId
                         val run = activeRunId?.let(RunRegistry::get)
@@ -527,7 +576,7 @@ object ObeliskGameTestSupport {
         }
     }
 
-    fun fontRequiresVisibleBloodToStartRun(helper: GameTestHelper) {
+    fun fontRequiresVisibleChargeToStartRun(helper: GameTestHelper) {
         val server = helper.level.server
         val client = connectHeadlessPlayer(helper)
         val player = client.player
@@ -542,22 +591,24 @@ object ObeliskGameTestSupport {
             prepareTestObelisk(obelisk)
 
             waitForPreparedTemplate(helper, "end") {
-                obelisk.setEnergyStoredForDebug(obelisk.getBloodStartCost().toInt() - 1)
+                val requiredCharge = kotlin.math.ceil(obelisk.getStartChargeCost()).toInt()
+                obelisk.setChargeStoredForDebug(requiredCharge - 1)
                 val rejected = RunRegistry.activateObelisk(player, obelisk, obeliskPos)
                 helper.assertTrue(
-                    rejected?.contains("500 mB") == true,
-                    "Expected font activation below 500 mB to reject, got: $rejected"
+                    rejected?.contains("charge to open") == true,
+                    "Expected font activation below its opening cost to reject, got: $rejected"
                 )
-                helper.assertTrue(obelisk.activeRunId == null, "Expected low-blood font not to create a run")
+                helper.assertTrue(obelisk.activeRunId == null, "Expected low-charge font not to create a run")
 
-                obelisk.setEnergyStoredForDebug(obelisk.getBloodStartCost().toInt())
+                obelisk.setChargeStoredForDebug(requiredCharge)
                 val accepted = RunRegistry.activateObelisk(player, obelisk, obeliskPos)
                 helper.assertTrue(
                     accepted?.startsWith("Drinking from ") == true,
-                    "Expected font activation at 500 mB to start drinking warmup, got: $accepted"
+                    "Expected font activation at its opening cost to start the run, got: $accepted"
                 )
                 val runId = obelisk.activeRunId
-                helper.assertTrue(runId != null && RunRegistry.get(runId) != null, "Expected 500 mB font to create a run")
+                helper.assertTrue(runId != null && RunRegistry.get(runId) != null, "Expected funded font to create a run")
+                helper.assertTrue(obelisk.chargeStored < requiredCharge, "Expected successful entry to consume opening charge")
                 runId?.let { RunRegistry.finishRun(server, it) }
                 client.close(server)
                 helper.succeed()
@@ -673,10 +724,10 @@ object ObeliskGameTestSupport {
                             player.serverLevel().dimension() == instance.levelKey &&
                                 RunRegistry.get(runId)?.activePlayers?.contains(player.uuid) == true
                         }, onSuccess = {
-                            liveObelisk.drainEnergy((liveObelisk.getMaxEnergyStored() * 0.15).toInt().coerceAtLeast(1))
+                            liveObelisk.drainCharge((liveObelisk.getMaxChargeStored() * 0.15).toInt().coerceAtLeast(1))
                             RunRegistry.recordDamage(player.uuid, instance.levelKey, 40f)
 
-                            waitUntil(helper, 80, "Expected low blood to create a boss bar for the run", condition = {
+                            waitUntil(helper, 80, "Expected low charge to create a boss bar for the run", condition = {
                                 RunBossBarManager.hasBossBar(runId)
                             }, onSuccess = {
                                 helper.assertTrue(RunRegistry.finishRun(server, runId), "Expected reward test finish to succeed")
@@ -754,7 +805,7 @@ object ObeliskGameTestSupport {
             helper.assertTrue(obelisk != null, "Expected placed obelisk block entity to exist")
             prepareTestObelisk(obelisk!!)
             obelisk.setDefinition(definitionId)
-            obelisk.regenerateEnergy(obelisk.getMaxEnergyStored())
+            obelisk.regenerateCharge(obelisk.getMaxChargeStored())
 
             waitForPreparedTemplate(helper, definitionId) {
                 val activationResult = ModBlocks.OBELISK.get().use(
@@ -1054,7 +1105,7 @@ object ObeliskGameTestSupport {
             altarCenter,
             9012L,
             definition.id,
-            (definition.maxBlood ?: ObeliskConstants.MAX_BLOOD_STORAGE) * 1.5
+            (definition.maxCharge ?: ObeliskConstants.MAX_CHARGE_STORAGE) * 1.5
         )
         val centerChunk = ChunkPos(altarCenter)
         val sentinelColumn = altarCenter.offset(0, 0, 20)
@@ -1173,7 +1224,7 @@ object ObeliskGameTestSupport {
             altarCenter,
             0x4c49544552414cL,
             definition.id,
-            (definition.maxBlood ?: ObeliskConstants.MAX_BLOOD_STORAGE) * 1.5
+            (definition.maxCharge ?: ObeliskConstants.MAX_CHARGE_STORAGE) * 1.5
         )
         val startChunk = ChunkPos(altarCenter)
         val startChunkBox = BoundingBox(
@@ -1212,7 +1263,7 @@ object ObeliskGameTestSupport {
             "Expected the literal generated font block entity to retain its serialized definition"
         )
         helper.assertTrue(
-            generatedFont?.bloodStored == generatedFont?.getModifiedMaxStorage()?.toDouble(),
+            generatedFont?.chargeStored == generatedFont?.getModifiedMaxStorage()?.toDouble(),
             "Expected the literal generated font block entity to be initialized and filled"
         )
 
@@ -1605,64 +1656,13 @@ object ObeliskGameTestSupport {
         helper.succeed()
     }
 
-    fun fontFluidTankAcceptsOnlyBloodMagicLifeEssence(helper: GameTestHelper) {
-        val obeliskPos = helper.absolutePos(BlockPos(20, 2, 20))
-        placeChargedDefinitionObelisk(helper, obeliskPos, "end")
-        val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
-            ?: error("Expected obelisk block entity for fluid tank test")
-        obelisk.setEnergyStoredForDebug(0)
-
-        val handler = obelisk.getCapability(ForgeCapabilities.FLUID_HANDLER, Direction.UP).resolve().orElse(null)
-        helper.assertTrue(handler != null, "Expected font to expose Forge fluid handler capability")
-        val tank = handler ?: error("Expected non-null fluid handler after assertion")
-        val lifeEssenceId = ResourceLocation("bloodmagic", "life_essence_fluid")
-        val lifeEssence = ForgeRegistries.FLUIDS.getValue(lifeEssenceId)
-            ?.takeIf { ForgeRegistries.FLUIDS.getKey(it) == lifeEssenceId || it.fluidType.descriptionId == "fluid.bloodmagic.life_essence_fluid" }
-        val water = FluidStack(Fluids.WATER, 1_000)
-
-        helper.assertTrue(tank.tanks == 1, "Expected font fluid handler to expose one internal tank")
-        helper.assertTrue(tank.getTankCapacity(0) == obelisk.getModifiedMaxStorage(), "Expected fluid tank capacity to match font blood capacity")
-        helper.assertTrue(!tank.isFluidValid(0, water), "Expected font fluid tank to reject water")
-        helper.assertTrue(tank.fill(water, IFluidHandler.FluidAction.EXECUTE) == 0, "Expected water fill to be rejected")
-        helper.assertTrue(obelisk.bloodStored.toInt() == 0, "Expected rejected fluid not to change font blood")
-        if (lifeEssence == null) {
-            helper.assertTrue(tank.getFluidInTank(0).isEmpty, "Expected missing Blood Magic runtime to report an empty fluid tank")
-            helper.succeed()
-            return
-        }
-
-        val blood = FluidStack(lifeEssence, 1_000)
-        helper.assertTrue(tank.isFluidValid(0, blood), "Expected font fluid tank to accept Blood Magic life essence")
-        helper.assertTrue(tank.fill(blood, IFluidHandler.FluidAction.SIMULATE) == 1_000, "Expected simulated life essence fill amount")
-        helper.assertTrue(obelisk.bloodStored.toInt() == 0, "Expected simulated fill not to mutate font blood")
-        helper.assertTrue(tank.fill(blood, IFluidHandler.FluidAction.EXECUTE) == 1_000, "Expected executed life essence fill")
-        helper.assertTrue(obelisk.bloodStored.toInt() == 1_000, "Expected life essence fill to update font blood")
-        helper.assertTrue(tank.getFluidInTank(0).fluid == lifeEssence, "Expected tank contents to report life essence")
-        helper.assertTrue(tank.getFluidInTank(0).amount == 1_000, "Expected tank contents to mirror font blood")
-
-        val simulatedDrain = tank.drain(400, IFluidHandler.FluidAction.SIMULATE)
-        helper.assertTrue(simulatedDrain.fluid == lifeEssence && simulatedDrain.amount == 400, "Expected simulated drain to return life essence")
-        helper.assertTrue(obelisk.bloodStored.toInt() == 1_000, "Expected simulated drain not to mutate font blood")
-        val drained = tank.drain(FluidStack(lifeEssence, 400), IFluidHandler.FluidAction.EXECUTE)
-        helper.assertTrue(drained.fluid == lifeEssence && drained.amount == 400, "Expected executed drain to return life essence")
-        helper.assertTrue(obelisk.bloodStored.toInt() == 600, "Expected drain to reduce font blood")
-        helper.assertTrue(tank.getFluidInTank(0).amount == 600, "Expected fluid tank amount to mirror drained font blood")
-        helper.assertTrue(obelisk.drainBlood(125.0), "Expected run blood drain to consume life essence tank")
-        helper.assertTrue(tank.getFluidInTank(0).amount == 475, "Expected run drain to reduce the same fluid tank")
-        helper.assertTrue(obelisk.drainBlood(0.5), "Expected fractional run drain to be accepted")
-        helper.assertTrue(tank.getFluidInTank(0).amount == 475, "Expected fractional run drain carry not to round up early")
-        helper.assertTrue(obelisk.drainBlood(0.5), "Expected accumulated fractional run drain to be accepted")
-        helper.assertTrue(tank.getFluidInTank(0).amount == 474, "Expected accumulated fractional run drain to reduce the fluid tank")
-        helper.succeed()
-    }
-
     fun fontRegenIgnoresAltarCopperOxidation(helper: GameTestHelper) {
         val obeliskPos = helper.absolutePos(BlockPos(20, 2, 20))
         val pedestalPos = obeliskPos.below()
         placeChargedDefinitionObelisk(helper, obeliskPos, "end")
         val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
             ?: error("Expected obelisk block entity for cosmetic oxidation test")
-        obelisk.setEnergyStoredForDebug(0)
+        obelisk.setChargeStoredForDebug(0)
 
         helper.level.setBlock(pedestalPos, Blocks.COPPER_BLOCK.defaultBlockState(), 3)
         val freshRate = obelisk.getModifiedRegenRate()
@@ -1690,76 +1690,79 @@ object ObeliskGameTestSupport {
         placeChargedDefinitionObelisk(helper, obeliskPos, "end")
         val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
             ?: error("Expected obelisk block entity for passive regeneration test")
-        obelisk.setEnergyStoredForDebug(0)
+        obelisk.setChargeStoredForDebug(0)
 
         helper.runAfterDelay(12) {
-            helper.assertTrue(obelisk.bloodStored >= 3.0, "Expected a loaded font to regenerate through its block ticker")
+            helper.assertTrue(obelisk.chargeStored >= 3.0, "Expected a loaded font to regenerate through its block ticker")
             val persisted = obelisk.updateTag.copy()
-            val savedBlood = obelisk.bloodStored
+            val savedCharge = obelisk.chargeStored
             val savedGameTime = helper.level.gameTime
 
             obelisk.fillToCapacity()
             obelisk.load(persisted)
             obelisk.advancePassiveRegeneration(savedGameTime + 400L)
             helper.assertTrue(
-                obelisk.bloodStored == savedBlood + 100.0,
+                obelisk.chargeStored == savedCharge + 100.0,
                 "Expected 400 unloaded server ticks at 0.25 mB/t to restore exactly 100 mB"
             )
 
-            obelisk.setEnergyStoredForDebug(obelisk.getModifiedMaxStorage() - 10)
+            obelisk.setChargeStoredForDebug(obelisk.getModifiedMaxStorage() - 10)
             obelisk.advancePassiveRegeneration(savedGameTime + 800L)
             helper.assertTrue(
-                obelisk.bloodStored.toInt() == obelisk.getModifiedMaxStorage(),
+                obelisk.chargeStored.toInt() == obelisk.getModifiedMaxStorage(),
                 "Expected unloaded regeneration to cap at effective storage capacity"
             )
             helper.succeed()
         }
     }
 
-    fun fontRegenerationClockHandlesLegacyActiveAndFutureState(helper: GameTestHelper) {
+    fun fontRegenerationClockHandlesCleanActiveAndFutureState(helper: GameTestHelper) {
         val obeliskPos = helper.absolutePos(BlockPos(20, 2, 20))
         placeChargedDefinitionObelisk(helper, obeliskPos, "end")
         val obelisk = helper.level.getBlockEntity(obeliskPos) as? ObeliskBlockEntity
             ?: error("Expected obelisk block entity for regeneration clock test")
         val now = helper.level.gameTime
 
-        val legacyTag = obelisk.updateTag.copy().also { tag ->
-            tag.putInt("life_essence_stored", 0)
-            tag.putDouble("blood_stored", 0.0)
+        val cleanTag = obelisk.updateTag.copy().also { tag ->
+            tag.remove("charge_stored")
             tag.remove("last_passive_regen_game_time")
             tag.remove("active_run_id")
         }
-        obelisk.load(legacyTag)
+        obelisk.load(cleanTag)
+        helper.assertTrue(
+            obelisk.chargeStored == obelisk.getModifiedMaxStorage().toDouble(),
+            "Expected state without neutral charge data to initialize at full capacity"
+        )
+        obelisk.setChargeStoredForDebug(0)
         obelisk.advancePassiveRegeneration(now + 1_000L)
-        helper.assertTrue(obelisk.bloodStored == 0.0, "Expected legacy NBT to seed its clock without a windfall")
+        helper.assertTrue(obelisk.chargeStored == 0.0, "Expected clean NBT to seed its clock without a regeneration windfall")
         obelisk.advancePassiveRegeneration(now + 1_004L)
-        helper.assertTrue(obelisk.bloodStored == 1.0, "Expected charging to begin after the legacy clock is seeded")
+        helper.assertTrue(obelisk.chargeStored == 1.0, "Expected charging to begin after the legacy clock is seeded")
 
-        obelisk.setEnergyStoredForDebug(0)
+        obelisk.setChargeStoredForDebug(0)
         obelisk.setActiveRun(UUID.randomUUID())
         obelisk.advancePassiveRegeneration(now + 400L)
-        helper.assertTrue(obelisk.bloodStored == 0.0, "Expected an active font not to charge")
+        helper.assertTrue(obelisk.chargeStored == 0.0, "Expected an active font not to charge")
         obelisk.setActiveRun(null)
 
         val futureTag = obelisk.updateTag.copy().also { tag ->
-            tag.putInt("life_essence_stored", 0)
-            tag.putDouble("blood_stored", 0.0)
+            tag.putInt("charge_stored", 0)
             tag.putLong("last_passive_regen_game_time", now + 10_000L)
             tag.remove("active_run_id")
         }
         obelisk.load(futureTag)
         obelisk.advancePassiveRegeneration(now)
-        helper.assertTrue(obelisk.bloodStored == 0.0, "Expected a future timestamp to reset without granting blood")
+        helper.assertTrue(obelisk.chargeStored == 0.0, "Expected a future timestamp to reset without granting charge")
         obelisk.advancePassiveRegeneration(now + 4L)
-        helper.assertTrue(obelisk.bloodStored == 1.0, "Expected charging to resume from the reset baseline")
+        helper.assertTrue(obelisk.chargeStored == 1.0, "Expected charging to resume from the reset baseline")
 
         val returnPos = helper.absolutePos(BlockPos(24, 2, 20))
         helper.level.setBlock(returnPos, ModBlocks.RETURN_FONT.get().defaultBlockState(), 3)
         val returnFont = helper.level.getBlockEntity(returnPos) as? ObeliskBlockEntity
             ?: error("Expected return seal block entity for regeneration clock test")
-        returnFont.setEnergyStoredForDebug(0)
+        returnFont.setChargeStoredForDebug(0)
         returnFont.advancePassiveRegeneration(now + 20_000L)
-        helper.assertTrue(returnFont.bloodStored == 0.0, "Expected return seals never to charge")
+        helper.assertTrue(returnFont.chargeStored == 0.0, "Expected return seals never to charge")
         helper.succeed()
     }
 
@@ -1977,13 +1980,13 @@ object ObeliskGameTestSupport {
         val cultivationFloorCenter = lowerTierCenter.below()
         val obelisk = helper.level.getBlockEntity(fontPos) as? ObeliskBlockEntity
         helper.assertTrue(helper.level.getBlockState(fontPos).`is`(ModBlocks.OBELISK.get()), "Expected $label cultivation center to place a dimensional font")
-        val definitionBaseCapacity = obelisk?.definitionId?.let { ObeliskDataManager.getObelisk(it)?.maxBlood } ?: 15_000.0
+        val definitionBaseCapacity = obelisk?.definitionId?.let { ObeliskDataManager.getObelisk(it)?.maxCharge } ?: 15_000.0
         helper.assertTrue(
-            (obelisk?.getMaxBlood() ?: 0.0) > definitionBaseCapacity,
+            (obelisk?.getMaxCharge() ?: 0.0) > definitionBaseCapacity,
             "Expected $label generated cultivation center font capacity to exceed definition base capacity"
         )
         helper.assertTrue(
-            obelisk?.bloodStored == obelisk?.getModifiedMaxStorage()?.toDouble(),
+            obelisk?.chargeStored == obelisk?.getModifiedMaxStorage()?.toDouble(),
             "Expected $label generated cultivation center font to be filled to its effective capacity"
         )
         helper.assertTrue(

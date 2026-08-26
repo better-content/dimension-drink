@@ -7,7 +7,7 @@ ext {
     modId = 'dimension_drink'
     modName = 'Dimension Drink'
     modGroupId = 'com.bettercontent'
-    modDescription = 'Dimensional blood fonts open real-dimension expeditions from small altars.'
+    modDescription = 'Neutral-charge dimensional fonts open real-dimension expeditions from small altars.'
 }
 
 apply from: rootProject.file('gradle/forge-module.gradle')

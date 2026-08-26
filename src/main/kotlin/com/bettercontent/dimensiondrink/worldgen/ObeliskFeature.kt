@@ -366,7 +366,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         }
 
         private fun generatedCapacityForSite(definition: ObeliskDefinition, tileRadius: Int, footprintSize: Int): Double {
-            val base = definition.maxBlood ?: ObeliskConstants.MAX_BLOOD_STORAGE
+            val base = definition.maxCharge ?: ObeliskConstants.MAX_CHARGE_STORAGE
             val radiusProgress = ((tileRadius - MIN_TILE_RADIUS).toDouble() / (MAX_TILE_RADIUS - MIN_TILE_RADIUS).toDouble()).coerceIn(0.0, 1.0)
             val footprintProgress = ((footprintSize - 180).toDouble() / 520.0).coerceIn(0.0, 1.25)
             val multiplier = 1.15 + maxOf(radiusProgress * 0.8, footprintProgress)
@@ -377,7 +377,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             if (!level.setBlock(site.fontPos, ModBlocks.OBELISK.get().defaultBlockState(), 3)) return false
             val font = level.getBlockEntity(site.fontPos) as? ObeliskBlockEntity ?: return false
             font.setDefinition(definition.id)
-            font.setGeneratedMaxBlood(site.maxBlood)
+            font.setGeneratedMaxCharge(site.maxCharge)
             font.fillToCapacity()
             font.syncToClients()
             return true
@@ -1355,7 +1355,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             for (tile in candidateTiles) {
                 for (direction in Direction.Plane.HORIZONTAL.toList().shuffled(random)) {
                     val pos = terrainGroundNear(level, tile.groundPos.relative(direction, 2), tile.groundPos.y + 4, 2) ?: continue
-                    if (placeBloodCatchment(level, setBlock, pos, random) || placeConduitRun(level, setBlock, pos, direction.opposite, random) || placeTrophyDisplay(level, setBlock, pos, palette, pathColumns, random)) {
+                    if (placeChargeCatchment(level, setBlock, pos, random) || placeConduitRun(level, setBlock, pos, direction.opposite, random) || placeTrophyDisplay(level, setBlock, pos, palette, pathColumns, random)) {
                         break
                     }
                 }
@@ -1713,7 +1713,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 canReplaceDecoration(level, base.above(2)) &&
                 canReplaceDecoration(level, base.above(3))
 
-        private fun placeBloodCatchment(
+        private fun placeChargeCatchment(
             level: LevelAccessor,
             setBlock: (BlockPos, BlockState, Int) -> Boolean,
             base: BlockPos,
@@ -3238,7 +3238,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
         private data class BuiltSite(
             val fontPos: BlockPos,
-            val maxBlood: Double,
+            val maxCharge: Double,
             val placedInChunk: Boolean = false
         )
 
@@ -3256,7 +3256,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
 
         private data class PlannedSite(
             val fontPos: BlockPos,
-            val maxBlood: Double,
+            val maxCharge: Double,
             val placements: List<PlannedPlacement>,
             val minX: Int,
             val maxX: Int,
@@ -3385,7 +3385,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             val allPositions = placements.map { it.pos } + fontPos
             return PlannedSite(
                 fontPos = fontPos,
-                maxBlood = generatedCapacityForSite(definition, tileRadius, fullPlan.size),
+                maxCharge = generatedCapacityForSite(definition, tileRadius, fullPlan.size),
                 placements = placements,
                 minX = allPositions.minOf { it.x },
                 maxX = allPositions.maxOf { it.x },
@@ -3431,7 +3431,7 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
             placeWetBiomeOvergrowthAround(level, chunkLocalSetBlock, chunk, dressingCenter, RELIQUARY_RADIUS, detailRandom)
             return BuiltSite(
                 fontPos = fontPos,
-                maxBlood = generatedCapacityForSite(definition, MIN_TILE_RADIUS, 480),
+                maxCharge = generatedCapacityForSite(definition, MIN_TILE_RADIUS, 480),
                 placedInChunk = placedInChunk
             )
         }

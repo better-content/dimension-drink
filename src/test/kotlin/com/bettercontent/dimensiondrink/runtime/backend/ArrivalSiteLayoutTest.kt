@@ -15,14 +15,6 @@ class ArrivalSiteLayoutTest {
     }
 
     @Test
-    fun fluidScatterStaysOffCenterAndOnOuterRing() {
-        val offsets = ArrivalSiteLayout.scatterOffsets()
-        assertEquals(16, offsets.size, "Life essence scatter should stay on the outer ring around the return font")
-        assertTrue(offsets.none { it.x == 0 && it.z == 0 }, "Life essence scatter should never place on the return font")
-        assertTrue(offsets.all { maxOf(kotlin.math.abs(it.x), kotlin.math.abs(it.z)) == ArrivalSiteLayout.FLOOR_RADIUS }, "Life essence scatter should stay at the pad edge")
-    }
-
-    @Test
     fun verdigrisParticlesOnlyTargetUnwaxedFullyOxidizedCopper() {
         val ids = ArrivalSiteLayout.verdigrisCopperIds()
         assertTrue("minecraft:oxidized_copper" in ids)

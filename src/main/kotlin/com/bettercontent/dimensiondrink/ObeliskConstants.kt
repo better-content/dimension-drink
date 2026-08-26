@@ -1,18 +1,12 @@
 package com.bettercontent.dimensiondrink
 
 object ObeliskConstants {
-    const val MAX_BLOOD_STORAGE: Double = 15_000.0
-    const val BASE_BLOOD_DRAIN_PER_TICK: Double = 20.0
-    const val PER_PLAYER_BLOOD_DRAIN: Double = 10.0
-    const val BLOOD_REGEN_PER_TICK: Double = 0.25
-    const val HEART_BLOOD_MULTIPLIER: Double = 0.08
-    const val MAX_FE_STORAGE: Int = 15_000
-    const val BASE_FE_DRAIN_PER_TICK: Int = 20
-    const val PER_PLAYER_FE_DRAIN: Int = 10
-    const val FE_REGEN_PER_TICK: Int = 1
-    const val DRAIN_EXPONENTIAL_FACTOR: Double = 0.00005
-    const val DRAIN_EXPONENTIAL_INTERVAL_TICKS: Int = 20
-    const val RUN_EMPTY_CLEANUP_DELAY_TICKS: Long = 40L
+    const val MAX_CHARGE_STORAGE: Double = 15_000.0
+    const val START_CHARGE_COST: Double = 600.0
+    const val JOIN_CHARGE_COST: Double = 0.0
+    const val PASSIVE_CHARGE_PER_TICK: Double = 0.25
+    const val BASE_CHARGE_DRAIN_PER_SECOND: Double = 80.0
+    const val PER_PLAYER_CHARGE_DRAIN_PER_SECOND: Double = 40.0
     const val BOSS_BAR_SHOW_THRESHOLD: Double = 0.90
     const val BOSS_BAR_GREEN_THRESHOLD: Double = 0.50
     const val BOSS_BAR_YELLOW_THRESHOLD: Double = 0.25

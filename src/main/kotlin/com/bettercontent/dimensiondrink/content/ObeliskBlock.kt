@@ -80,19 +80,7 @@ class ObeliskBlock(
             }
         }
 
-        if (player.isShiftKeyDown && held.isEmpty) {
-            val removed = obelisk.removeHeart()
-            if (!removed.isEmpty && !serverPlayer.inventory.add(removed)) {
-                serverPlayer.drop(removed, false)
-            }
-            return InteractionResult.CONSUME
-        }
-
         if (!held.isEmpty) {
-            if (obelisk.placeHeart(held)) {
-                level.playSound(null, pos, SoundEvents.RESPAWN_ANCHOR_CHARGE, SoundSource.BLOCKS, 0.45f, 0.85f)
-                return InteractionResult.CONSUME
-            }
             return InteractionResult.PASS
         }
 
@@ -112,10 +100,10 @@ class ObeliskBlock(
             return
         }
         val obelisk = level.getBlockEntity(pos) as? ObeliskBlockEntity ?: return
-        val blood = obelisk.getEnergyPercent()
+        val charge = obelisk.getChargePercent()
         val ready = obelisk.isReadyToOpen()
-        val lowBlood = obelisk.isLowBloodWarning()
-        if (!ready && !lowBlood && !obelisk.shouldShowBeam() && blood < 0.25) {
+        val lowCharge = obelisk.isLowChargeWarning()
+        if (!ready && !lowCharge && !obelisk.shouldShowBeam() && charge < 0.25) {
             return
         }
 
@@ -151,7 +139,7 @@ class ObeliskBlock(
             )
         }
 
-        if (lowBlood) {
+        if (lowCharge) {
             repeat(2) {
                 val radius = 3.0 + random.nextDouble() * 8.0
                 val angle = random.nextDouble() * Math.PI * 2.0
@@ -191,7 +179,7 @@ class ObeliskBlock(
 
     override fun getAnalogOutputSignal(state: BlockState, level: Level, pos: BlockPos): Int {
         val obelisk = level.getBlockEntity(pos) as? ObeliskBlockEntity ?: return 0
-        return (obelisk.getEnergyPercent() * 15.0).toInt().coerceIn(0, 15)
+        return (obelisk.getChargePercent() * 15.0).toInt().coerceIn(0, 15)
     }
 
     override fun isPathfindable(state: BlockState, level: BlockGetter, pos: BlockPos, type: PathComputationType): Boolean = false

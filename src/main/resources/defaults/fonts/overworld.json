@@ -17,8 +17,10 @@
     "decorations": ["undergarden:shard_torch", "minecraft:potted_flowering_azalea_bush", "minecraft:lime_candle", "minecraft:white_candle"]
   },
   "rewardTableId": "overworld",
-  "maxBlood": 15000,
-  "baseBloodPerTick": 0.25,
-  "heartBloodMultiplier": 0.08,
-  "runBloodDrainPerTick": 20.0
+  "maxCharge": 15000,
+  "startChargeCost": 600.0,
+  "joinChargeCost": 0.0,
+  "passiveChargePerTick": 0.25,
+  "runBaseChargePerSecond": 80.0,
+  "runPlayerChargePerSecond": 40.0
 }

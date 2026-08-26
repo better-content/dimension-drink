@@ -12,12 +12,9 @@ import net.minecraft.resources.ResourceLocation
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
-import net.minecraft.util.RandomSource
 import net.minecraft.world.entity.Mob
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Blocks
-import net.minecraft.world.level.block.LiquidBlock
-import net.minecraft.world.level.material.FlowingFluid
 import net.minecraft.sounds.SoundEvents
 import net.minecraft.sounds.SoundSource
 import net.minecraft.world.phys.AABB
@@ -29,8 +26,6 @@ import kotlin.math.roundToInt
 object CanonicalDimensionBackend : RunWorldBackend {
     private const val SPAWN_CLEARANCE = 3
     private const val MAX_SAVED_SITES = 256
-    private val LIFE_ESSENCE_FLOWING_ID = ResourceLocation("bloodmagic", "life_essence_fluid_flowing")
-
     private val logger = LogUtils.getLogger()
     private val playerBindings = linkedMapOf<UUID, UUID>()
     private val configCache = linkedMapOf<String, BackendConfig>()
@@ -129,7 +124,6 @@ object CanonicalDimensionBackend : RunWorldBackend {
         record.updatedGameTime = gameTime(player.server)
         player.teleportTo(level, landing.x + 0.5, landing.y.toDouble(), landing.z + 0.5, player.yRot, player.xRot)
         playEntrySounds(level, spawn)
-        scatterArrivalLifeEssence(level, spawn, level.random)
         playerBindings[player.uuid] = record.siteId
         return EnterRunResult.Entered
     }
@@ -258,27 +252,6 @@ object CanonicalDimensionBackend : RunWorldBackend {
         val location = ResourceLocation.tryParse(id) ?: return null
         val block = BuiltInRegistries.BLOCK.get(location)
         return block.takeUnless { it == Blocks.AIR }
-    }
-
-    private fun scatterArrivalLifeEssence(level: ServerLevel, spawn: BlockPos, random: RandomSource) {
-        val flowing = flowingLifeEssenceFluid() ?: return
-        val candidates = ArrivalSiteLayout.scatterOffsets().sortedBy { random.nextInt() }.take(4)
-        candidates.forEachIndexed { index, offset ->
-            val pos = spawn.offset(offset)
-            if (!level.getBlockState(pos).isAir || !level.getFluidState(pos).isEmpty) return@forEachIndexed
-            val below = pos.below()
-            if (!level.getBlockState(below).isFaceSturdy(level, below, net.minecraft.core.Direction.UP)) return@forEachIndexed
-            val fluidState = flowing.defaultFluidState().createLegacyBlock().let { state ->
-                if (state.hasProperty(LiquidBlock.LEVEL)) state.setValue(LiquidBlock.LEVEL, 1 + ((index + random.nextInt(3)) % 7)) else state
-            }
-            level.setBlock(pos, fluidState, 3)
-            level.scheduleTick(pos, flowing, 1)
-        }
-    }
-
-    private fun flowingLifeEssenceFluid(): FlowingFluid? {
-        val fluid = BuiltInRegistries.FLUID.get(LIFE_ESSENCE_FLOWING_ID)
-        return fluid as? FlowingFluid
     }
 
     private fun playEntrySounds(level: ServerLevel, at: BlockPos) {

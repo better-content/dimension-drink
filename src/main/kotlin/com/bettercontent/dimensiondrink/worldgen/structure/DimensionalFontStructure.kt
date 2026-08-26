@@ -60,11 +60,11 @@ class DimensionalFontStructure(settings: StructureSettings) : Structure(settings
         }
         val groundY = heights.maxOrNull() ?: return Optional.empty()
         if (groundY - (heights.minOrNull() ?: groundY) > MAX_ALTAR_SLOPE) return Optional.empty()
-        val maxBlood = ((definition.maxBlood ?: ObeliskConstants.MAX_BLOOD_STORAGE) * GENERATED_CAPACITY_MULTIPLIER)
+        val maxCharge = ((definition.maxCharge ?: ObeliskConstants.MAX_CHARGE_STORAGE) * GENERATED_CAPACITY_MULTIPLIER)
             .coerceAtMost(1_000_000.0)
         val position = BlockPos(center.x, groundY, center.z)
         return Optional.of(GenerationStub(position) { pieces ->
-            pieces.addPiece(DimensionalFontStructurePiece(position, seed, definition.id, maxBlood))
+            pieces.addPiece(DimensionalFontStructurePiece(position, seed, definition.id, maxCharge))
         })
     }
 

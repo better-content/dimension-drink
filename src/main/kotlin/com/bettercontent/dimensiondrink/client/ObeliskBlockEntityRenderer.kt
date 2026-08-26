@@ -13,8 +13,6 @@ import net.minecraft.client.renderer.texture.TextureAtlas
 import net.minecraft.client.renderer.texture.OverlayTexture
 import net.minecraft.resources.ResourceLocation
 import net.minecraft.util.Mth
-import net.minecraft.world.item.ItemDisplayContext
-import com.mojang.math.Axis
 
 class ObeliskBlockEntityRenderer(
     @Suppress("UNUSED_PARAMETER") context: BlockEntityRendererProvider.Context
@@ -28,7 +26,6 @@ class ObeliskBlockEntityRenderer(
         packedOverlay: Int
     ) {
         renderReservoir(obelisk, poseStack, bufferSource)
-        renderHeart(obelisk, partialTick, poseStack, bufferSource, packedLight)
     }
 
     private fun renderReservoir(
@@ -36,7 +33,7 @@ class ObeliskBlockEntityRenderer(
         poseStack: PoseStack,
         bufferSource: MultiBufferSource
     ) {
-        val percent = obelisk.getBloodPercent().toFloat().coerceIn(0.0f, 1.0f)
+        val percent = obelisk.getChargePercent().toFloat().coerceIn(0.0f, 1.0f)
         if (percent <= 0.01f) return
 
         val top = Mth.lerp(percent, LOWER_JUICE_Y, UPPER_JUICE_Y)
@@ -54,9 +51,9 @@ class ObeliskBlockEntityRenderer(
             11.85f / 16.0f,
             LightTexture.FULL_BRIGHT,
             224,
-            TRIP_JUICE_RED,
-            TRIP_JUICE_GREEN,
-            TRIP_JUICE_BLUE
+            CHARGE_RED,
+            CHARGE_GREEN,
+            CHARGE_BLUE
         )
 
         val meniscusY = (top + 0.006f).coerceAtMost(UPPER_JUICE_Y + 0.012f)
@@ -75,37 +72,6 @@ class ObeliskBlockEntityRenderer(
             MENISCUS_GREEN,
             MENISCUS_BLUE
         )
-    }
-
-    private fun renderHeart(
-        obelisk: ObeliskBlockEntity,
-        partialTick: Float,
-        poseStack: PoseStack,
-        bufferSource: MultiBufferSource,
-        packedLight: Int
-    ) {
-        val heart = obelisk.heartStack
-        if (heart.isEmpty) return
-
-        val level = obelisk.level
-        val time = (level?.gameTime ?: 0L).toFloat() + partialTick
-        val rotation = time * 1.35f
-
-        poseStack.pushPose()
-        poseStack.translate(0.5, 0.72, 0.5)
-        poseStack.mulPose(Axis.YP.rotationDegrees(rotation))
-        poseStack.scale(0.5f, 0.5f, 0.5f)
-        Minecraft.getInstance().itemRenderer.renderStatic(
-            heart,
-            ItemDisplayContext.FIXED,
-            packedLight,
-            OverlayTexture.NO_OVERLAY,
-            poseStack,
-            bufferSource,
-            level,
-            0
-        )
-        poseStack.popPose()
     }
 
     private fun renderFluidVolume(
@@ -213,9 +179,9 @@ class ObeliskBlockEntityRenderer(
         private val WATER_STILL = ResourceLocation("minecraft", "block/water_still")
         private const val LOWER_JUICE_Y = 4.28f / 16.0f
         private const val UPPER_JUICE_Y = 8.72f / 16.0f
-        private const val TRIP_JUICE_RED = 70
-        private const val TRIP_JUICE_GREEN = 232
-        private const val TRIP_JUICE_BLUE = 210
+        private const val CHARGE_RED = 70
+        private const val CHARGE_GREEN = 232
+        private const val CHARGE_BLUE = 210
         private const val MENISCUS_RED = 190
         private const val MENISCUS_GREEN = 126
         private const val MENISCUS_BLUE = 255

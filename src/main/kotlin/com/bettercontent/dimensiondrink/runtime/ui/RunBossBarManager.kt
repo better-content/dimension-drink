@@ -40,27 +40,27 @@ object RunBossBarManager {
                 return@forEach
             }
 
-            val blood = obelisk.getBloodPercent()
-            if (blood >= ObeliskConstants.BOSS_BAR_SHOW_THRESHOLD) {
+            val charge = obelisk.getChargePercent()
+            if (charge >= ObeliskConstants.BOSS_BAR_SHOW_THRESHOLD) {
                 removeBossBar(run.id)
                 return@forEach
             }
 
             val bossBar = activeBossBars.getOrPut(run.id) {
                 ServerBossEvent(
-                    Component.literal("Font Trip Juice"),
+                    Component.literal("Font Charge"),
                     BossEvent.BossBarColor.GREEN,
                     BossEvent.BossBarOverlay.PROGRESS
                 )
             }
 
-            bossBar.progress = blood.toFloat().coerceIn(0f, 1f)
+            bossBar.progress = charge.toFloat().coerceIn(0f, 1f)
             bossBar.color = when {
-                blood > ObeliskConstants.BOSS_BAR_GREEN_THRESHOLD -> BossEvent.BossBarColor.GREEN
-                blood > ObeliskConstants.BOSS_BAR_YELLOW_THRESHOLD -> BossEvent.BossBarColor.YELLOW
+                charge > ObeliskConstants.BOSS_BAR_GREEN_THRESHOLD -> BossEvent.BossBarColor.GREEN
+                charge > ObeliskConstants.BOSS_BAR_YELLOW_THRESHOLD -> BossEvent.BossBarColor.YELLOW
                 else -> BossEvent.BossBarColor.RED
             }
-            bossBar.name = Component.literal("Font Trip Juice: ${(blood * 100.0).toInt()}%")
+            bossBar.name = Component.literal("Font Charge: ${(charge * 100.0).toInt()}%")
 
             val livePlayers = run.activePlayers.mapNotNull(server.playerList::getPlayer).toSet()
             livePlayers.forEach { player ->

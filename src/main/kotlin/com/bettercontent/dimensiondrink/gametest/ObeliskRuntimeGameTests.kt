@@ -16,11 +16,6 @@ class ObeliskRuntimeGameTests {
         ObeliskGameTestSupport.terrainClearingTaskIsRemoved(helper)
     }
 
-    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_runtime", timeoutTicks = 200)
-    fun font_fluid_tank_accepts_only_blood_magic_life_essence(helper: GameTestHelper) {
-        ObeliskGameTestSupport.fontFluidTankAcceptsOnlyBloodMagicLifeEssence(helper)
-    }
-
     @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_runtime", timeoutTicks = 120)
     fun font_regen_ignores_altar_copper_oxidation(helper: GameTestHelper) {
         ObeliskGameTestSupport.fontRegenIgnoresAltarCopperOxidation(helper)
@@ -32,8 +27,8 @@ class ObeliskRuntimeGameTests {
     }
 
     @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_runtime", timeoutTicks = 120)
-    fun font_regeneration_clock_handles_legacy_active_and_future_state(helper: GameTestHelper) {
-        ObeliskGameTestSupport.fontRegenerationClockHandlesLegacyActiveAndFutureState(helper)
+    fun font_regeneration_clock_handles_clean_active_and_future_state(helper: GameTestHelper) {
+        ObeliskGameTestSupport.fontRegenerationClockHandlesCleanActiveAndFutureState(helper)
     }
 
     @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_runtime", timeoutTicks = 120)

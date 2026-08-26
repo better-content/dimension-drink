@@ -50,11 +50,11 @@ object DimensionalFontSiteGenerator {
         center: BlockPos,
         siteSeed: Long,
         definition: ObeliskDefinition,
-        maxBlood: Double
+        maxCharge: Double
     ) {
         placeLocalDressing(level, box, center, siteSeed, definition)
         if (box.isInside(center.offset(0, 3, 0))) {
-            placeCenter(level, box, center, siteSeed, definition, maxBlood)
+            placeCenter(level, box, center, siteSeed, definition, maxCharge)
         }
     }
 
@@ -93,7 +93,7 @@ object DimensionalFontSiteGenerator {
         center: BlockPos,
         siteSeed: Long,
         definition: ObeliskDefinition,
-        maxBlood: Double
+        maxCharge: Double
     ) {
         require(centerFitsStartChunk(center)) { "Dimensional font center must fit inside its start chunk" }
 
@@ -141,7 +141,7 @@ object DimensionalFontSiteGenerator {
 
         placeCenterDetails(level, box, center, siteSeed, definition)
         (level.getBlockEntity(fontPos) as? ObeliskBlockEntity)
-            ?.initializeGeneratedFont(definition.id, maxBlood)
+            ?.initializeGeneratedFont(definition.id, maxCharge)
     }
 
     private fun placeAltarApproachStairs(level: WorldGenLevel, box: BoundingBox, center: BlockPos) {

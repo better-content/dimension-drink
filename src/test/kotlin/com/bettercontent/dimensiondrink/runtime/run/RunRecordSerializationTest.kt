@@ -45,8 +45,6 @@ class RunRecordSerializationTest {
             monstersKilled = 7,
             totalDamageDealt = 42.5f,
             ticksElapsed = 320L,
-            drainMultiplier = 1.75,
-            emptyTicks = 4L,
             rewardsGranted = true,
             state = RunState.ACTIVE
         )
@@ -73,8 +71,6 @@ class RunRecordSerializationTest {
         assertEquals(record.monstersKilled, decoded.monstersKilled)
         assertEquals(record.totalDamageDealt, decoded.totalDamageDealt)
         assertEquals(record.ticksElapsed, decoded.ticksElapsed)
-        assertEquals(record.drainMultiplier, decoded.drainMultiplier)
-        assertEquals(record.emptyTicks, decoded.emptyTicks)
         assertEquals(record.rewardsGranted, decoded.rewardsGranted)
         assertEquals(record.state, decoded.state)
         assertEquals(record.activePlayers, decoded.activePlayers)

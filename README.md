@@ -1,6 +1,6 @@
 # Dimension Drink
 
-Pack-owned obelisk and blood-font worldgen/runtime mod for Forge `1.20.1`.
+Pack-owned obelisk and charge-font worldgen/runtime mod for Forge `1.20.1`.
 
 ## Common commands
 

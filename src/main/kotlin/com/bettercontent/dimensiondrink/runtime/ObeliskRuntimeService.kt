@@ -127,8 +127,8 @@ object ObeliskRuntimeService : ObeliskService {
             activeRunId = activeRunId,
             levelKey = level.dimension(),
             blockPos = blockPos.immutable(),
-            energyStored = getEnergyStored(),
-            maxEnergyStored = getMaxEnergyStored(),
+            chargeStored = getChargeStored(),
+            maxChargeStored = getMaxChargeStored(),
             cooldownTicksRemaining = getCooldownRemainingTicks().toInt(),
             beamVisible = shouldShowBeam(),
             modifiers = modifiers.map { ObeliskModifierState(it.stat.name, it.bonusPercent) }

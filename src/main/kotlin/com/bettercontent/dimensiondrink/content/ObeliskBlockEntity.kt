@@ -1,7 +1,6 @@
 package com.bettercontent.dimensiondrink.content
 
 import com.bettercontent.dimensiondrink.ObeliskConstants
-import com.bettercontent.dimensiondrink.compat.StillBeatingHeartCompat
 import com.bettercontent.dimensiondrink.data.ObeliskDataManager
 import com.bettercontent.dimensiondrink.registry.ModBlockEntities
 import com.bettercontent.dimensiondrink.registry.ModBlocks
@@ -26,12 +25,8 @@ import net.minecraft.world.level.block.state.BlockState
 import net.minecraftforge.common.capabilities.Capability
 import net.minecraftforge.common.capabilities.ForgeCapabilities
 import net.minecraftforge.common.util.LazyOptional
-import net.minecraftforge.energy.IEnergyStorage
-import net.minecraftforge.fluids.FluidStack
-import net.minecraftforge.fluids.capability.IFluidHandler
 import net.minecraftforge.items.IItemHandler
 import net.minecraftforge.items.ItemStackHandler
-import net.minecraftforge.registries.ForgeRegistries
 import net.minecraftforge.registries.ForgeRegistries.BLOCKS
 import org.joml.Vector3f
 import java.util.UUID
@@ -43,8 +38,6 @@ class ObeliskBlockEntity(
     state: BlockState
 ) : BlockEntity(ModBlockEntities.OBELISK.get(), pos, state) {
     companion object {
-        private val BLOOD_MAGIC_LIFE_ESSENCE_FLUID_ID = ResourceLocation("bloodmagic", "life_essence_fluid")
-        private const val BLOOD_MAGIC_LIFE_ESSENCE_DESCRIPTION_ID = "fluid.bloodmagic.life_essence_fluid"
         private const val PASSIVE_COPPER_RENEWAL_INTERVAL = 160L
         private const val LAST_PASSIVE_REGEN_GAME_TIME_TAG = "last_passive_regen_game_time"
     }
@@ -87,90 +80,17 @@ class ObeliskBlockEntity(
         override fun isItemValid(slot: Int, stack: ItemStack): Boolean = itemHandler.isItemValid(slot, stack)
     }
 
-    private var generatedMaxBlood: Double? = null
-    private var lifeEssenceStored: Int = ObeliskConstants.MAX_BLOOD_STORAGE.toInt()
-    val bloodStored: Double
-        get() = lifeEssenceStored.toDouble()
+    private var generatedMaxCharge: Double? = null
+    private var chargeStoredInternal: Int = ObeliskConstants.MAX_CHARGE_STORAGE.toInt()
+    val chargeStored: Double
+        get() = chargeStoredInternal.toDouble()
 
     private var fractionalRegenCarry: Double = 0.0
     private var fractionalDrainCarry: Double = 0.0
     private var lastPassiveRegenGameTime: Long? = null
 
-    var heartStack: ItemStack = ItemStack.EMPTY
-        private set
-
     private var nextReadyAmbientGameTime: Long = 0L
-    private var nextLowBloodAmbientGameTime: Long = 0L
-
-    private val energyStorage = object : IEnergyStorage {
-        override fun receiveEnergy(maxReceive: Int, simulate: Boolean): Int {
-            if (maxReceive <= 0) return 0
-            val accepted = minOf(getModifiedMaxStorage() - lifeEssenceStored, maxReceive)
-            if (!simulate && accepted > 0) {
-                fillLifeEssenceTank(accepted)
-            }
-            return accepted
-        }
-
-        override fun extractEnergy(maxExtract: Int, simulate: Boolean): Int {
-            if (maxExtract <= 0) return 0
-            val extracted = minOf(lifeEssenceStored, maxExtract)
-            if (!simulate && extracted > 0) {
-                drainLifeEssenceTank(extracted)
-            }
-            return extracted
-        }
-
-        override fun getEnergyStored(): Int = this@ObeliskBlockEntity.getEnergyStored()
-        override fun getMaxEnergyStored(): Int = getModifiedMaxStorage()
-        override fun canExtract(): Boolean = true
-        override fun canReceive(): Boolean = true
-    }
-
-    private val fluidStorage = object : IFluidHandler {
-        override fun getTanks(): Int = 1
-
-        override fun getFluidInTank(tank: Int): FluidStack {
-            if (tank != 0) return FluidStack.EMPTY
-            val fluid = lifeEssenceFluid() ?: return FluidStack.EMPTY
-            return FluidStack(fluid, lifeEssenceStored.coerceAtLeast(0))
-        }
-
-        override fun getTankCapacity(tank: Int): Int =
-            if (tank == 0) getModifiedMaxStorage() else 0
-
-        override fun isFluidValid(tank: Int, stack: FluidStack): Boolean =
-            tank == 0 && isLifeEssence(stack)
-
-        override fun fill(resource: FluidStack, action: IFluidHandler.FluidAction): Int {
-            if (resource.isEmpty || !isLifeEssence(resource)) return 0
-            val maxStorage = getModifiedMaxStorage()
-            if (lifeEssenceStored >= maxStorage) return 0
-            val accepted = minOf(resource.amount, maxStorage - lifeEssenceStored).coerceAtLeast(0)
-            if (accepted > 0 && action.execute()) {
-                fillLifeEssenceTank(accepted)
-            }
-            return accepted
-        }
-
-        override fun drain(resource: FluidStack, action: IFluidHandler.FluidAction): FluidStack {
-            if (resource.isEmpty || !isLifeEssence(resource)) return FluidStack.EMPTY
-            return drain(resource.amount, action)
-        }
-
-        override fun drain(maxDrain: Int, action: IFluidHandler.FluidAction): FluidStack {
-            val fluid = lifeEssenceFluid() ?: return FluidStack.EMPTY
-            if (maxDrain <= 0 || lifeEssenceStored <= 0) return FluidStack.EMPTY
-            val drained = minOf(maxDrain, lifeEssenceStored).coerceAtLeast(0)
-            if (drained > 0 && action.execute()) {
-                drainLifeEssenceTank(drained)
-            }
-            return if (drained > 0) FluidStack(fluid, drained) else FluidStack.EMPTY
-        }
-    }
-
-    private val energyCapability: LazyOptional<IEnergyStorage> = LazyOptional.of { energyStorage }
-    private val fluidCapability: LazyOptional<IFluidHandler> = LazyOptional.of { fluidStorage }
+    private var nextLowChargeAmbientGameTime: Long = 0L
     private val itemCapability: LazyOptional<IItemHandler> = LazyOptional.of { limitedItemHandler }
 
     fun isRunActive(): Boolean = activeRunId != null
@@ -203,29 +123,29 @@ class ObeliskBlockEntity(
         syncToClients()
     }
 
-    fun setEnergyStoredForDebug(amount: Int) {
-        setLifeEssenceStored(amount)
+    fun setChargeStoredForDebug(amount: Int) {
+        setChargeStored(amount)
     }
 
-    fun setGeneratedMaxBlood(maxBlood: Double?) {
+    fun setGeneratedMaxCharge(maxCharge: Double?) {
         advancePassiveRegenerationNow()
-        generatedMaxBlood = maxBlood?.coerceAtLeast(getDefinitionMaxBlood())
-        val previous = lifeEssenceStored
-        setLifeEssenceStored(lifeEssenceStored)
-        if (lifeEssenceStored == previous) {
-            onBloodStorageChanged()
+        generatedMaxCharge = maxCharge?.coerceAtLeast(getDefinitionMaxCharge())
+        val previous = chargeStoredInternal
+        setChargeStored(chargeStoredInternal)
+        if (chargeStoredInternal == previous) {
+            onChargeStorageChanged()
         }
     }
 
     fun fillToCapacity() {
-        setEnergyStoredForDebug(getModifiedMaxStorage())
+        setChargeStoredForDebug(getModifiedMaxStorage())
     }
 
     /** Initializes a naturally generated font without emitting neighbor or client updates mid-worldgen. */
-    fun initializeGeneratedFont(definitionId: String, maxBlood: Double) {
+    fun initializeGeneratedFont(definitionId: String, maxCharge: Double) {
         this.definitionId = definitionId
-        generatedMaxBlood = maxBlood.coerceAtLeast(getDefinitionMaxBlood())
-        lifeEssenceStored = getModifiedMaxStorage()
+        generatedMaxCharge = maxCharge.coerceAtLeast(getDefinitionMaxCharge())
+        chargeStoredInternal = getModifiedMaxStorage()
         fractionalRegenCarry = 0.0
         fractionalDrainCarry = 0.0
         setChanged()
@@ -249,33 +169,42 @@ class ObeliskBlockEntity(
     }
 
     fun getModifiedMaxStorage(): Int {
-        var max = getMaxBlood().toInt()
-        modifiers.filter { it.stat == FEStat.MAX_STORAGE }.forEach { max = it.applyTo(max) }
+        var max = getMaxCharge().toInt()
+        modifiers.filter { it.stat == ChargeStat.MAX_CHARGE }.forEach { max = it.applyTo(max) }
         return max
     }
 
-    fun getMaxBlood(): Double = maxOf(getDefinitionMaxBlood(), generatedMaxBlood ?: 0.0)
+    fun getMaxCharge(): Double = maxOf(getDefinitionMaxCharge(), generatedMaxCharge ?: 0.0)
 
-    private fun getDefinitionMaxBlood(): Double =
-        ObeliskDataManager.getObelisk(definitionId)?.maxBlood ?: ObeliskConstants.MAX_BLOOD_STORAGE
+    private fun getDefinitionMaxCharge(): Double =
+        ObeliskDataManager.getObelisk(definitionId)?.maxCharge ?: ObeliskConstants.MAX_CHARGE_STORAGE
 
-    fun getBloodStartCost(): Double = 500.0
+    fun getStartChargeCost(): Double {
+        var cost = ObeliskDataManager.getObelisk(definitionId)?.startChargeCost ?: ObeliskConstants.START_CHARGE_COST
+        modifiers.filter { it.stat == ChargeStat.ENTRY_EFFICIENCY }.forEach { cost = it.reduce(cost) }
+        return cost.coerceAtLeast(0.0)
+    }
 
-    fun getBloodJoinCost(): Double = 0.0
+    fun getJoinChargeCost(): Double {
+        var cost = ObeliskDataManager.getObelisk(definitionId)?.joinChargeCost ?: ObeliskConstants.JOIN_CHARGE_COST
+        modifiers.filter { it.stat == ChargeStat.ENTRY_EFFICIENCY }.forEach { cost = it.reduce(cost) }
+        return cost.coerceAtLeast(0.0)
+    }
 
-    fun getBaseBloodRegenPerTick(): Double =
-        ObeliskDataManager.getObelisk(definitionId)?.baseBloodPerTick ?: ObeliskConstants.BLOOD_REGEN_PER_TICK
+    fun getPassiveChargePerTick(): Double =
+        ObeliskDataManager.getObelisk(definitionId)?.passiveChargePerTick ?: ObeliskConstants.PASSIVE_CHARGE_PER_TICK
 
-    fun getRunBloodDrainPerTick(): Double =
-        ObeliskDataManager.getObelisk(definitionId)?.runBloodDrainPerTick ?: ObeliskConstants.BASE_BLOOD_DRAIN_PER_TICK
+    fun getRunBaseChargePerSecond(): Double =
+        ObeliskDataManager.getObelisk(definitionId)?.runBaseChargePerSecond
+            ?: ObeliskConstants.BASE_CHARGE_DRAIN_PER_SECOND
 
-    fun getHeartBloodMultiplier(): Double =
-        ObeliskDataManager.getObelisk(definitionId)?.heartBloodMultiplier ?: ObeliskConstants.HEART_BLOOD_MULTIPLIER
+    fun getRunPlayerChargePerSecond(): Double =
+        ObeliskDataManager.getObelisk(definitionId)?.runPlayerChargePerSecond
+            ?: ObeliskConstants.PER_PLAYER_CHARGE_DRAIN_PER_SECOND
 
     fun getModifiedRegenRate(): Double {
-        var rate = getBaseBloodRegenPerTick()
-        modifiers.filter { it.stat == FEStat.REGEN_RATE }.forEach { rate = it.applyTo(rate) }
-        rate += StillBeatingHeartCompat.lpPerTick(heartStack).toDouble()
+        var rate = getPassiveChargePerTick()
+        modifiers.filter { it.stat == ChargeStat.PASSIVE_REGEN }.forEach { rate = it.applyTo(rate) }
         return rate.coerceAtLeast(0.0)
     }
 
@@ -292,7 +221,7 @@ class ObeliskBlockEntity(
     private fun serverAmbientTick(tickLevel: ServerLevel, tickPos: BlockPos) {
         if (blockState.`is`(ModBlocks.RETURN_FONT.get())) return
         advancePassiveRegeneration(tickLevel.gameTime)
-        if (lifeEssenceStored <= 0) return
+        if (chargeStoredInternal <= 0) return
         val pulseOffset = java.lang.Math.floorMod(tickPos.asLong(), PASSIVE_COPPER_RENEWAL_INTERVAL)
         if ((tickLevel.gameTime + pulseOffset) % PASSIVE_COPPER_RENEWAL_INTERVAL != 0L) return
         renewNearbyCopperOxidation(tickLevel)?.let { renewedPos ->
@@ -403,44 +332,23 @@ class ObeliskBlockEntity(
         }
     }
 
-    fun isCharging(): Boolean = !isRunActive() && lifeEssenceStored < getModifiedMaxStorage()
+    fun isCharging(): Boolean = !isRunActive() && chargeStoredInternal < getModifiedMaxStorage()
 
     fun getModifiedBaseDrain(): Double {
-        var drain = getRunBloodDrainPerTick()
-        modifiers.filter { it.stat == FEStat.BASE_DRAIN }.forEach { drain = it.applyTo(drain) }
+        var drain = getRunBaseChargePerSecond()
+        modifiers.filter { it.stat == ChargeStat.BASE_DRAIN_EFFICIENCY }.forEach { drain = it.reduce(drain) }
         return drain.coerceAtLeast(0.0)
     }
 
     fun getModifiedPlayerDrain(): Double {
-        var drain = ObeliskConstants.PER_PLAYER_BLOOD_DRAIN
-        modifiers.filter { it.stat == FEStat.PLAYER_DRAIN }.forEach { drain = it.applyTo(drain) }
+        var drain = getRunPlayerChargePerSecond()
+        modifiers.filter { it.stat == ChargeStat.PLAYER_DRAIN_EFFICIENCY }.forEach { drain = it.reduce(drain) }
         return drain.coerceAtLeast(0.0)
     }
 
-    fun getModifiedDrainFactor(): Double {
-        var factor = ObeliskConstants.DRAIN_EXPONENTIAL_FACTOR
-        modifiers.filter { it.stat == FEStat.DRAIN_FACTOR }.forEach { factor = it.applyTo(factor) }
-        return factor.coerceAtLeast(0.0)
-    }
-
-    fun getEnergyPercent(): Double = getBloodPercent()
-    fun getBloodPercent(): Double = lifeEssenceStored.toDouble() / getModifiedMaxStorage().coerceAtLeast(1).toDouble()
-    fun getEnergyStored(): Int = lifeEssenceStored
-    fun getMaxEnergyStored(): Int = getModifiedMaxStorage()
-
-    private fun lifeEssenceFluid() =
-        ForgeRegistries.FLUIDS.getValue(BLOOD_MAGIC_LIFE_ESSENCE_FLUID_ID)
-            ?.takeIf { fluid ->
-                ForgeRegistries.FLUIDS.getKey(fluid) == BLOOD_MAGIC_LIFE_ESSENCE_FLUID_ID ||
-                    fluid.fluidType.descriptionId == BLOOD_MAGIC_LIFE_ESSENCE_DESCRIPTION_ID
-            }
-
-    fun isLifeEssence(stack: FluidStack): Boolean {
-        if (stack.isEmpty) return false
-        val registeredName = ForgeRegistries.FLUIDS.getKey(stack.fluid)
-        return registeredName == BLOOD_MAGIC_LIFE_ESSENCE_FLUID_ID ||
-            stack.fluid.fluidType.descriptionId == BLOOD_MAGIC_LIFE_ESSENCE_DESCRIPTION_ID
-    }
+    fun getChargePercent(): Double = chargeStoredInternal.toDouble() / getModifiedMaxStorage().coerceAtLeast(1).toDouble()
+    fun getChargeStored(): Int = chargeStoredInternal
+    fun getMaxChargeStored(): Int = getModifiedMaxStorage()
 
     fun getBeamColorFloats(): FloatArray = floatArrayOf(
         beamColorRed / 255.0f,
@@ -448,9 +356,9 @@ class ObeliskBlockEntity(
         beamColorBlue / 255.0f
     )
 
-    fun drainEnergy(amount: Int): Boolean = drainBlood(amount.toDouble())
+    fun drainCharge(amount: Int): Boolean = drainCharge(amount.toDouble())
 
-    fun drainBlood(amount: Double): Boolean {
+    fun drainCharge(amount: Double): Boolean {
         if (amount <= 0.0) return true
         val totalDrain = amount + fractionalDrainCarry
         val wholeDrain = floor(totalDrain).toInt()
@@ -459,18 +367,22 @@ class ObeliskBlockEntity(
             fractionalDrainCarry = nextCarry
             return true
         }
-        if (lifeEssenceStored < wholeDrain) return false
-        drainLifeEssenceTank(wholeDrain)
+        if (chargeStoredInternal < wholeDrain) {
+            setChargeStored(0)
+            fractionalDrainCarry = 0.0
+            return false
+        }
+        drainStoredCharge(wholeDrain)
         fractionalDrainCarry = nextCarry
         return true
     }
 
-    fun regenerateEnergy(amount: Int): Int = regenerateBlood(amount.toDouble()).toInt()
+    fun regenerateCharge(amount: Int): Int = regenerateCharge(amount.toDouble()).toInt()
 
-    fun regenerateBlood(amount: Double): Double {
+    fun regenerateCharge(amount: Double): Double {
         if (amount <= 0.0 || isRunActive()) return 0.0
         val maxStorage = getModifiedMaxStorage()
-        if (lifeEssenceStored >= maxStorage) {
+        if (chargeStoredInternal >= maxStorage) {
             fractionalRegenCarry = 0.0
             return 0.0
         }
@@ -478,7 +390,7 @@ class ObeliskBlockEntity(
         val wholeRegen = floor(totalRegen).toInt()
         fractionalRegenCarry = totalRegen - wholeRegen
         if (wholeRegen <= 0) return 0.0
-        return fillLifeEssenceTank(wholeRegen).toDouble()
+        return fillCharge(wholeRegen).toDouble()
     }
 
     internal fun advancePassiveRegeneration(gameTime: Long): Double {
@@ -491,8 +403,8 @@ class ObeliskBlockEntity(
         }
         if (isRunActive()) return 0.0
 
-        val missingBlood = getModifiedMaxStorage() - lifeEssenceStored
-        if (missingBlood <= 0) return 0.0
+        val missingCharge = getModifiedMaxStorage() - chargeStoredInternal
+        if (missingCharge <= 0) return 0.0
         val rate = getModifiedRegenRate()
         if (rate <= 0.0) {
             setChanged()
@@ -500,8 +412,8 @@ class ObeliskBlockEntity(
         }
 
         val elapsedTicks = gameTime - previousGameTime
-        val regenBudget = minOf(rate * elapsedTicks.toDouble(), missingBlood.toDouble())
-        val regenerated = regenerateBlood(regenBudget)
+        val regenBudget = minOf(rate * elapsedTicks.toDouble(), missingCharge.toDouble())
+        val regenerated = regenerateCharge(regenBudget)
         // A successful tank fill checkpoints against the live level clock; restore the exact
         // supplied clock so explicit catch-up and normal ticking share the same boundary.
         lastPassiveRegenGameTime = gameTime
@@ -520,42 +432,42 @@ class ObeliskBlockEntity(
         lastPassiveRegenGameTime = serverLevel.gameTime
     }
 
-    fun restoreRunEnergy(amount: Int): Int = restoreRunBlood(amount.toDouble()).toInt()
+    fun restoreRunCharge(amount: Int): Int = restoreRunCharge(amount.toDouble()).toInt()
 
-    fun restoreRunBlood(amount: Double): Double {
+    fun restoreRunCharge(amount: Double): Double {
         if (amount <= 0.0) return 0.0
-        if (lifeEssenceStored >= getModifiedMaxStorage()) return 0.0
-        return fillLifeEssenceTank(floor(amount).toInt()).toDouble()
+        if (chargeStoredInternal >= getModifiedMaxStorage()) return 0.0
+        return fillCharge(floor(amount).toInt()).toDouble()
     }
 
-    private fun setLifeEssenceStored(amount: Int) {
+    private fun setChargeStored(amount: Int) {
         val clamped = amount.coerceIn(0, getModifiedMaxStorage())
-        if (lifeEssenceStored == clamped) return
-        lifeEssenceStored = clamped
+        if (chargeStoredInternal == clamped) return
+        chargeStoredInternal = clamped
         fractionalRegenCarry = 0.0
         fractionalDrainCarry = 0.0
-        onBloodStorageChanged()
+        onChargeStorageChanged()
     }
 
-    private fun fillLifeEssenceTank(amount: Int): Int {
+    private fun fillCharge(amount: Int): Int {
         if (amount <= 0) return 0
-        val accepted = minOf(amount, getModifiedMaxStorage() - lifeEssenceStored).coerceAtLeast(0)
+        val accepted = minOf(amount, getModifiedMaxStorage() - chargeStoredInternal).coerceAtLeast(0)
         if (accepted <= 0) return 0
-        lifeEssenceStored += accepted
-        onBloodStorageChanged()
+        chargeStoredInternal += accepted
+        onChargeStorageChanged()
         return accepted
     }
 
-    private fun drainLifeEssenceTank(amount: Int): Int {
+    private fun drainStoredCharge(amount: Int): Int {
         if (amount <= 0) return 0
-        val drained = minOf(amount, lifeEssenceStored).coerceAtLeast(0)
+        val drained = minOf(amount, chargeStoredInternal).coerceAtLeast(0)
         if (drained <= 0) return 0
-        lifeEssenceStored -= drained
-        onBloodStorageChanged()
+        chargeStoredInternal -= drained
+        onChargeStorageChanged()
         return drained
     }
 
-    private fun onBloodStorageChanged() {
+    private fun onChargeStorageChanged() {
         checkpointPassiveRegenerationNow()
         setChanged()
         syncToClients()
@@ -563,13 +475,11 @@ class ObeliskBlockEntity(
 
     fun getInternalItemHandler(): ItemStackHandler = itemHandler
 
-    fun shouldShowBeam(): Boolean = beamVisible && (isRunActive() || lifeEssenceStored >= getModifiedMaxStorage())
+    fun shouldShowBeam(): Boolean = beamVisible && (isRunActive() || chargeStoredInternal >= getModifiedMaxStorage())
 
-    fun hasHeart(): Boolean = !heartStack.isEmpty
+    fun isReadyToOpen(): Boolean = !isRunActive() && chargeStored >= getStartChargeCost()
 
-    fun isReadyToOpen(): Boolean = hasHeart() && !isRunActive()
-
-    fun isLowBloodWarning(): Boolean = false
+    fun isLowChargeWarning(): Boolean = isRunActive() && getChargePercent() <= ObeliskConstants.BOSS_BAR_YELLOW_THRESHOLD
 
     fun clientAmbientTick(tickLevel: Level, tickPos: BlockPos) {
         if (!tickLevel.isClientSide) return
@@ -587,8 +497,8 @@ class ObeliskBlockEntity(
                 false
             )
         }
-        if (isLowBloodWarning() && gameTime >= nextLowBloodAmbientGameTime) {
-            nextLowBloodAmbientGameTime = gameTime + 95L + tickLevel.random.nextInt(75)
+        if (isLowChargeWarning() && gameTime >= nextLowChargeAmbientGameTime) {
+            nextLowChargeAmbientGameTime = gameTime + 95L + tickLevel.random.nextInt(75)
             tickLevel.playLocalSound(
                 tickPos.x + 0.5,
                 tickPos.y + 0.5,
@@ -602,30 +512,6 @@ class ObeliskBlockEntity(
         }
     }
 
-    fun canAcceptHeart(stack: ItemStack): Boolean = heartStack.isEmpty && StillBeatingHeartCompat.isFontHeart(stack)
-
-    fun placeHeart(stack: ItemStack): Boolean {
-        if (!canAcceptHeart(stack)) return false
-        advancePassiveRegenerationNow()
-        heartStack = stack.copyWithCount(1)
-        stack.shrink(1)
-        setChanged()
-        syncToClients()
-        return true
-    }
-
-    fun removeHeart(): ItemStack {
-        if (heartStack.isEmpty) return ItemStack.EMPTY
-        advancePassiveRegenerationNow()
-        val removed = heartStack.copy()
-        heartStack = ItemStack.EMPTY
-        setChanged()
-        syncToClients()
-        return removed
-    }
-
-    fun getHeartLevel(): Int = StillBeatingHeartCompat.getLevel(heartStack)
-
     fun syncToClients() {
         val currentLevel = level ?: return
         if (!currentLevel.isClientSide) {
@@ -635,12 +521,11 @@ class ObeliskBlockEntity(
 
     override fun saveAdditional(tag: CompoundTag) {
         super.saveAdditional(tag)
-        tag.putInt("life_essence_stored", lifeEssenceStored)
-        tag.putDouble("blood_stored", bloodStored)
+        tag.putInt("charge_stored", chargeStoredInternal)
         tag.putDouble("fractional_regen_carry", fractionalRegenCarry)
         tag.putDouble("fractional_drain_carry", fractionalDrainCarry)
         lastPassiveRegenGameTime?.let { tag.putLong(LAST_PASSIVE_REGEN_GAME_TIME_TAG, it) }
-        generatedMaxBlood?.let { tag.putDouble("generated_max_blood", it) }
+        generatedMaxCharge?.let { tag.putDouble("generated_max_charge", it) }
         tag.putUUID("obelisk_id", obeliskId)
         tag.putString("definition_id", definitionId)
         tag.putString("target_template_id", targetTemplateId)
@@ -650,9 +535,6 @@ class ObeliskBlockEntity(
         tag.putInt("beam_color_green", beamColorGreen)
         tag.putInt("beam_color_blue", beamColorBlue)
         tag.put("inventory", itemHandler.serializeNBT())
-        if (!heartStack.isEmpty) {
-            tag.put("heart", heartStack.save(CompoundTag()))
-        }
         tag.putInt("modifier_count", modifiers.size)
         modifiers.forEachIndexed { index, modifier ->
             val modifierTag = CompoundTag()
@@ -669,17 +551,16 @@ class ObeliskBlockEntity(
             tag.contains("target_template_id") -> tag.getString("target_template_id")
             else -> ObeliskConstants.DEFAULT_TEMPLATES.first()
         }
-        generatedMaxBlood = if (tag.contains("generated_max_blood", Tag.TAG_DOUBLE.toInt())) {
-            tag.getDouble("generated_max_blood").coerceAtLeast(getDefinitionMaxBlood())
+        generatedMaxCharge = if (tag.contains("generated_max_charge", Tag.TAG_DOUBLE.toInt())) {
+            tag.getDouble("generated_max_charge").coerceAtLeast(getDefinitionMaxCharge())
         } else {
             null
         }
-        lifeEssenceStored = when {
-            tag.contains("life_essence_stored", Tag.TAG_INT.toInt()) -> tag.getInt("life_essence_stored")
-            tag.contains("blood_stored", Tag.TAG_DOUBLE.toInt()) -> floor(tag.getDouble("blood_stored")).toInt()
-            tag.contains("fe_stored", Tag.TAG_INT.toInt()) -> tag.getInt("fe_stored")
-            else -> getModifiedMaxStorage()
-        }.coerceIn(0, getModifiedMaxStorage())
+        chargeStoredInternal = if (tag.contains("charge_stored", Tag.TAG_INT.toInt())) {
+            tag.getInt("charge_stored").coerceIn(0, getModifiedMaxStorage())
+        } else {
+            getModifiedMaxStorage()
+        }
         fractionalRegenCarry = if (tag.contains("fractional_regen_carry", Tag.TAG_DOUBLE.toInt())) {
             tag.getDouble("fractional_regen_carry").coerceIn(0.0, 0.999_999)
         } else {
@@ -702,15 +583,12 @@ class ObeliskBlockEntity(
         beamColorGreen = if (tag.contains("beam_color_green")) tag.getInt("beam_color_green") else Random.nextInt(256)
         beamColorBlue = if (tag.contains("beam_color_blue")) tag.getInt("beam_color_blue") else Random.nextInt(256)
         if (tag.contains("inventory")) itemHandler.deserializeNBT(tag.getCompound("inventory"))
-        heartStack = if (tag.contains("heart", Tag.TAG_COMPOUND.toInt())) {
-            ItemStack.of(tag.getCompound("heart"))
-        } else {
-            ItemStack.EMPTY
-        }
         modifiers = if (tag.contains("modifier_count")) {
             buildList {
                 repeat(tag.getInt("modifier_count")) { index ->
-                    if (tag.contains("modifier_$index")) add(ObeliskModifier.load(tag.getCompound("modifier_$index")))
+                    if (tag.contains("modifier_$index")) {
+                        runCatching { ObeliskModifier.load(tag.getCompound("modifier_$index")) }.getOrNull()?.let(::add)
+                    }
                 }
             }.ifEmpty { ObeliskModifier.generateModifiers() }
         } else {
@@ -724,16 +602,12 @@ class ObeliskBlockEntity(
         ClientboundBlockEntityDataPacket.create(this)
 
     override fun <T : Any?> getCapability(cap: Capability<T>, side: Direction?): LazyOptional<T> {
-        if (cap == ForgeCapabilities.ENERGY) return energyCapability.cast()
-        if (cap == ForgeCapabilities.FLUID_HANDLER) return fluidCapability.cast()
         if (cap == ForgeCapabilities.ITEM_HANDLER && side != null) return itemCapability.cast()
         return super.getCapability(cap, side)
     }
 
     override fun invalidateCaps() {
         super.invalidateCaps()
-        energyCapability.invalidate()
-        fluidCapability.invalidate()
         itemCapability.invalidate()
     }
 

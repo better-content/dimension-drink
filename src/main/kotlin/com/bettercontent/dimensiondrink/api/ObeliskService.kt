@@ -22,8 +22,8 @@ data class ObeliskState(
     val activeRunId: UUID?,
     val levelKey: ResourceKey<Level>,
     val blockPos: BlockPos,
-    val energyStored: Int,
-    val maxEnergyStored: Int,
+    val chargeStored: Int,
+    val maxChargeStored: Int,
     val cooldownTicksRemaining: Int,
     val beamVisible: Boolean,
     val modifiers: List<ObeliskModifierState>

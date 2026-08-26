@@ -17,7 +17,7 @@ class DimensionalFontStructurePiece(
     private val center: BlockPos,
     private val siteSeed: Long,
     private val definitionId: String,
-    private val maxBlood: Double,
+    private val maxCharge: Double,
     private val layoutVersion: Int = DimensionalFontSiteGenerator.LAYOUT_VERSION
 ) : StructurePiece(
     ModStructures.DIMENSIONAL_FONT_PIECE.get(),
@@ -50,7 +50,7 @@ class DimensionalFontStructurePiece(
         BlockPos(tag.getInt(TAG_CENTER_X), tag.getInt(TAG_CENTER_Y), tag.getInt(TAG_CENTER_Z)),
         tag.getLong(TAG_SITE_SEED),
         tag.getString(TAG_DEFINITION_ID),
-        tag.getDouble(TAG_MAX_BLOOD),
+        tag.getDouble(TAG_MAX_CHARGE),
         tag.getInt(TAG_LAYOUT_VERSION)
     )
 
@@ -61,7 +61,7 @@ class DimensionalFontStructurePiece(
         tag.putInt(TAG_CENTER_Z, center.z)
         tag.putLong(TAG_SITE_SEED, siteSeed)
         tag.putString(TAG_DEFINITION_ID, definitionId)
-        tag.putDouble(TAG_MAX_BLOOD, maxBlood)
+        tag.putDouble(TAG_MAX_CHARGE, maxCharge)
     }
 
     override fun postProcess(
@@ -74,7 +74,7 @@ class DimensionalFontStructurePiece(
         pivot: BlockPos
     ) {
         val definition = ObeliskDataManager.getObelisk(definitionId) ?: return
-        DimensionalFontSiteGenerator.place(level, box, center, siteSeed, definition, maxBlood)
+        DimensionalFontSiteGenerator.place(level, box, center, siteSeed, definition, maxCharge)
     }
 
     companion object {
@@ -84,6 +84,6 @@ class DimensionalFontStructurePiece(
         private const val TAG_CENTER_Z = "CenterZ"
         private const val TAG_SITE_SEED = "SiteSeed"
         private const val TAG_DEFINITION_ID = "DefinitionId"
-        private const val TAG_MAX_BLOOD = "MaxBlood"
+        private const val TAG_MAX_CHARGE = "MaxCharge"
     }
 }

@@ -1,5 +1,7 @@
 package com.bettercontent.dimensiondrink.runtime.run
 
+import com.bettercontent.dimensiondrink.MOD_ID
+import com.bettercontent.dimensiondrink.ObeliskConstants
 import com.bettercontent.dimensiondrink.api.RunBeginResult
 import com.bettercontent.dimensiondrink.api.RunHandle
 import com.bettercontent.dimensiondrink.api.RunService
@@ -21,7 +23,10 @@ import net.minecraft.resources.ResourceKey
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.level.Level
+import net.minecraft.world.level.ChunkPos
 import net.minecraftforge.common.MinecraftForge
+import net.minecraftforge.common.world.ForgeChunkManager
+import net.minecraftforge.event.TickEvent
 import net.minecraftforge.event.entity.living.LivingDeathEvent
 import net.minecraftforge.event.entity.player.PlayerEvent
 import net.minecraftforge.event.server.ServerStartedEvent
@@ -31,12 +36,7 @@ import net.minecraftforge.eventbus.api.EventPriority
 import net.minecraftforge.eventbus.api.SubscribeEvent
 import java.util.UUID
 
-/**
- * Event-driven ownership for dimensional-font teleports.
- *
- * There is deliberately no tick path here. World generation and teleportation are delegated to
- * the backend; this object only owns the small amount of state needed to return a player safely.
- */
+/** Owns dimensional-font sessions, entry charging, active drain, and safe returns. */
 object RunRegistry : RunService {
     private const val MAX_ACTIVE_SESSIONS = 128
 
@@ -150,7 +150,11 @@ object RunRegistry : RunService {
 
         val existing = obelisk.activeRunId?.let(runs::get)
         if (existing != null) {
-            return enterPlayer(player.server, existing, player)
+            val joinCost = obelisk.getJoinChargeCost()
+            if (obelisk.chargeStored < joinCost) {
+                return "The font needs ${joinCost.toInt()} charge to admit another traveler."
+            }
+            return enterPlayer(player.server, existing, player, obelisk, joinCost)
         }
         if (obelisk.activeRunId != null) {
             obelisk.setActiveRun(null)
@@ -164,8 +168,8 @@ object RunRegistry : RunService {
         backend.validateTemplate(player.server, templateId)?.let {
             return "Cannot open ${displayName(obelisk.definitionId)}: $it"
         }
-        if (obelisk.bloodStored < obelisk.getBloodStartCost()) {
-            return "The font needs ${obelisk.getBloodStartCost().toInt()} mB of trip juice to open."
+        if (obelisk.chargeStored < obelisk.getStartChargeCost()) {
+            return "The font needs ${obelisk.getStartChargeCost().toInt()} charge to open."
         }
 
         val created = createRun(
@@ -177,7 +181,8 @@ object RunRegistry : RunService {
             ownerId = player.uuid
         ) ?: return "Run is unavailable for ${displayName(obelisk.definitionId)} right now"
         obelisk.setActiveRun(created.id)
-        val message = enterPlayer(player.server, created, player)
+        setOriginChunkTicket(player.server, created, true)
+        val message = enterPlayer(player.server, created, player, obelisk, obelisk.getStartChargeCost())
         if (playerRunIds[player.uuid] != created.id) {
             closeRun(player.server, created.id, "initial-entry-rejected")
         }
@@ -198,11 +203,22 @@ object RunRegistry : RunService {
             record.pendingPlayers.clear()
             runs[record.id] = record
             record.activePlayers.forEach { playerRunIds[it] = record.id }
+            setOriginChunkTicket(event.server, record, true)
         }
         RunSavedData.get(event.server).replaceAll(runs.values)
         if (restored.isNotEmpty()) {
-            logger.info("Restored {} dimensional font sessions with no tick tasks", restored.size)
+            logger.info("Restored {} dimensional font sessions", restored.size)
         }
+    }
+
+    @SubscribeEvent
+    fun onServerTick(event: TickEvent.ServerTickEvent) {
+        if (event.phase != TickEvent.Phase.END) return
+        backend.tick(event.server)
+        if (currentGameTime(event.server) % ObeliskConstants.TICKS_PER_SECOND != 0L) return
+        runs.values.toList()
+            .filter { it.state == RunState.ACTIVE }
+            .forEach { tickActiveRun(event.server, it) }
     }
 
     @SubscribeEvent
@@ -316,11 +332,22 @@ object RunRegistry : RunService {
         }
     }
 
-    private fun enterPlayer(server: MinecraftServer, record: RunRecord, player: ServerPlayer): String {
+    private fun enterPlayer(
+        server: MinecraftServer,
+        record: RunRecord,
+        player: ServerPlayer,
+        chargeSource: ObeliskBlockEntity,
+        entryCost: Double
+    ): String {
         val handle = activeHandle(server, record)
             ?: return "The dimensional font destination is unavailable."
         return when (val result = backend.enterPlayer(player, handle)) {
             EnterRunResult.Entered -> {
+                if (!chargeSource.drainCharge(entryCost)) {
+                    backend.returnPlayer(player)
+                    backend.clearPlayer(player.uuid)
+                    return "The font no longer has enough charge."
+                }
                 record.activePlayers += player.uuid
                 record.participants += player.uuid
                 record.survivors += player.uuid
@@ -360,6 +387,7 @@ object RunRegistry : RunService {
         }
         record.activePlayers.clear()
         record.pendingPlayers.clear()
+        setOriginChunkTicket(server, record, false)
         clearOriginObelisk(server, record)
         activeHandle(server, record)?.let { backend.destroyRun(server, it, reason) }
         runs.remove(runId)
@@ -430,6 +458,46 @@ object RunRegistry : RunService {
                 aggregateId = context.aggregateId
             )
         )
+    }
+
+    private fun tickActiveRun(server: MinecraftServer, record: RunRecord) {
+        val obelisk = getOriginObelisk(server, record)
+        if (obelisk == null) {
+            closeRun(server, record.id, "origin-font-unavailable")
+            return
+        }
+        val handle = activeHandle(server, record)
+        val playerCount = record.activePlayers.count { playerId ->
+            val player = server.playerList.getPlayer(playerId)
+            player != null && handle != null && backend.isPlayerInRun(player, handle)
+        }
+        if (playerCount <= 0) return
+
+        record.ticksElapsed += ObeliskConstants.TICKS_PER_SECOND
+        record.updatedGameTime = currentGameTime(server)
+        val drain = obelisk.getModifiedBaseDrain() + playerCount * obelisk.getModifiedPlayerDrain()
+        if (!obelisk.drainCharge(drain)) {
+            record.disqualifiedPlayers += record.activePlayers
+            record.survivors.removeAll(record.activePlayers)
+            record.state = RunState.FAILED
+            closeRun(server, record.id, "charge-depleted")
+            return
+        }
+        RunSavedData.get(server).upsert(record)
+    }
+
+    private fun getOriginObelisk(server: MinecraftServer, record: RunRecord): ObeliskBlockEntity? {
+        val level = record.originLevelKey?.let(server::getLevel) ?: return null
+        val pos = record.originObeliskPos ?: return null
+        level.getChunk(pos.x shr 4, pos.z shr 4)
+        return level.getBlockEntity(pos) as? ObeliskBlockEntity
+    }
+
+    private fun setOriginChunkTicket(server: MinecraftServer, record: RunRecord, add: Boolean) {
+        val level = record.originLevelKey?.let(server::getLevel) ?: return
+        val pos = record.originObeliskPos ?: return
+        val chunk = ChunkPos(pos)
+        ForgeChunkManager.forceChunk(level, MOD_ID, record.id, chunk.x, chunk.z, add, true)
     }
 
     private fun clearOriginObelisk(server: MinecraftServer, record: RunRecord) {
