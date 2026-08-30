@@ -3,6 +3,8 @@ package com.bettercontent.dimensiondrink.runtime.player
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.world.entity.Entity
+import net.minecraft.server.level.ServerPlayer
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.world.item.Items
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Block
@@ -14,6 +16,11 @@ import net.minecraftforge.eventbus.api.SubscribeEvent
 import kotlin.math.floor
 
 object VanillaPortalBlocker {
+
+    private val fontOnlyDimensions = setOf(
+        ResourceLocation("the_bumblezone", "the_bumblezone"),
+        ResourceLocation("rats", "ratlantis")
+    )
 
     @SubscribeEvent
     fun onPortalSpawn(event: BlockEvent.PortalSpawnEvent) {
@@ -46,6 +53,13 @@ object VanillaPortalBlocker {
 
     @SubscribeEvent
     fun onEntityTravelToDimension(event: EntityTravelToDimensionEvent) {
+        val player = event.entity as? ServerPlayer
+        if (event.dimension.location() in fontOnlyDimensions) {
+            if (player == null || !FontTravelAuthorization.permits(player, event.dimension)) {
+                event.isCanceled = true
+            }
+            return
+        }
         if (isEntityTouchingPortalSystem(event.entity)) {
             event.isCanceled = true
         }

@@ -9,8 +9,8 @@ class DefaultFontPaletteTest {
     fun bundledDefaultFontPalettesDoNotRequestBareEmptyFlowerPots() {
         val resourceNames = listOf(
             "overworld.json",
-            "otherside.json",
-            "undergarden.json",
+            "bumblezone.json",
+            "ratlantis.json",
             "nether.json"
         )
         resourceNames.forEach { name ->

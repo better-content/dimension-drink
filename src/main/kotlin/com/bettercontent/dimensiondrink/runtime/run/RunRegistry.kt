@@ -17,6 +17,7 @@ import com.bettercontent.dimensiondrink.runtime.backend.PreparedSiteResult
 import com.bettercontent.dimensiondrink.runtime.backend.PreparedSiteStatus
 import com.bettercontent.dimensiondrink.runtime.backend.ReturnRunResult
 import com.bettercontent.dimensiondrink.runtime.backend.RunBackendManager
+import com.bettercontent.dimensiondrink.runtime.player.FontTravelAuthorization
 import com.mojang.logging.LogUtils
 import net.minecraft.core.BlockPos
 import net.minecraft.resources.ResourceKey
@@ -243,6 +244,7 @@ object RunRegistry : RunService {
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     fun onLivingDeath(event: LivingDeathEvent) {
         val player = event.entity as? ServerPlayer ?: return
+        FontTravelAuthorization.clear(player.uuid)
         val record = mutableRunForPlayer(player.uuid) ?: return
         detachPlayer(record, player.uuid, disqualify = true)
         backend.clearPlayer(player.uuid)
@@ -264,7 +266,9 @@ object RunRegistry : RunService {
     }
 
     // Kept as a source-compatible no-op for older GameTests; death cleanup is immediate now.
-    fun onPlayerRespawn(@Suppress("UNUSED_PARAMETER") event: PlayerEvent.PlayerRespawnEvent) = Unit
+    fun onPlayerRespawn(event: PlayerEvent.PlayerRespawnEvent) {
+        FontTravelAuthorization.clear(event.entity.uuid)
+    }
 
     @SubscribeEvent
     fun onServerStopping(event: ServerStoppingEvent) {

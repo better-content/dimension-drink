@@ -14,7 +14,7 @@
     "pathBlocks": ["minecraft:cut_copper", "minecraft:copper_block", "minecraft:raw_copper_block"],
     "cultivationBlocks": ["minecraft:copper_block"],
     "structureBlocks": ["minecraft:raw_copper_block", "minecraft:copper_block", "minecraft:cut_copper"],
-    "decorations": ["undergarden:shard_torch", "minecraft:potted_flowering_azalea_bush", "minecraft:lime_candle", "minecraft:white_candle"]
+    "decorations": ["minecraft:lantern", "minecraft:potted_flowering_azalea_bush", "minecraft:lime_candle", "minecraft:white_candle"]
   },
   "rewardTableId": "overworld",
   "maxCharge": 15000,

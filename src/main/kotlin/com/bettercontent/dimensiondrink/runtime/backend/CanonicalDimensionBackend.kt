@@ -5,6 +5,7 @@ import com.bettercontent.dimensiondrink.data.CanonicalTargetResolver
 import com.bettercontent.dimensiondrink.data.ObeliskDataManager
 import com.bettercontent.dimensiondrink.data.ObeliskDefinition
 import com.bettercontent.dimensiondrink.registry.ModBlocks
+import com.bettercontent.dimensiondrink.runtime.player.FontTravelAuthorization
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.resources.ResourceKey
@@ -122,7 +123,9 @@ object CanonicalDimensionBackend : RunWorldBackend {
         val spawn = resolveArrival(level, record, configFor(record.templateId))
         val landing = normalizedArrivalTeleportPos(level, spawn)
         record.updatedGameTime = gameTime(player.server)
-        player.teleportTo(level, landing.x + 0.5, landing.y.toDouble(), landing.z + 0.5, player.yRot, player.xRot)
+        FontTravelAuthorization.authorize(player, level.dimension()) {
+            player.teleportTo(level, landing.x + 0.5, landing.y.toDouble(), landing.z + 0.5, player.yRot, player.xRot)
+        }
         playEntrySounds(level, spawn)
         playerBindings[player.uuid] = record.siteId
         return EnterRunResult.Entered
@@ -142,7 +145,9 @@ object CanonicalDimensionBackend : RunWorldBackend {
         val z = originPos.z + 0.5
         player.fallDistance = 0.0f
         player.setDeltaMovement(Vec3.ZERO)
-        player.teleportTo(originLevel, x, y, z, player.yRot, player.xRot)
+        FontTravelAuthorization.authorize(player, originLevel.dimension()) {
+            player.teleportTo(originLevel, x, y, z, player.yRot, player.xRot)
+        }
         player.moveTo(x, y, z, player.yRot, player.xRot)
         player.connection.resetPosition()
         player.fallDistance = 0.0f

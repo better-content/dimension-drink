@@ -1,0 +1,9 @@
+{
+  "id": "no_bonus",
+  "enabled": true,
+  "baseRolls": 0,
+  "rollsPerKill": 0,
+  "damagePerBonusRoll": 0.0,
+  "killCurrency": null,
+  "pools": []
+}

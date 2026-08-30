@@ -166,21 +166,21 @@ class ObeliskDataGameTests {
         }
 
         helper.assertTrue(
-            choose(listOf("nether", "nether", "undergarden"), setOf("nether")) == "undergarden",
+            choose(listOf("nether", "nether", "bumblezone"), setOf("nether")) == "bumblezone",
             "Expected rotation to skip previously sold types"
         )
         helper.assertTrue(
-            choose(listOf("nether", "undergarden"), setOf("nether", "undergarden")) == "nether",
+            choose(listOf("nether", "bumblezone"), setOf("nether", "bumblezone")) == "nether",
             "Expected the first different location as a duplicate-type fallback"
         )
         helper.assertTrue(choose(emptyList(), setOf("nether")) == null, "Expected no candidate when no fonts can be located")
 
-        val eligible = setOf("nether", "undergarden", "otherside")
+        val eligible = setOf("nether", "bumblezone", "ratlantis")
         val first = DimensionalFontMapTrades.advanceSoldTypes(emptySet(), "nether", eligible)
-        val second = DimensionalFontMapTrades.advanceSoldTypes(first, "undergarden", eligible)
-        val completed = DimensionalFontMapTrades.advanceSoldTypes(second, "otherside", eligible)
+        val second = DimensionalFontMapTrades.advanceSoldTypes(first, "bumblezone", eligible)
+        val completed = DimensionalFontMapTrades.advanceSoldTypes(second, "ratlantis", eligible)
         helper.assertTrue(first == setOf("nether"), "Expected the first sold type to be retained")
-        helper.assertTrue(second == setOf("nether", "undergarden"), "Expected distinct sold types to accumulate")
+        helper.assertTrue(second == setOf("nether", "bumblezone"), "Expected distinct sold types to accumulate")
         helper.assertTrue(completed.isEmpty(), "Expected type history to reset after a complete cycle")
         helper.succeed()
     }

@@ -3124,10 +3124,10 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
         )
 
         private fun occultTorchBlock(): Block =
-            block("undergarden:shard_torch", Blocks.TORCH)
+            Blocks.LANTERN
 
         private fun occultWallTorchBlock(): Block =
-            block("undergarden:shard_wall_torch", Blocks.WALL_TORCH)
+            Blocks.WALL_TORCH
 
         private fun occultCandleBlock(random: RandomSource): Block =
             if (random.nextBoolean()) Blocks.WHITE_CANDLE else Blocks.LIME_CANDLE

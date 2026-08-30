@@ -11,8 +11,8 @@ class FontEventContextResolverTest {
         val expected = mapOf(
             "minecraft:the_nether" to "minecraft:netherrack",
             "aether:the_aether" to "aether:holystone",
-            "undergarden:undergarden" to "undergarden:deepsoil",
-            "deeperdarker:otherside" to "deeperdarker:cobbled_sculk_stone",
+            "the_bumblezone:the_bumblezone" to "the_bumblezone:pollen_puff",
+            "rats:ratlantis" to "rats:marbled_cheese_raw",
             "minecraft:the_end" to "minecraft:end_stone",
             "minecraft:overworld" to "minecraft:stone"
         )

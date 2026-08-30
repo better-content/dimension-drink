@@ -14,8 +14,8 @@
     "pathBlocks": ["minecraft:cut_copper", "minecraft:copper_block", "minecraft:raw_copper_block"],
     "cultivationBlocks": ["minecraft:copper_block"],
     "structureBlocks": ["minecraft:raw_copper_block", "minecraft:copper_block", "minecraft:cut_copper"],
-    "trophyBlocks": ["undergarden:shard_torch", "minecraft:white_candle", "minecraft:crimson_roots", "minecraft:warped_roots"],
-    "decorations": ["undergarden:shard_torch", "minecraft:crimson_roots", "minecraft:warped_roots", "minecraft:lime_candle", "minecraft:white_candle"]
+    "trophyBlocks": ["minecraft:soul_lantern", "minecraft:white_candle", "minecraft:crimson_roots", "minecraft:warped_roots"],
+    "decorations": ["minecraft:soul_lantern", "minecraft:crimson_roots", "minecraft:warped_roots", "minecraft:lime_candle", "minecraft:white_candle"]
   },
   "rewardTableId": "nether",
   "maxCharge": 15000,

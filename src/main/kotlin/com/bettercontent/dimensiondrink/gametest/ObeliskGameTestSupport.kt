@@ -188,8 +188,8 @@ private fun canonicalLevelKey(templateId: String): ResourceKey<Level>? {
         "overworld" -> ResourceLocation("minecraft", "overworld")
         "nether" -> ResourceLocation("minecraft", "the_nether")
         "end" -> ResourceLocation("minecraft", "the_end")
-        "otherside" -> ResourceLocation("deeperdarker", "otherside")
-        "undergarden" -> ResourceLocation("undergarden", "undergarden")
+        "bumblezone" -> ResourceLocation("the_bumblezone", "the_bumblezone")
+        "ratlantis" -> ResourceLocation("rats", "ratlantis")
         else -> runCatching { ResourceLocation(templateId) }.getOrNull()
     } ?: return null
     return ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, location)
@@ -979,8 +979,8 @@ object ObeliskGameTestSupport {
 
     fun worldgenDefinitionsProduceFontAltarSites(helper: GameTestHelper) {
         deleteTestConfigs()
-        val moddedTemplateId = "otherside"
-        val moddedTargetDimension = "deeperdarker:otherside"
+        val moddedTemplateId = "ratlantis"
+        val moddedTargetDimension = "rats:ratlantis"
         val endDefinition = ObeliskDefinition(
             id = "test_end_visual_definition",
             displayName = "Test End Visual",
@@ -993,7 +993,7 @@ object ObeliskGameTestSupport {
             displayName = "Test Nether Visual",
             instanceTemplateId = "nether",
             rewardTableId = "nether",
-            cultivationPalette = CultivationPaletteDefinition(trophyBlocks = listOf("undergarden:shard_torch"))
+            cultivationPalette = CultivationPaletteDefinition(trophyBlocks = listOf("minecraft:soul_torch"))
         )
         val moddedDefinition = ObeliskDefinition(
             id = "test_modded_visual_definition",
@@ -1090,8 +1090,8 @@ object ObeliskGameTestSupport {
         val definition = ObeliskDefinition(
             id = "test_structure_piece_visual_definition",
             displayName = "Structure Piece Visual",
-            instanceTemplateId = "otherside",
-            targetDimension = "deeperdarker:otherside",
+            instanceTemplateId = "ratlantis",
+            targetDimension = "rats:ratlantis",
             rewardTableId = "default",
             cultivationPalette = CultivationPaletteDefinition(trophyBlocks = listOf("minecraft:white_candle"))
         )
@@ -2013,7 +2013,7 @@ object ObeliskGameTestSupport {
         }
         val altarCenter = middleTierCenter
         val shardTorch = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
-            net.minecraft.resources.ResourceLocation("undergarden", "shard_torch")
+            net.minecraft.resources.ResourceLocation("minecraft", "soul_torch")
         )
         val exposedCopperLantern = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
             net.minecraft.resources.ResourceLocation("everythingcopper", "exposed_copper_lantern")
