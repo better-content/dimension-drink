@@ -1,11 +1,25 @@
 package com.bettercontent.dimensiondrink.worldgen
 
+import com.google.gson.JsonParser
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class DimensionalFontWorldgenPlacementTest {
+    @Test
+    fun bundledNaturalFontDefinitionsAreEvenlyWeighted() {
+        val weights = listOf("bumblezone", "nether", "ratlantis").associateWith { fontId ->
+            val definition = assertNotNull(
+                javaClass.classLoader.getResourceAsStream("defaults/fonts/$fontId.json")
+            ).reader().use { JsonParser.parseReader(it).asJsonObject }
+            definition.get("worldgenWeight").asDouble
+        }
+
+        assertEquals(setOf(1.0), weights.values.toSet(), "Bundled natural Font weights should be even: $weights")
+    }
+
     @Test
     fun structureSetOwnsNaturalDimensionalFontPlacement() {
         val structureSet = assertNotNull(

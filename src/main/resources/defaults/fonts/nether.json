@@ -8,7 +8,7 @@
   "runRadius": 384,
   "requiredNamespace": "minecraft",
   "enabled": true,
-  "worldgenWeight": 2.0,
+  "worldgenWeight": 1.0,
   "worldgenFamilyId": "altar",
   "cultivationPalette": {
     "pathBlocks": ["minecraft:cut_copper", "minecraft:copper_block", "minecraft:raw_copper_block"],
