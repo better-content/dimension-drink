@@ -50,6 +50,12 @@ data class RunRecord(
         disqualifiedPlayers = LinkedHashSet(disqualifiedPlayers)
     )
 
+    internal fun restoredDormantCopy(): RunRecord = deepCopy().apply {
+        pendingPlayers += activePlayers
+        activePlayers.clear()
+        state = RunState.WARMING_UP
+    }
+
     fun toTag(): CompoundTag = CompoundTag().apply {
         putString("id", this@RunRecord.id.toString())
         putString("instance_id", instanceId.toString())

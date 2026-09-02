@@ -28,6 +28,16 @@ class ObeliskSmokeGameTests {
     }
 
     @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "font_smoke", timeoutTicks = 1200)
+    fun same_dimension_bounds_escape_cleans_session(helper: GameTestHelper) {
+        ObeliskGameTestSupport.smokeSameDimensionBoundsEscapeCleanup(helper)
+    }
+
+    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "font_smoke_bossbar", timeoutTicks = 1200)
+    fun low_charge_boss_bar_tracks_remaining_charge_and_clears(helper: GameTestHelper) {
+        ObeliskGameTestSupport.smokeChargeBossBarLifecycle(helper)
+    }
+
+    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "font_smoke", timeoutTicks = 1200)
     fun shared_run_closes_only_after_final_player_returns(helper: GameTestHelper) {
         ObeliskGameTestSupport.secondPlayerJoinsExistingRunAndBothReturn(helper)
     }
@@ -56,5 +66,10 @@ class ObeliskSmokeGameTests {
             "Expected console smoke command to leave no synthetic run"
         )
         helper.succeed()
+    }
+
+    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "font_smoke_restore", timeoutTicks = 1200)
+    fun interrupted_run_restores_dormant_and_validates_reconnect(helper: GameTestHelper) {
+        ObeliskGameTestSupport.smokeInterruptedRunRestoration(helper)
     }
 }

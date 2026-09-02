@@ -20,6 +20,7 @@ import com.bettercontent.dimensiondrink.registry.ModBlocks
 import com.bettercontent.dimensiondrink.runtime.ObeliskRuntimeService
 import com.bettercontent.dimensiondrink.runtime.reward.RewardSystem
 import com.bettercontent.dimensiondrink.runtime.run.RunRecord
+import com.bettercontent.dimensiondrink.runtime.run.FontChunkTicketManager
 import com.bettercontent.dimensiondrink.runtime.run.RunRegistry
 import com.bettercontent.dimensiondrink.runtime.run.RunState
 import com.bettercontent.dimensiondrink.runtime.run.RunSavedData
@@ -227,6 +228,7 @@ object ObeliskGameTestSupport {
             runId = handle.runId
             val record = requireNotNull(RunRegistry.get(handle.runId)) { "Expected active run record" }
             helper.assertTrue(record.state == RunState.ACTIVE, "Expected active state after entry")
+            helper.assertTrue(FontChunkTicketManager.hasTicket(handle.runId), "Expected active run to own its origin chunk ticket")
             helper.assertTrue(player.serverLevel().dimension() == Level.END, "Expected player in canonical End dimension")
             val spawn = requireNotNull(record.spawnPos) { "Expected resolved arrival position" }
             val destination = requireNotNull(server.getLevel(Level.END)) { "Expected End level to be loaded" }
@@ -243,6 +245,7 @@ object ObeliskGameTestSupport {
             helper.assertTrue(RunRegistry.getRun(player.uuid) == null, "Expected player ownership to clear")
             helper.assertTrue(obelisk.activeRunId == null, "Expected origin font run id to clear")
             helper.assertTrue(RunSavedData.get(server).snapshot().none { it.id == handle.runId }, "Expected saved run to clear")
+            helper.assertTrue(!FontChunkTicketManager.hasTicket(handle.runId), "Expected final return to release its origin chunk ticket")
             client.close(server)
             helper.succeed()
         } catch (failure: Throwable) {
@@ -269,6 +272,7 @@ object ObeliskGameTestSupport {
             val result = RunRegistry.activateObelisk(player, obelisk, originPos)
             helper.assertTrue(result?.startsWith("Drinking from ") == true, "Expected funded entry, got: $result")
             runId = requireNotNull(RunRegistry.getRun(player.uuid)).runId
+            helper.assertTrue(FontChunkTicketManager.hasTicket(runId!!), "Expected dry run to own its origin chunk ticket")
             helper.assertTrue(
                 obelisk.getChargeStored() < fundedCharge,
                 "Expected successful backend entry to consume the opening charge"
@@ -295,6 +299,7 @@ object ObeliskGameTestSupport {
                     "Expected a dry-closed font to remain below its next entry cost while passive recharge resumes"
                 )
                 helper.assertTrue(obelisk.isCharging(), "Expected passive recharge to resume after dry closure")
+                helper.assertTrue(!FontChunkTicketManager.hasTicket(runId!!), "Expected dry closure to release its origin chunk ticket")
                 runId = null
                 client.close(server)
                 helper.succeed()
@@ -362,12 +367,14 @@ object ObeliskGameTestSupport {
             helper.assertTrue(result?.startsWith("Drinking from ") == true, "Expected entry before escape test")
             client.pump(server)
             runId = requireNotNull(RunRegistry.getRun(player.uuid)).runId
+            helper.assertTrue(FontChunkTicketManager.hasTicket(runId!!), "Expected escape run to own its origin chunk ticket")
 
             player.teleportTo(helper.level, originPos.x + 8.5, originPos.y + 1.0, originPos.z + 0.5, 0.0f, 0.0f)
             client.pump(server)
             helper.assertTrue(RunRegistry.getRun(player.uuid) == null, "Expected external dimension change to clear ownership")
             helper.assertTrue(RunRegistry.get(runId) == null, "Expected escaped final player to close session")
             helper.assertTrue(obelisk.activeRunId == null, "Expected escaped session to clear origin font")
+            helper.assertTrue(!FontChunkTicketManager.hasTicket(runId!!), "Expected escape cleanup to release its origin chunk ticket")
             runId = null
             client.close(server)
             helper.succeed()
@@ -391,12 +398,14 @@ object ObeliskGameTestSupport {
             helper.assertTrue(result?.startsWith("Drinking from ") == true, "Expected entry before logout cleanup")
             client.pump(server)
             runId = requireNotNull(RunRegistry.getRun(player.uuid)).runId
+            helper.assertTrue(FontChunkTicketManager.hasTicket(runId!!), "Expected logout run to own its origin chunk ticket")
 
             RunRegistry.onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent(player))
             helper.assertTrue(RunRegistry.getRun(player.uuid) == null, "Expected logout to clear player ownership")
             helper.assertTrue(RunRegistry.get(runId) == null, "Expected final-player logout to close the session")
             helper.assertTrue(obelisk.activeRunId == null, "Expected logout cleanup to clear the origin font")
             helper.assertTrue(RunSavedData.get(server).snapshot().none { it.id == runId }, "Expected logout cleanup to remove saved run data")
+            helper.assertTrue(!FontChunkTicketManager.hasTicket(runId!!), "Expected logout cleanup to release its origin chunk ticket")
             runId = null
             client.close(server)
             helper.succeed()
@@ -420,12 +429,134 @@ object ObeliskGameTestSupport {
             helper.assertTrue(result?.startsWith("Drinking from ") == true, "Expected entry before death cleanup")
             client.pump(server)
             runId = requireNotNull(RunRegistry.getRun(player.uuid)).runId
+            helper.assertTrue(FontChunkTicketManager.hasTicket(runId!!), "Expected death run to own its origin chunk ticket")
 
             RunRegistry.onLivingDeath(LivingDeathEvent(player, player.damageSources().generic()))
             helper.assertTrue(RunRegistry.getRun(player.uuid) == null, "Expected death to clear player ownership")
             helper.assertTrue(RunRegistry.get(runId) == null, "Expected final-player death to close the session")
             helper.assertTrue(obelisk.activeRunId == null, "Expected death cleanup to clear the origin font")
             helper.assertTrue(RunSavedData.get(server).snapshot().none { it.id == runId }, "Expected death cleanup to remove saved run data")
+            helper.assertTrue(!FontChunkTicketManager.hasTicket(runId!!), "Expected death cleanup to release its origin chunk ticket")
+            runId = null
+            client.close(server)
+            helper.succeed()
+        } catch (failure: Throwable) {
+            runId?.let { RunRegistry.finishRun(server, it) }
+            client.close(server)
+            throw failure
+        }
+    }
+
+    fun smokeChargeBossBarLifecycle(helper: GameTestHelper) {
+        val server = helper.level.server
+        val client = connectHeadlessPlayer(helper)
+        val player = client.player
+        val originPos = helper.absolutePos(BlockPos(3, 2, 9))
+        var runId: UUID? = null
+        try {
+            placeChargedDefinitionObelisk(helper, originPos, "end")
+            val obelisk = helper.level.getBlockEntity(originPos) as ObeliskBlockEntity
+            val result = RunRegistry.activateObelisk(player, obelisk, originPos)
+            helper.assertTrue(result?.startsWith("Drinking from ") == true, "Expected entry before boss-bar test")
+            client.pump(server)
+            runId = requireNotNull(RunRegistry.getRun(player.uuid)).runId
+            obelisk.setChargeStoredForDebug((obelisk.getMaxChargeStored() * 0.75).toInt())
+
+            waitUntil(helper, 80, "Expected remaining-charge boss bar below 90%", condition = {
+                client.pump(server)
+                RunBossBarManager.hasBossBar(runId!!)
+            }, onSuccess = {
+                val progress = requireNotNull(RunBossBarManager.bossBarProgress(runId!!))
+                helper.assertTrue(kotlin.math.abs(progress - obelisk.getChargePercent().toFloat()) < 0.02f, "Expected boss-bar progress to match remaining charge")
+                helper.assertTrue(RunBossBarManager.bossBarTitle(runId!!)!!.startsWith("Font Charge: "), "Expected boss-bar title to report remaining charge")
+                helper.assertTrue(RunRegistry.returnPlayer(player), "Expected boss-bar test return to succeed")
+                client.pump(server)
+                helper.assertTrue(!RunBossBarManager.hasBossBar(runId!!), "Expected return to clear the charge boss bar")
+                helper.assertTrue(!FontChunkTicketManager.hasTicket(runId!!), "Expected return to release the origin chunk ticket")
+                runId = null
+                client.close(server)
+                helper.succeed()
+            })
+        } catch (failure: Throwable) {
+            runId?.let { RunRegistry.finishRun(server, it) }
+            client.close(server)
+            throw failure
+        }
+    }
+
+    fun smokeSameDimensionBoundsEscapeCleanup(helper: GameTestHelper) {
+        val server = helper.level.server
+        val client = connectHeadlessPlayer(helper)
+        val player = client.player
+        val originPos = helper.absolutePos(BlockPos(9, 2, 9))
+        var runId: UUID? = null
+        try {
+            placeChargedDefinitionObelisk(helper, originPos, "end")
+            val obelisk = helper.level.getBlockEntity(originPos) as ObeliskBlockEntity
+            val result = RunRegistry.activateObelisk(player, obelisk, originPos)
+            helper.assertTrue(result?.startsWith("Drinking from ") == true, "Expected entry before bounds escape test")
+            client.pump(server)
+            runId = requireNotNull(RunRegistry.getRun(player.uuid)).runId
+            val record = requireNotNull(RunRegistry.get(runId!!))
+            val bounds = requireNotNull(record.backendSiteBounds)
+            val destination = requireNotNull(record.backendLevelKey?.let(server::getLevel))
+            player.teleportTo(destination, bounds.maxX + 16.5, record.spawnPos!!.y.toDouble(), bounds.maxZ + 16.5, 0.0f, 0.0f)
+
+            waitUntil(helper, 80, "Expected same-dimension bounds escape to close the run", condition = {
+                client.pump(server)
+                RunRegistry.get(runId!!) == null
+            }, onSuccess = {
+                helper.assertTrue(player.serverLevel().dimension() == helper.level.dimension(), "Expected escaped player to return to the origin")
+                helper.assertTrue(obelisk.activeRunId == null, "Expected bounds escape to clear the origin font")
+                helper.assertTrue(!FontChunkTicketManager.hasTicket(runId!!), "Expected bounds escape to release the origin chunk ticket")
+                runId = null
+                client.close(server)
+                helper.succeed()
+            })
+        } catch (failure: Throwable) {
+            runId?.let { RunRegistry.finishRun(server, it) }
+            client.close(server)
+            throw failure
+        }
+    }
+
+    fun smokeInterruptedRunRestoration(helper: GameTestHelper) {
+        val server = helper.level.server
+        val client = connectHeadlessPlayer(helper)
+        val player = client.player
+        val originPos = helper.absolutePos(BlockPos(6, 2, 9))
+        var runId: UUID? = null
+        try {
+            placeChargedDefinitionObelisk(helper, originPos, "end")
+            val obelisk = helper.level.getBlockEntity(originPos) as ObeliskBlockEntity
+            val result = RunRegistry.activateObelisk(player, obelisk, originPos)
+            helper.assertTrue(result?.startsWith("Drinking from ") == true, "Expected entry before restart simulation")
+            client.pump(server)
+            runId = requireNotNull(RunRegistry.getRun(player.uuid)).runId
+            helper.assertTrue(FontChunkTicketManager.hasTicket(runId!!), "Expected live run ticket before restart simulation")
+
+            RunRegistry.restoreFromSavedData(server)
+            val dormant = requireNotNull(RunRegistry.get(runId!!)) { "Expected interrupted run to restore" }
+            helper.assertTrue(dormant.state == RunState.WARMING_UP, "Expected interrupted run to restore dormant")
+            helper.assertTrue(dormant.activePlayers.isEmpty(), "Expected dormant run to have no active players")
+            helper.assertTrue(player.uuid in dormant.pendingPlayers, "Expected interrupted participant to be pending")
+            helper.assertTrue(!FontChunkTicketManager.hasTicket(runId!!), "Expected dormant run to be ticketless")
+
+            RunRegistry.onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent(player))
+            val resumed = requireNotNull(RunRegistry.get(runId!!)) { "Expected valid reconnect to resume the run" }
+            helper.assertTrue(resumed.state == RunState.ACTIVE, "Expected in-bounds reconnect to reactivate the run")
+            helper.assertTrue(player.uuid in resumed.activePlayers, "Expected reconnected participant to become active")
+            helper.assertTrue(FontChunkTicketManager.hasTicket(runId!!), "Expected valid reconnect to reacquire one ticket")
+
+            RunRegistry.restoreFromSavedData(server)
+            helper.assertTrue(!FontChunkTicketManager.hasTicket(runId!!), "Expected second dormant restoration to release the ticket")
+            val destination = player.serverLevel()
+            val bounds = requireNotNull(RunRegistry.get(runId!!)?.backendSiteBounds)
+            player.teleportTo(destination, bounds.maxX + 16.5, player.y, bounds.maxZ + 16.5, 0.0f, 0.0f)
+            RunRegistry.onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent(player))
+            helper.assertTrue(RunRegistry.get(runId!!) == null, "Expected invalid reconnect to close the final-player run")
+            helper.assertTrue(RunRegistry.getRun(player.uuid) == null, "Expected invalid reconnect to clear ownership")
+            helper.assertTrue(!FontChunkTicketManager.hasTicket(runId!!), "Expected invalid reconnect to remain ticketless")
             runId = null
             client.close(server)
             helper.succeed()

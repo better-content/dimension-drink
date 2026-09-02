@@ -1,6 +1,5 @@
 package com.bettercontent.dimensiondrink.runtime.run
 
-import com.bettercontent.dimensiondrink.MOD_ID
 import com.bettercontent.dimensiondrink.ObeliskConstants
 import com.bettercontent.dimensiondrink.api.RunBeginResult
 import com.bettercontent.dimensiondrink.api.RunHandle
@@ -18,15 +17,14 @@ import com.bettercontent.dimensiondrink.runtime.backend.PreparedSiteStatus
 import com.bettercontent.dimensiondrink.runtime.backend.ReturnRunResult
 import com.bettercontent.dimensiondrink.runtime.backend.RunBackendManager
 import com.bettercontent.dimensiondrink.runtime.player.FontTravelAuthorization
+import com.bettercontent.dimensiondrink.runtime.ui.RunBossBarManager
 import com.mojang.logging.LogUtils
 import net.minecraft.core.BlockPos
 import net.minecraft.resources.ResourceKey
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.level.Level
-import net.minecraft.world.level.ChunkPos
 import net.minecraftforge.common.MinecraftForge
-import net.minecraftforge.common.world.ForgeChunkManager
 import net.minecraftforge.event.TickEvent
 import net.minecraftforge.event.entity.living.LivingDeathEvent
 import net.minecraftforge.event.entity.player.PlayerEvent
@@ -69,7 +67,10 @@ object RunRegistry : RunService {
     }
 
     fun describePreparedInstances(): String =
-        "backend=${backend.javaClass.simpleName} sessions=${runs.size} players=${playerRunIds.size} " +
+        "backend=${backend.javaClass.simpleName} sessions=${runs.size} " +
+            "active=${runs.values.count { it.state == RunState.ACTIVE }} " +
+            "dormant=${runs.values.count { it.state == RunState.WARMING_UP }} " +
+            "players=${playerRunIds.size} tickets=${FontChunkTicketManager.activeTicketCount()} " +
             "entries=$totalEntries returns=$totalReturns forcedCleanups=$forcedCleanups"
 
     fun returnPlayer(player: ServerPlayer, disqualify: Boolean = true): Boolean {
@@ -151,9 +152,16 @@ object RunRegistry : RunService {
 
         val existing = obelisk.activeRunId?.let(runs::get)
         if (existing != null) {
+            if (existing.state != RunState.ACTIVE) {
+                return "This dimensional font is waiting for interrupted travelers to reconnect."
+            }
             val joinCost = obelisk.getJoinChargeCost()
             if (obelisk.chargeStored < joinCost) {
                 return "The font needs ${joinCost.toInt()} charge to admit another traveler."
+            }
+            if (!FontChunkTicketManager.acquire(player.server, existing)) {
+                closeRun(player.server, existing.id, "origin-ticket-unavailable")
+                return "The dimensional font could not keep its origin loaded."
             }
             return enterPlayer(player.server, existing, player, obelisk, joinCost)
         }
@@ -182,7 +190,10 @@ object RunRegistry : RunService {
             ownerId = player.uuid
         ) ?: return "Run is unavailable for ${displayName(obelisk.definitionId)} right now"
         obelisk.setActiveRun(created.id)
-        setOriginChunkTicket(player.server, created, true)
+        if (!FontChunkTicketManager.acquire(player.server, created)) {
+            closeRun(player.server, created.id, "origin-ticket-unavailable")
+            return "The dimensional font could not keep its origin loaded."
+        }
         val message = enterPlayer(player.server, created, player, obelisk, obelisk.getStartChargeCost())
         if (playerRunIds[player.uuid] != created.id) {
             closeRun(player.server, created.id, "initial-entry-rejected")
@@ -192,23 +203,28 @@ object RunRegistry : RunService {
 
     @SubscribeEvent
     fun onServerStarted(event: ServerStartedEvent) {
+        runs.values.toList().forEach { FontChunkTicketManager.release(event.server, it) }
         runs.clear()
         playerRunIds.clear()
         returningPlayers.clear()
+        FontChunkTicketManager.clearRuntimeState()
         val restored = RunSavedData.get(event.server).values()
             .filter { it.state != RunState.FINISHED && it.state != RunState.FAILED }
             .sortedByDescending { it.updatedGameTime }
             .take(MAX_ACTIVE_SESSIONS)
         restored.forEach { saved ->
-            val record = saved.deepCopy()
-            record.pendingPlayers.clear()
+            val record = saved.restoredDormantCopy()
+            if (record.pendingPlayers.isEmpty()) {
+                activeHandle(event.server, record)?.let { backend.destroyRun(event.server, it, "empty-restored-run") }
+                clearOriginObelisk(event.server, record)
+                return@forEach
+            }
             runs[record.id] = record
-            record.activePlayers.forEach { playerRunIds[it] = record.id }
-            setOriginChunkTicket(event.server, record, true)
+            record.pendingPlayers.forEach { playerRunIds[it] = record.id }
         }
         RunSavedData.get(event.server).replaceAll(runs.values)
         if (restored.isNotEmpty()) {
-            logger.info("Restored {} dimensional font sessions", restored.size)
+            logger.info("Restored {} dimensional font sessions dormant without chunk tickets", restored.size)
         }
     }
 
@@ -229,6 +245,20 @@ object RunRegistry : RunService {
         val handle = activeHandle(player.server, record)
         if (handle == null || !backend.isPlayerInRun(player, handle)) {
             clearPlayerAssignment(player.server, player.uuid)
+            return
+        }
+        if (player.uuid in record.pendingPlayers) {
+            if (!FontChunkTicketManager.acquire(player.server, record)) {
+                player.sendSystemMessage(net.minecraft.network.chat.Component.literal("The dimensional font origin is unavailable; this run was closed."))
+                if (!returnPlayer(player)) clearPlayerAssignment(player.server, player.uuid)
+                return
+            }
+            record.pendingPlayers -= player.uuid
+            record.activePlayers += player.uuid
+            record.state = RunState.ACTIVE
+            record.updatedGameTime = currentGameTime(player.server)
+            getOriginObelisk(player.server, record)?.setActiveRun(record.id)
+            RunSavedData.get(player.server).upsert(record)
         }
     }
 
@@ -281,6 +311,7 @@ object RunRegistry : RunService {
         runs.clear()
         playerRunIds.clear()
         returningPlayers.clear()
+        FontChunkTicketManager.clearRuntimeState()
     }
 
     fun restoreFromSavedData(server: MinecraftServer) {
@@ -391,7 +422,8 @@ object RunRegistry : RunService {
         }
         record.activePlayers.clear()
         record.pendingPlayers.clear()
-        setOriginChunkTicket(server, record, false)
+        RunBossBarManager.removeBossBar(runId)
+        FontChunkTicketManager.release(server, record)
         clearOriginObelisk(server, record)
         activeHandle(server, record)?.let { backend.destroyRun(server, it, reason) }
         runs.remove(runId)
@@ -404,6 +436,17 @@ object RunRegistry : RunService {
         if (record.activePlayers.isEmpty() && record.pendingPlayers.isEmpty()) {
             closeRun(server, record.id, reason)
         } else {
+            if (record.activePlayers.isEmpty()) {
+                record.state = RunState.WARMING_UP
+                RunBossBarManager.removeBossBar(record.id)
+                FontChunkTicketManager.release(server, record)
+            } else {
+                record.state = RunState.ACTIVE
+                if (!FontChunkTicketManager.acquire(server, record)) {
+                    closeRun(server, record.id, "origin-ticket-unavailable")
+                    return
+                }
+            }
             record.updatedGameTime = currentGameTime(server)
             RunSavedData.get(server).upsert(record)
         }
@@ -465,17 +508,28 @@ object RunRegistry : RunService {
     }
 
     private fun tickActiveRun(server: MinecraftServer, record: RunRecord) {
+        val handle = activeHandle(server, record)
+        record.activePlayers.toList().forEach { playerId ->
+            val player = server.playerList.getPlayer(playerId)
+            if (player == null) {
+                record.activePlayers -= playerId
+                record.pendingPlayers += playerId
+            } else if (handle == null || !backend.isPlayerInRun(player, handle)) {
+                if (!returnPlayer(player)) clearPlayerAssignment(server, playerId)
+            }
+        }
+        if (runs[record.id] !== record) return
+        if (record.activePlayers.isEmpty()) {
+            persistOrClose(server, record, "no-active-players")
+            return
+        }
+
         val obelisk = getOriginObelisk(server, record)
         if (obelisk == null) {
             closeRun(server, record.id, "origin-font-unavailable")
             return
         }
-        val handle = activeHandle(server, record)
-        val playerCount = record.activePlayers.count { playerId ->
-            val player = server.playerList.getPlayer(playerId)
-            player != null && handle != null && backend.isPlayerInRun(player, handle)
-        }
-        if (playerCount <= 0) return
+        val playerCount = record.activePlayers.size
 
         record.ticksElapsed += ObeliskConstants.TICKS_PER_SECOND
         record.updatedGameTime = currentGameTime(server)
@@ -495,13 +549,6 @@ object RunRegistry : RunService {
         val pos = record.originObeliskPos ?: return null
         level.getChunk(pos.x shr 4, pos.z shr 4)
         return level.getBlockEntity(pos) as? ObeliskBlockEntity
-    }
-
-    private fun setOriginChunkTicket(server: MinecraftServer, record: RunRecord, add: Boolean) {
-        val level = record.originLevelKey?.let(server::getLevel) ?: return
-        val pos = record.originObeliskPos ?: return
-        val chunk = ChunkPos(pos)
-        ForgeChunkManager.forceChunk(level, MOD_ID, record.id, chunk.x, chunk.z, add, true)
     }
 
     private fun clearOriginObelisk(server: MinecraftServer, record: RunRecord) {

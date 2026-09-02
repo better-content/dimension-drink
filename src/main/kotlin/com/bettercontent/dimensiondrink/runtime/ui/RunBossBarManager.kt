@@ -10,6 +10,7 @@ import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.BossEvent
 import net.minecraftforge.event.TickEvent
 import net.minecraftforge.event.entity.player.PlayerEvent
+import net.minecraftforge.event.server.ServerStoppedEvent
 import net.minecraftforge.eventbus.api.SubscribeEvent
 import java.util.UUID
 
@@ -28,7 +29,7 @@ object RunBossBarManager {
         val validRunIds = activeRuns.map { it.id }.toSet()
 
         activeRuns.forEach { run ->
-            if (run.state != RunState.ACTIVE && run.state != RunState.WARMING_UP) {
+            if (run.state != RunState.ACTIVE) {
                 removeBossBar(run.id)
                 return@forEach
             }
@@ -40,8 +41,8 @@ object RunBossBarManager {
                 return@forEach
             }
 
-            val charge = obelisk.getChargePercent()
-            if (charge >= ObeliskConstants.BOSS_BAR_SHOW_THRESHOLD) {
+            val presentation = presentation(obelisk.getChargePercent())
+            if (presentation == null) {
                 removeBossBar(run.id)
                 return@forEach
             }
@@ -54,13 +55,9 @@ object RunBossBarManager {
                 )
             }
 
-            bossBar.progress = charge.toFloat().coerceIn(0f, 1f)
-            bossBar.color = when {
-                charge > ObeliskConstants.BOSS_BAR_GREEN_THRESHOLD -> BossEvent.BossBarColor.GREEN
-                charge > ObeliskConstants.BOSS_BAR_YELLOW_THRESHOLD -> BossEvent.BossBarColor.YELLOW
-                else -> BossEvent.BossBarColor.RED
-            }
-            bossBar.name = Component.literal("Font Charge: ${(charge * 100.0).toInt()}%")
+            bossBar.progress = presentation.progress
+            bossBar.color = presentation.color
+            bossBar.name = Component.literal(presentation.title)
 
             val livePlayers = run.activePlayers.mapNotNull(server.playerList::getPlayer).toSet()
             livePlayers.forEach { player ->
@@ -87,9 +84,38 @@ object RunBossBarManager {
 
     fun hasBossBar(runId: UUID): Boolean = activeBossBars.containsKey(runId)
 
+    internal fun bossBarProgress(runId: UUID): Float? = activeBossBars[runId]?.progress
+
+    internal fun bossBarTitle(runId: UUID): String? = activeBossBars[runId]?.name?.string
+
+    @SubscribeEvent
+    fun onServerStopped(@Suppress("UNUSED_PARAMETER") event: ServerStoppedEvent) {
+        activeBossBars.keys.toList().forEach(::removeBossBar)
+    }
+
     fun removeBossBar(runId: UUID) {
         activeBossBars.remove(runId)?.let { bossBar ->
             bossBar.players.toList().forEach(bossBar::removePlayer)
         }
     }
+
+    internal fun presentation(chargeFraction: Double): FontBossBarPresentation? {
+        val charge = chargeFraction.coerceIn(0.0, 1.0)
+        if (charge >= ObeliskConstants.BOSS_BAR_SHOW_THRESHOLD) return null
+        return FontBossBarPresentation(
+            progress = charge.toFloat(),
+            title = "Font Charge: ${(charge * 100.0).toInt()}%",
+            color = when {
+                charge > ObeliskConstants.BOSS_BAR_GREEN_THRESHOLD -> BossEvent.BossBarColor.GREEN
+                charge > ObeliskConstants.BOSS_BAR_YELLOW_THRESHOLD -> BossEvent.BossBarColor.YELLOW
+                else -> BossEvent.BossBarColor.RED
+            }
+        )
+    }
 }
+
+internal data class FontBossBarPresentation(
+    val progress: Float,
+    val title: String,
+    val color: BossEvent.BossBarColor
+)

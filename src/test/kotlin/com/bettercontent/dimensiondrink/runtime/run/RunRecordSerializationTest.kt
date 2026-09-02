@@ -105,4 +105,27 @@ class RunRecordSerializationTest {
         assertTrue(copy.activePlayers.isNotEmpty())
         assertTrue(copy.pendingPlayers.isNotEmpty())
     }
+
+    @Test
+    fun interruptedRunRestoresDormantWithEveryParticipantPending() {
+        val activePlayer = java.util.UUID.randomUUID()
+        val pendingPlayer = java.util.UUID.randomUUID()
+        val run = RunRecord(
+            id = java.util.UUID.randomUUID(),
+            instanceId = java.util.UUID.randomUUID(),
+            obeliskId = java.util.UUID.randomUUID(),
+            definitionId = "end",
+            instanceTemplateId = "end",
+            activePlayers = linkedSetOf(activePlayer),
+            pendingPlayers = linkedSetOf(pendingPlayer),
+            state = RunState.ACTIVE
+        )
+
+        val restored = run.restoredDormantCopy()
+
+        assertEquals(RunState.WARMING_UP, restored.state)
+        assertTrue(restored.activePlayers.isEmpty())
+        assertEquals(linkedSetOf(pendingPlayer, activePlayer), restored.pendingPlayers)
+        assertEquals(linkedSetOf(activePlayer), run.activePlayers)
+    }
 }

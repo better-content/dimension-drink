@@ -6,12 +6,15 @@ import com.bettercontent.dimensiondrink.commands.ObeliskCommands
 import com.bettercontent.dimensiondrink.gametest.ObeliskGameTestRegistrar
 import com.bettercontent.dimensiondrink.registry.ModRegistries
 import com.bettercontent.dimensiondrink.runtime.player.VanillaPortalBlocker
+import com.bettercontent.dimensiondrink.runtime.run.FontChunkTicketManager
 import com.bettercontent.dimensiondrink.runtime.run.RunRegistry
+import com.bettercontent.dimensiondrink.runtime.ui.RunBossBarManager
 import com.bettercontent.dimensiondrink.trade.DimensionalFontMapTrades
 import com.bettercontent.dimensiondrink.worldgen.village.VillageShrinePools
 import com.bettercontent.dimensiondrink.compat.ThreadsBridge
 import net.minecraftforge.common.MinecraftForge
 import net.minecraftforge.fml.common.Mod
+import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext
 
 @Mod(MOD_ID)
@@ -23,12 +26,18 @@ class DimensionDrinkMod {
         val modBus = FMLJavaModLoadingContext.get().modEventBus
         ModRegistries.registerAll(modBus)
         modBus.register(ObeliskGameTestRegistrar)
+        modBus.addListener(::onCommonSetup)
         MinecraftForge.EVENT_BUS.register(VanillaPortalBlocker)
         MinecraftForge.EVENT_BUS.register(RunRegistry)
+        MinecraftForge.EVENT_BUS.register(RunBossBarManager)
         MinecraftForge.EVENT_BUS.register(ObeliskCommands)
         MinecraftForge.EVENT_BUS.register(DimensionalFontMapTrades)
         MinecraftForge.EVENT_BUS.register(VillageShrinePools)
         MinecraftForge.EVENT_BUS.register(ThreadsBridge)
+    }
+
+    private fun onCommonSetup(event: FMLCommonSetupEvent) {
+        event.enqueueWork(FontChunkTicketManager::registerValidationCallback)
     }
 
     companion object {
