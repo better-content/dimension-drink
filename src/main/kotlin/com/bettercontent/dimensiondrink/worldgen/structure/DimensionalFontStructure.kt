@@ -3,8 +3,8 @@ package com.bettercontent.dimensiondrink.worldgen.structure
 import com.mojang.serialization.Codec
 import com.bettercontent.dimensiondrink.ObeliskConstants
 import com.bettercontent.dimensiondrink.data.ObeliskDataManager
-import com.bettercontent.dimensiondrink.data.ObeliskDefinition
 import com.bettercontent.dimensiondrink.registry.ModStructures
+import com.bettercontent.dimensiondrink.worldgen.FontSelector
 import net.minecraft.core.BlockPos
 import net.minecraft.core.QuartPos
 import net.minecraft.tags.BiomeTags
@@ -19,9 +19,8 @@ import java.util.Optional
 class DimensionalFontStructure(settings: StructureSettings) : Structure(settings) {
     override fun findGenerationPoint(context: GenerationContext): Optional<GenerationStub> {
         val chunk = context.chunkPos()
-        val seed = structureSeed(context.seed(), chunk)
-        val random = RandomSource.create(seed)
-        val center = DimensionalFontSiteGenerator.anchorForStartChunk(chunk, random)
+        val layoutSeed = FontSelector.layoutSeed(context.seed(), chunk)
+        val center = DimensionalFontSiteGenerator.anchorForStartChunk(chunk, RandomSource.create(layoutSeed))
         val centerBiome = context.chunkGenerator().biomeSource.getNoiseBiome(
             QuartPos.fromBlock(center.x),
             0,
@@ -35,7 +34,10 @@ class DimensionalFontStructure(settings: StructureSettings) : Structure(settings
         ) {
             return Optional.empty()
         }
-        val definition = pickDefinition(RandomSource.create(seed)) ?: return Optional.empty()
+        val definition = FontSelector.select(
+            ObeliskDataManager.enabledDimensionDrinks(),
+            RandomSource.create(FontSelector.definitionSeed(context.seed(), chunk))
+        ) ?: return Optional.empty()
         val heights = mutableListOf<Int>()
         for (dx in -DimensionalFontSiteGenerator.ALTAR_RADIUS..DimensionalFontSiteGenerator.ALTAR_RADIUS) {
             for (dz in -DimensionalFontSiteGenerator.ALTAR_RADIUS..DimensionalFontSiteGenerator.ALTAR_RADIUS) {
@@ -64,7 +66,7 @@ class DimensionalFontStructure(settings: StructureSettings) : Structure(settings
             .coerceAtMost(1_000_000.0)
         val position = BlockPos(center.x, groundY, center.z)
         return Optional.of(GenerationStub(position) { pieces ->
-            pieces.addPiece(DimensionalFontStructurePiece(position, seed, definition.id, maxCharge))
+            pieces.addPiece(DimensionalFontStructurePiece(position, layoutSeed, definition.id, maxCharge))
         })
     }
 
@@ -75,27 +77,5 @@ class DimensionalFontStructure(settings: StructureSettings) : Structure(settings
         private const val MAX_ALTAR_SLOPE = 6
         private const val GENERATED_CAPACITY_MULTIPLIER = 1.5
 
-        private fun pickDefinition(random: RandomSource): ObeliskDefinition? {
-            val enabled = ObeliskDataManager.enabledDimensionDrinks()
-                .filter { it.worldgenWeight > 0.0 }
-                .sortedBy { it.id }
-            if (enabled.isEmpty()) return null
-            val total = enabled.sumOf { it.worldgenWeight }
-            var cursor = random.nextDouble() * total
-            for (definition in enabled) {
-                cursor -= definition.worldgenWeight
-                if (cursor <= 0.0) return definition
-            }
-            return enabled.last()
-        }
-
-        private fun structureSeed(worldSeed: Long, chunk: ChunkPos): Long {
-            var value = worldSeed xor 0x4f1bbcdc2d6a5f3bL
-            value = value xor (chunk.x.toLong() * -7046029254386353131L)
-            value = value xor (chunk.z.toLong() * -4658895280553007687L)
-            value = value xor (chunk.x.toLong() shl 32)
-            value = value xor chunk.z.toLong()
-            return value
-        }
     }
 }

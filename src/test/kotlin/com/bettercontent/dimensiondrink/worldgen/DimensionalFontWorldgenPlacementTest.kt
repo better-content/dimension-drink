@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 class DimensionalFontWorldgenPlacementTest {
     @Test
     fun bundledNaturalFontDefinitionsAreEvenlyWeighted() {
-        val weights = listOf("bumblezone", "nether", "ratlantis").associateWith { fontId ->
+        val weights = listOf("aether", "bumblezone", "nether", "ratlantis").associateWith { fontId ->
             val definition = assertNotNull(
                 javaClass.classLoader.getResourceAsStream("defaults/fonts/$fontId.json")
             ).reader().use { JsonParser.parseReader(it).asJsonObject }

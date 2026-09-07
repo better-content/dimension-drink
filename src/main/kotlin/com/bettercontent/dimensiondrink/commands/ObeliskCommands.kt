@@ -12,6 +12,8 @@ import com.bettercontent.dimensiondrink.runtime.backend.RunSiteSavedData
 import com.bettercontent.dimensiondrink.runtime.backend.SiteState
 import com.bettercontent.dimensiondrink.runtime.run.RunRegistry
 import com.bettercontent.dimensiondrink.runtime.run.RunSavedData
+import com.bettercontent.dimensiondrink.trade.FontLocationSavedData
+import com.bettercontent.dimensiondrink.worldgen.FontSelector
 import net.minecraft.commands.Commands
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.arguments.UuidArgument
@@ -33,6 +35,22 @@ object ObeliskCommands {
     @SubscribeEvent
     fun onRegisterCommands(event: RegisterCommandsEvent) {
         val root = Commands.literal("font").requires { it.hasPermission(2) }
+
+        root.then(
+            Commands.literal("audit").executes { ctx ->
+                val eligible = FontSelector.eligible(ObeliskDataManager.enabledDimensionDrinks())
+                val normalized = FontSelector.normalizedWeights(eligible)
+                val weights = normalized.entries.joinToString { "${it.key}=${"%.4f".format(it.value)}" }
+                    .ifEmpty { "none" }
+                val data = FontLocationSavedData.get(ctx.source.server)
+                val indexed = data.snapshot().groupingBy { it.definitionId }.eachCount().toSortedMap()
+                val sold = data.salesSnapshot()
+                ctx.source.sendSuccess({ Component.literal("Font candidate weights: $weights") }, false)
+                ctx.source.sendSuccess({ Component.literal("Indexed natural Fonts: $indexed") }, false)
+                ctx.source.sendSuccess({ Component.literal("Font maps sold: $sold") }, false)
+                1
+            }
+        )
 
         root.then(
             Commands.literal("debug_spawn")

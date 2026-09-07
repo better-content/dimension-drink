@@ -5,6 +5,7 @@ import com.bettercontent.dimensiondrink.data.ObeliskDataManager
 import com.bettercontent.dimensiondrink.registry.ModBlockEntities
 import com.bettercontent.dimensiondrink.registry.ModBlocks
 import com.bettercontent.dimensiondrink.runtime.ObeliskRuntimeService
+import com.bettercontent.dimensiondrink.trade.FontLocationSavedData
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.particles.DustParticleOptions
@@ -81,6 +82,8 @@ class ObeliskBlockEntity(
     }
 
     private var generatedMaxCharge: Double? = null
+    var isNaturallyGenerated: Boolean = false
+        private set
     private var chargeStoredInternal: Int = ObeliskConstants.MAX_CHARGE_STORAGE.toInt()
     val chargeStored: Double
         get() = chargeStoredInternal.toDouble()
@@ -119,6 +122,7 @@ class ObeliskBlockEntity(
     fun setDefinition(definitionId: String) {
         advancePassiveRegenerationNow()
         this.definitionId = definitionId
+        registerNaturalFont()
         setChanged()
         syncToClients()
     }
@@ -144,11 +148,13 @@ class ObeliskBlockEntity(
     /** Initializes a naturally generated font without emitting neighbor or client updates mid-worldgen. */
     fun initializeGeneratedFont(definitionId: String, maxCharge: Double) {
         this.definitionId = definitionId
+        isNaturallyGenerated = true
         generatedMaxCharge = maxCharge.coerceAtLeast(getDefinitionMaxCharge())
         chargeStoredInternal = getModifiedMaxStorage()
         fractionalRegenCarry = 0.0
         fractionalDrainCarry = 0.0
         setChanged()
+        registerNaturalFont()
     }
 
     fun cycleTemplate() {
@@ -528,6 +534,7 @@ class ObeliskBlockEntity(
         generatedMaxCharge?.let { tag.putDouble("generated_max_charge", it) }
         tag.putUUID("obelisk_id", obeliskId)
         tag.putString("definition_id", definitionId)
+        tag.putBoolean("natural_generated", isNaturallyGenerated)
         tag.putString("target_template_id", targetTemplateId)
         activeRunId?.let { tag.putUUID("active_run_id", it) }
         tag.putBoolean("beam_visible", beamVisible)
@@ -551,6 +558,7 @@ class ObeliskBlockEntity(
             tag.contains("target_template_id") -> tag.getString("target_template_id")
             else -> ObeliskConstants.DEFAULT_TEMPLATES.first()
         }
+        isNaturallyGenerated = tag.getBoolean("natural_generated")
         generatedMaxCharge = if (tag.contains("generated_max_charge", Tag.TAG_DOUBLE.toInt())) {
             tag.getDouble("generated_max_charge").coerceAtLeast(getDefinitionMaxCharge())
         } else {
@@ -614,10 +622,18 @@ class ObeliskBlockEntity(
     override fun onLoad() {
         super.onLoad()
         ObeliskRuntimeService.registerLoaded(this)
+        registerNaturalFont()
     }
 
     override fun setRemoved() {
         ObeliskRuntimeService.unregisterLoaded(this)
         super.setRemoved()
+    }
+
+    private fun registerNaturalFont() {
+        val serverLevel = level as? ServerLevel ?: return
+        if (isNaturallyGenerated) {
+            FontLocationSavedData.get(serverLevel.server).register(serverLevel, blockPos, definitionId)
+        }
     }
 }

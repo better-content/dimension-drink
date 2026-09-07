@@ -3,27 +3,20 @@ package com.bettercontent.dimensiondrink.trade
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class DimensionalFontMapTradeResourcesTest {
     @Test
-    fun dimensionalFontStructureIsDiscoverableByMapTrades() {
-        val tag = assertNotNull(
-            javaClass.classLoader.getResource(
-                "data/dimension_drink/tags/worldgen/structure/on_dimensional_font_maps.json"
-            )
-        ).readText()
-
+    fun fontMapsDoNotRetainTheRemoteStructureSearchTag() {
         assertTrue(
-            Regex("\\\"dimension_drink:dimensional_font\\\"").containsMatchIn(tag),
-            "Font-map structure tag should contain the production dimensional font structure"
+            javaClass.classLoader.getResource("data/dimension_drink/tags/worldgen/structure/on_dimensional_font_maps.json") == null,
+            "Font maps must query the no-load discovery index instead of locating remote structures"
         )
     }
 
     @Test
     fun fontMapNameAndDestinationAreLocalized() {
-        val language = assertNotNull(
+        val language = kotlin.test.assertNotNull(
             javaClass.classLoader.getResource("assets/dimension_drink/lang/en_us.json")
         ).readText()
 

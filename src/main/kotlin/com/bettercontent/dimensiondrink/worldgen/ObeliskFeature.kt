@@ -3466,17 +3466,8 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
     private fun chunkPlacementSeed(siteSeed: Long, chunk: ChunkPos): Long =
         siteSeed xor SITE_CHUNK_DETAIL_SALT xor (chunk.x.toLong() shl 32) xor (chunk.z.toLong() and 0xffffffffL)
 
-    private fun pickDeterministicObelisk(random: RandomSource): ObeliskDefinition? {
-        val enabled = ObeliskDataManager.enabledDimensionDrinks().filter { it.worldgenWeight > 0.0 }
-        if (enabled.isEmpty()) return null
-        val total = enabled.sumOf { it.worldgenWeight }
-        var cursor = random.nextDouble() * total
-        for (definition in enabled) {
-            cursor -= definition.worldgenWeight
-            if (cursor <= 0.0) return definition
-        }
-        return enabled.last()
-    }
+    private fun pickDeterministicObelisk(random: RandomSource): ObeliskDefinition? =
+        FontSelector.select(ObeliskDataManager.enabledDimensionDrinks(), random)
 
     private fun isInsideChunk(pos: BlockPos, chunk: ChunkPos): Boolean =
         pos.x >= chunk.minBlockX &&

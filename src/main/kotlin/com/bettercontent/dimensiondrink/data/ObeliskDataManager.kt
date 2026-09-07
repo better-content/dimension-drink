@@ -3,6 +3,7 @@ package com.bettercontent.dimensiondrink.data
 import com.google.gson.GsonBuilder
 import com.mojang.logging.LogUtils
 import com.bettercontent.dimensiondrink.MOD_ID
+import com.bettercontent.dimensiondrink.worldgen.FontSelector
 import net.minecraftforge.fml.ModList
 import net.minecraftforge.fml.loading.FMLPaths
 import java.nio.file.Files
@@ -46,11 +47,20 @@ object ObeliskDataManager {
             .mapNotNull(::normalizeWorldgenFamily)
             .associateBy { it.id }
         loaded = true
+        val eligible = FontSelector.eligible(obeliskDefinitions.values)
+        obeliskDefinitions.values
+            .filter { it.enabled && (!it.worldgenWeight.isFinite() || it.worldgenWeight <= 0.0) }
+            .sortedBy(ObeliskDefinition::id)
+            .forEach { logger.warn("Excluding enabled font definition {} from worldgen because weight {} is not positive and finite", it.id, it.worldgenWeight) }
         logger.info(
             "Loaded {} font definitions, {} reward tables, and {} site families",
             obeliskDefinitions.size,
             rewardTables.size,
             worldgenFamilies.size
+        )
+        logger.info(
+            "Effective worldgen fonts: {}",
+            FontSelector.normalizedWeights(eligible).entries.joinToString { "${it.key}=${it.value}" }.ifEmpty { "none" }
         )
     }
 
@@ -70,15 +80,7 @@ object ObeliskDataManager {
     }
 
     fun pickRandomObelisk(random: Random = Random.Default): ObeliskDefinition? {
-        val enabled = enabledDimensionDrinks().filter { it.worldgenWeight > 0.0 }
-        if (enabled.isEmpty()) return null
-        val total = enabled.sumOf { it.worldgenWeight }
-        var cursor = random.nextDouble(total)
-        for (definition in enabled) {
-            cursor -= definition.worldgenWeight
-            if (cursor <= 0.0) return definition
-        }
-        return enabled.last()
+        return FontSelector.select(enabledDimensionDrinks(), random)
     }
 
     fun getRewardTable(id: String?): RewardTableDefinition? {

@@ -4,6 +4,9 @@ import com.bettercontent.dimensiondrink.worldgen.pickCourtPotBlock
 import com.bettercontent.dimensiondrink.data.ObeliskDataManager
 import com.bettercontent.dimensiondrink.trade.DimensionalFontMapListing
 import com.bettercontent.dimensiondrink.trade.DimensionalFontMapTrades
+import com.bettercontent.dimensiondrink.trade.FontLocationSavedData
+import com.bettercontent.dimensiondrink.content.ObeliskBlockEntity
+import com.bettercontent.dimensiondrink.registry.ModBlocks
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.gametest.framework.GameTest
@@ -17,6 +20,43 @@ import java.nio.file.Path
 
 @PrefixGameTestTemplate(false)
 class ObeliskDataGameTests {
+    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
+    fun naturally_generated_fonts_are_indexed_and_removed_with_the_block(helper: GameTestHelper) {
+        val pos = helper.absolutePos(BlockPos(2, 2, 2))
+        helper.level.setBlockAndUpdate(pos, ModBlocks.OBELISK.get().defaultBlockState())
+        val obelisk = helper.level.getBlockEntity(pos) as ObeliskBlockEntity
+        obelisk.initializeGeneratedFont("nether", 15_000.0)
+        val data = FontLocationSavedData.get(helper.level.server)
+        helper.assertTrue(data.snapshot().any { it.pos == pos && it.definitionId == "nether" }, "Expected generated Font in discovery index")
+
+        helper.level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState())
+        helper.assertTrue(data.snapshot().none { it.pos == pos }, "Expected removed generated Font to leave discovery index")
+        helper.succeed()
+    }
+
+    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
+    fun player_or_debug_fonts_are_not_indexed(helper: GameTestHelper) {
+        val pos = helper.absolutePos(BlockPos(4, 2, 4))
+        helper.level.setBlockAndUpdate(pos, ModBlocks.OBELISK.get().defaultBlockState())
+        val obelisk = helper.level.getBlockEntity(pos) as ObeliskBlockEntity
+        obelisk.setDefinition("nether")
+        helper.assertTrue(
+            FontLocationSavedData.get(helper.level.server).snapshot().none { it.pos == pos },
+            "Expected an ordinary placed/debug Font to remain outside the natural discovery index"
+        )
+        helper.succeed()
+    }
+
+    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
+    fun font_map_listing_uses_an_indexed_destination(helper: GameTestHelper) {
+        val pos = helper.absolutePos(BlockPos(6, 2, 6))
+        helper.level.setBlockAndUpdate(pos, ModBlocks.OBELISK.get().defaultBlockState())
+        (helper.level.getBlockEntity(pos) as ObeliskBlockEntity).initializeGeneratedFont("nether", 15_000.0)
+        val map = DimensionalFontMapListing(0).nextMap(helper.level, pos.offset(16, 0, 16), emptySet())
+        helper.assertTrue(map?.tag?.getString(DimensionalFontMapListing.DEFINITION_TAG) == "nether", "Expected indexed Nether Font map")
+        helper.succeed()
+    }
+
     @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
     fun default_font_index_matches_bundled_definitions(helper: GameTestHelper) {
         val indexed = indexedJsonNames("defaults/fonts")
@@ -155,26 +195,6 @@ class ObeliskDataGameTests {
 
     @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 200)
     fun font_map_rotation_prioritizes_unsold_types_and_cycles(helper: GameTestHelper) {
-        fun choose(candidates: List<String>, excluded: Set<String>): String? {
-            val iterator = candidates.iterator()
-            return DimensionalFontMapListing.selectCandidate(
-                excluded,
-                8,
-                { if (iterator.hasNext()) iterator.next() else null },
-                { it }
-            )
-        }
-
-        helper.assertTrue(
-            choose(listOf("nether", "nether", "bumblezone"), setOf("nether")) == "bumblezone",
-            "Expected rotation to skip previously sold types"
-        )
-        helper.assertTrue(
-            choose(listOf("nether", "bumblezone"), setOf("nether", "bumblezone")) == "nether",
-            "Expected the first different location as a duplicate-type fallback"
-        )
-        helper.assertTrue(choose(emptyList(), setOf("nether")) == null, "Expected no candidate when no fonts can be located")
-
         val eligible = setOf("nether", "bumblezone", "ratlantis")
         val first = DimensionalFontMapTrades.advanceSoldTypes(emptySet(), "nether", eligible)
         val second = DimensionalFontMapTrades.advanceSoldTypes(first, "bumblezone", eligible)

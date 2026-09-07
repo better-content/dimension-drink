@@ -3,10 +3,7 @@ package com.bettercontent.dimensiondrink.trade
 import com.bettercontent.dimensiondrink.MOD_ID
 import com.bettercontent.dimensiondrink.data.ObeliskDataManager
 import com.bettercontent.dimensiondrink.data.ObeliskDefinition
-import com.bettercontent.dimensiondrink.worldgen.structure.DimensionalFontStructurePiece
 import net.minecraft.core.BlockPos
-import net.minecraft.core.SectionPos
-import net.minecraft.core.registries.Registries
 import net.minecraft.nbt.CompoundTag
 import net.minecraft.nbt.ListTag
 import net.minecraft.nbt.StringTag
@@ -16,7 +13,6 @@ import net.minecraft.network.protocol.game.ClientboundMerchantOffersPacket
 import net.minecraft.resources.ResourceLocation
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
-import net.minecraft.tags.TagKey
 import net.minecraft.util.RandomSource
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.npc.AbstractVillager
@@ -28,9 +24,6 @@ import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.Items
 import net.minecraft.world.item.MapItem
 import net.minecraft.world.item.trading.MerchantOffer
-import net.minecraft.world.level.ChunkPos
-import net.minecraft.world.level.chunk.ChunkStatus
-import net.minecraft.world.level.levelgen.structure.Structure
 import net.minecraft.world.level.saveddata.maps.MapDecoration
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData
 import net.minecraftforge.event.entity.player.TradeWithVillagerEvent
@@ -53,12 +46,17 @@ object DimensionalFontMapTrades {
             ?: return
         val villager = event.abstractVillager
         val level = villager.level() as? ServerLevel ?: return
+        FontLocationSavedData.get(level.server).recordMapSale(soldDefinitionId)
         val eligibleTypes = DimensionalFontMapListing.enabledDefinitionIds()
         val soldTypes = advanceSoldTypes(readSoldTypes(villager.persistentData), soldDefinitionId, eligibleTypes)
         writeSoldTypes(villager.persistentData, soldTypes)
 
-        val nextMap = DimensionalFontMapListing(0).nextMap(level, villager.blockPosition(), soldTypes) ?: return
-        replaceOfferResult(offer, nextMap)
+        val nextMap = DimensionalFontMapListing(0).nextMap(level, villager.blockPosition(), soldTypes)
+        if (nextMap == null) {
+            offer.setToOutOfStock()
+        } else {
+            replaceOfferResult(offer, nextMap)
+        }
 
         val player = event.entity as? ServerPlayer ?: return
         val menu = player.containerMenu as? MerchantMenu ?: return
@@ -118,29 +116,10 @@ class DimensionalFontMapListing(
     internal fun nextMap(level: ServerLevel, origin: BlockPos, excludedTypes: Set<String>): ItemStack? {
         val eligibleTypes = enabledDefinitionIds()
         if (eligibleTypes.isEmpty()) return null
-        val attempts = maxOf(8, eligibleTypes.size * 8).coerceAtMost(32)
-        val destination = selectCandidate(
-            excludedTypes,
-            attempts,
-            { locateDestination(level, origin) },
-            { piece -> ObeliskDataManager.getObelisk(piece.fontDefinitionId)?.id }
-        ) ?: return null
-        val definition = ObeliskDataManager.getObelisk(destination.fontDefinitionId) ?: return null
-        return createMap(level, destination.fontCenter, definition)
-    }
-
-    private fun locateDestination(level: ServerLevel, origin: BlockPos): DimensionalFontStructurePiece? {
-        val located = level.findNearestMapStructure(FONT_MAP_STRUCTURES, origin, SEARCH_RADIUS_CHUNKS, true)
-            ?: return null
-        val chunkPos = ChunkPos(located)
-        val chunk = level.getChunk(chunkPos.x, chunkPos.z, ChunkStatus.STRUCTURE_STARTS)
-        val structure = level.registryAccess()
-            .registryOrThrow(Registries.STRUCTURE)
-            .get(DIMENSIONAL_FONT_STRUCTURE)
-            ?: return null
-        val start = level.structureManager().getStartForStructure(SectionPos.bottomOf(chunk), structure, chunk)
-            ?: return null
-        return start.pieces.filterIsInstance<DimensionalFontStructurePiece>().firstOrNull()
+        val destination = FontLocationSavedData.get(level.server)
+            .nearest(level, origin, eligibleTypes, excludedTypes) ?: return null
+        val definition = ObeliskDataManager.getObelisk(destination.definitionId) ?: return null
+        return createMap(level, destination.pos, definition)
     }
 
     companion object {
@@ -148,18 +127,8 @@ class DimensionalFontMapListing(
         const val COST = 8
         const val MAX_USES = 8
 
-        private const val SEARCH_RADIUS_CHUNKS = 100
-        private val DIMENSIONAL_FONT_STRUCTURE by lazy {
-            ResourceLocation(MOD_ID, "dimensional_font")
-        }
         private val COPPER_COIN by lazy {
             ResourceLocation("createdeco", "copper_coin")
-        }
-        private val FONT_MAP_STRUCTURES: TagKey<Structure> by lazy {
-            TagKey.create(
-                Registries.STRUCTURE,
-                ResourceLocation(MOD_ID, "on_dimensional_font_maps")
-            )
         }
 
         internal fun createOffer(
@@ -178,7 +147,6 @@ class DimensionalFontMapListing(
             definition: ObeliskDefinition
         ): ItemStack {
             val map = MapItem.create(level, center.x, center.z, 2.toByte(), true, true)
-            MapItem.renderBiomePreviewMap(level, map)
             MapItemSavedData.addTargetDecoration(map, center, "+", MapDecoration.Type.TARGET_X)
 
             val displayName = Component.literal(definition.displayName)
@@ -200,25 +168,9 @@ class DimensionalFontMapListing(
             return MerchantOffer(ItemStack(currency, COST), map, MAX_USES, villagerXp, 0.0f)
         }
 
-        internal fun enabledDefinitionIds(): Set<String> = ObeliskDataManager.enabledDimensionDrinks()
-            .filter { it.worldgenWeight > 0.0 }
+        internal fun enabledDefinitionIds(): Set<String> = com.bettercontent.dimensiondrink.worldgen.FontSelector
+            .eligible(ObeliskDataManager.enabledDimensionDrinks())
             .mapTo(linkedSetOf(), ObeliskDefinition::id)
-
-        internal fun <T> selectCandidate(
-            excludedTypes: Set<String>,
-            maxAttempts: Int,
-            nextCandidate: () -> T?,
-            definitionId: (T) -> String?
-        ): T? {
-            var fallback: T? = null
-            repeat(maxAttempts) {
-                val candidate = nextCandidate() ?: return fallback
-                val candidateDefinitionId = definitionId(candidate) ?: return@repeat
-                if (fallback == null) fallback = candidate
-                if (candidateDefinitionId !in excludedTypes) return candidate
-            }
-            return fallback
-        }
 
         internal fun currencyItem(): Item? {
             val coin = ForgeRegistries.ITEMS.getValue(COPPER_COIN)

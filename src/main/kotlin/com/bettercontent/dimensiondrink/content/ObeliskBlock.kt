@@ -3,6 +3,7 @@ package com.bettercontent.dimensiondrink.content
 import com.bettercontent.dimensiondrink.runtime.backend.ArrivalSiteLayout
 import com.bettercontent.dimensiondrink.runtime.run.RunRegistry
 import com.bettercontent.dimensiondrink.registry.ModBlockEntities
+import com.bettercontent.dimensiondrink.trade.FontLocationSavedData
 import net.minecraft.core.BlockPos
 import net.minecraft.core.particles.DustParticleOptions
 import net.minecraft.core.particles.ParticleTypes
@@ -33,6 +34,16 @@ class ObeliskBlock(
 ) : Block(properties), EntityBlock {
 
     override fun newBlockEntity(pos: BlockPos, state: BlockState): BlockEntity = ObeliskBlockEntity(pos, state)
+
+    override fun onRemove(state: BlockState, level: Level, pos: BlockPos, newState: BlockState, moving: Boolean) {
+        if (state.block !== newState.block && level is net.minecraft.server.level.ServerLevel) {
+            val obelisk = level.getBlockEntity(pos) as? ObeliskBlockEntity
+            if (obelisk?.isNaturallyGenerated == true) {
+                FontLocationSavedData.get(level.server).unregister(level.dimension(), pos)
+            }
+        }
+        super.onRemove(state, level, pos, newState, moving)
+    }
 
     override fun getRenderShape(state: BlockState): RenderShape = RenderShape.MODEL
 
