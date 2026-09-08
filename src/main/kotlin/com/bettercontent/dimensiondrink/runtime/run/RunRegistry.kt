@@ -93,15 +93,7 @@ object RunRegistry : RunService {
                 totalReturns++
                 player.fallDistance = 0.0f
                 if (record != null && returnContext != null) {
-                    MinecraftForge.EVENT_BUS.post(
-                        FontAggregateReturnEvent(
-                            player = player,
-                            runId = record.id,
-                            definitionId = returnContext.definitionId,
-                            targetDimension = returnContext.targetDimension,
-                            aggregateId = returnContext.aggregateId
-                        )
-                    )
+                    postAggregateReturnEvent(player, record, returnContext)
                 }
             }
             ReturnRunResult.NotBound,
@@ -132,7 +124,8 @@ object RunRegistry : RunService {
         return RunBeginResult.Accepted(created.toHandle())
     }
 
-    override fun finishRun(server: MinecraftServer, runId: UUID): Boolean = closeRun(server, runId, "finished")
+    override fun finishRun(server: MinecraftServer, runId: UUID): Boolean =
+        closeRun(server, runId, "finished", successfulCompletion = true)
 
     internal fun recordDamage(playerId: UUID, levelKey: ResourceKey<Level>, amount: Float): Boolean = false
 
@@ -403,18 +396,32 @@ object RunRegistry : RunService {
         }
     }
 
-    private fun closeRun(server: MinecraftServer, runId: UUID, reason: String): Boolean {
+    private fun closeRun(
+        server: MinecraftServer,
+        runId: UUID,
+        reason: String,
+        successfulCompletion: Boolean = false
+    ): Boolean {
         val record = runs[runId] ?: return false
         if (record.state == RunState.FINISHING || record.state == RunState.FINISHED) return false
+        val returnContext = record.takeIf { successfulCompletion }?.let(FontEventContextResolver::resolve)
         record.state = RunState.FINISHING
         (record.activePlayers + record.pendingPlayers).toList().forEach { playerId ->
             val player = server.playerList.getPlayer(playerId)
             if (player != null) {
                 returningPlayers += playerId
-                try {
+                val result = try {
                     backend.returnPlayer(player)
                 } finally {
                     returningPlayers -= playerId
+                }
+                if (
+                    result == ReturnRunResult.Returned &&
+                    returnContext != null &&
+                    playerId in record.survivors &&
+                    playerId !in record.disqualifiedPlayers
+                ) {
+                    postAggregateReturnEvent(player, record, returnContext)
                 }
             }
             backend.clearPlayer(playerId)
@@ -498,6 +505,22 @@ object RunRegistry : RunService {
         val context = FontEventContextResolver.resolve(record) ?: return
         MinecraftForge.EVENT_BUS.post(
             FontEnterEvent(
+                player = player,
+                runId = record.id,
+                definitionId = context.definitionId,
+                targetDimension = context.targetDimension,
+                aggregateId = context.aggregateId
+            )
+        )
+    }
+
+    private fun postAggregateReturnEvent(
+        player: ServerPlayer,
+        record: RunRecord,
+        context: FontEventContext
+    ) {
+        MinecraftForge.EVENT_BUS.post(
+            FontAggregateReturnEvent(
                 player = player,
                 runId = record.id,
                 definitionId = context.definitionId,
