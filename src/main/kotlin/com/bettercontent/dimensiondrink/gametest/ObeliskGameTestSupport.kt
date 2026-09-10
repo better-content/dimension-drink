@@ -2799,17 +2799,22 @@ object ObeliskGameTestSupport {
         private val clientConnection: Connection,
         private val recorder: HeadlessClientRecorder
     ) {
+        private var closed = false
+
         fun pump(server: net.minecraft.server.MinecraftServer) {
             requireNotNull(server.connection) { "Expected server connection listener to be available" }.tick()
             recorder.pump(clientConnection)
         }
 
         fun close(server: net.minecraft.server.MinecraftServer) {
+            if (closed) return
+            closed = true
+            val reason = Component.literal("test complete")
             if (server.playerList.players.contains(player)) {
-                server.playerList.remove(player)
+                player.connection.disconnect(reason)
             }
-            clientConnection.disconnect(Component.literal("test complete"))
-            pump(server)
+            clientConnection.disconnect(reason)
+            recorder.pump(clientConnection)
         }
     }
 
