@@ -2,6 +2,7 @@ package com.bettercontent.dimensiondrink.worldgen.village
 
 import com.mojang.datafixers.util.Pair
 import com.bettercontent.dimensiondrink.MOD_ID
+import com.bettercontent.dimensiondrink.mixin.StructureTemplatePoolAccessor
 import it.unimi.dsi.fastutil.objects.ObjectArrayList
 import net.minecraft.core.registries.Registries
 import net.minecraft.resources.ResourceLocation
@@ -10,7 +11,6 @@ import net.minecraft.world.level.levelgen.structure.pools.StructurePoolElement
 import net.minecraft.world.level.levelgen.structure.pools.StructureTemplatePool
 import net.minecraftforge.event.server.ServerAboutToStartEvent
 import net.minecraftforge.eventbus.api.SubscribeEvent
-import java.lang.reflect.Field
 
 object VillageShrinePools {
     private const val TARGET_ATTEMPT_RATE = 0.0025
@@ -34,10 +34,6 @@ object VillageShrinePools {
         target("taiga", 39)
     )
 
-    private val rawTemplatesField = findField("rawTemplates", "f_210559_")
-    private val templatesField = findField("templates", "f_210560_")
-    private val maxSizeField = findField("maxSize", "f_210562_")
-
     @SubscribeEvent
     fun onServerAboutToStart(event: ServerAboutToStartEvent) {
         val templatePools = event.server.registryAccess().registryOrThrow(Registries.TEMPLATE_POOL)
@@ -48,9 +44,9 @@ object VillageShrinePools {
         }
     }
 
-    @Suppress("UNCHECKED_CAST")
     private fun appendShrineIfMissing(pool: StructureTemplatePool, target: ShrinePoolTarget) {
-        val rawTemplates = (rawTemplatesField.get(pool) as List<Pair<StructurePoolElement, Int>>).toMutableList()
+        val access = pool as StructureTemplatePoolAccessor
+        val rawTemplates = access.dimensionDrinkRawTemplates.toMutableList()
         if (rawTemplates.any { pair ->
                 val element = pair.first
                 element is ChanceLegacySinglePoolElement && element.matchesLocation(target.templateId)
@@ -64,13 +60,13 @@ object VillageShrinePools {
             projection = StructureTemplatePool.Projection.RIGID
         )
         rawTemplates.add(Pair.of(shrine, SHRINE_WEIGHT))
-        rawTemplatesField.set(pool, rawTemplates)
+        access.dimensionDrinkRawTemplates = rawTemplates
 
-        val expandedTemplates = templatesField.get(pool) as ObjectArrayList<StructurePoolElement>
+        val expandedTemplates: ObjectArrayList<StructurePoolElement> = access.dimensionDrinkTemplates
         repeat(SHRINE_WEIGHT) {
             expandedTemplates.add(shrine)
         }
-        maxSizeField.setInt(pool, Int.MIN_VALUE)
+        access.setDimensionDrinkMaxSize(Int.MIN_VALUE)
     }
 
     private fun target(style: String, basePoolWeight: Int): ShrinePoolTarget {
@@ -83,16 +79,5 @@ object VillageShrinePools {
             basePoolWeight = basePoolWeight,
             placementChance = chance
         )
-    }
-
-    private fun findField(vararg names: String): Field {
-        val poolClass = StructureTemplatePool::class.java
-        for (name in names) {
-            try {
-                return poolClass.getDeclaredField(name).apply { isAccessible = true }
-            } catch (_: NoSuchFieldException) {
-            }
-        }
-        error("Unable to resolve StructureTemplatePool field from candidates: ${names.joinToString()}")
     }
 }

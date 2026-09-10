@@ -3,6 +3,7 @@ apply plugin: 'idea'
 apply plugin: 'maven-publish'
 apply plugin: 'net.minecraftforge.gradle'
 apply plugin: 'org.jetbrains.kotlin.jvm'
+apply plugin: 'org.spongepowered.mixin'
 
 version = rootProject.findProperty('mod_version')
 group = modGroupId
@@ -32,6 +33,12 @@ dependencies {
     implementation fg.deobf('curse.maven:kotlin-for-forge-351264:4578885')
     testImplementation 'org.jetbrains.kotlin:kotlin-test'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+}
+
+mixin {
+    add sourceSets.main, 'dimension_drink.refmap.json'
+    config 'dimension_drink.mixins.json'
 }
 
 minecraft {

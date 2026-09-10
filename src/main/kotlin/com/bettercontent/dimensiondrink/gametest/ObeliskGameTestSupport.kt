@@ -37,8 +37,6 @@ import net.minecraft.network.ConnectionProtocol
 import net.minecraft.network.PacketListener
 import net.minecraft.network.chat.Component
 import net.minecraft.network.protocol.handshake.ClientIntentionPacket
-import net.minecraft.network.protocol.login.ClientLoginPacketListener
-import net.minecraft.network.protocol.game.ClientGamePacketListener
 import net.minecraft.network.protocol.game.ClientboundCustomPayloadPacket
 import net.minecraft.network.protocol.game.ClientboundKeepAlivePacket
 import net.minecraft.network.protocol.game.ClientboundLoginPacket
@@ -70,7 +68,6 @@ import net.minecraftforge.eventbus.api.SubscribeEvent
 import net.minecraftforge.fml.ModList
 import java.nio.file.Files
 import java.nio.file.Path
-import java.lang.reflect.Proxy
 import java.net.SocketAddress
 import java.util.Collections
 import java.util.UUID
@@ -2825,30 +2822,20 @@ object ObeliskGameTestSupport {
         val loginDimensions = CopyOnWriteArrayList<ResourceKey<Level>>()
         val respawnDimensions = CopyOnWriteArrayList<ResourceKey<Level>>()
 
-        val listener: PacketListener = (Proxy.newProxyInstance(
-            ClientGamePacketListener::class.java.classLoader,
-            arrayOf(ClientLoginPacketListener::class.java, ClientGamePacketListener::class.java)
-        ) { _, method, args ->
-            when (method.name) {
-                "isAcceptingMessages" -> true
-                "onDisconnect" -> null
-                "handleLogin" -> {
-                    val packet = args!![0] as ClientboundLoginPacket
-                    loginDimensions += packet.dimension
-                    null
-                }
-                "handleRespawn" -> {
-                    val packet = args!![0] as ClientboundRespawnPacket
-                    respawnDimensions += packet.dimension
-                    null
-                }
-                "handleKeepAlive" -> {
-                    val packet = args!![0] as ClientboundKeepAlivePacket
-                    clientConnection?.send(ServerboundKeepAlivePacket(packet.id))
-                    null
-                }
-                "handleCustomPayload" -> {
-                    val packet = args!![0] as ClientboundCustomPayloadPacket
+        val listener: PacketListener = object : NoOpClientPacketListener() {
+            override fun handleLogin(packet: ClientboundLoginPacket) {
+                loginDimensions += packet.dimension
+            }
+
+            override fun handleRespawn(packet: ClientboundRespawnPacket) {
+                respawnDimensions += packet.dimension
+            }
+
+            override fun handleKeepAlive(packet: ClientboundKeepAlivePacket) {
+                clientConnection?.send(ServerboundKeepAlivePacket(packet.id))
+            }
+
+            override fun handleCustomPayload(packet: ClientboundCustomPayloadPacket) {
                     customPayloadChannels += packet.identifier
                     if (packet.identifier == runtimeChannel) {
                         val payload = packet.data
@@ -2864,19 +2851,8 @@ object ObeliskGameTestSupport {
                             knownLevels.removeAll(removals.toSet())
                         }
                     }
-                    null
-                }
-                "shouldPropagateHandlingExceptions" -> true
-                else -> when (method.returnType) {
-                    java.lang.Boolean.TYPE -> false
-                    java.lang.Integer.TYPE -> 0
-                    java.lang.Float.TYPE -> 0f
-                    java.lang.Double.TYPE -> 0.0
-                    java.lang.Long.TYPE -> 0L
-                    else -> null
-                }
             }
-        }) as PacketListener
+        }
 
         fun pump(connection: Connection) {
             clientConnection = connection
