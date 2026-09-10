@@ -10,7 +10,6 @@ import net.minecraft.nbt.StringTag
 import net.minecraft.nbt.Tag
 import net.minecraft.network.chat.Component
 import net.minecraft.network.protocol.game.ClientboundMerchantOffersPacket
-import net.minecraft.resources.ResourceLocation
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.util.RandomSource
@@ -21,14 +20,12 @@ import net.minecraft.world.entity.npc.Villager
 import net.minecraft.world.inventory.MerchantMenu
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
-import net.minecraft.world.item.Items
 import net.minecraft.world.item.MapItem
 import net.minecraft.world.item.trading.MerchantOffer
 import net.minecraft.world.level.saveddata.maps.MapDecoration
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData
 import net.minecraftforge.event.entity.player.TradeWithVillagerEvent
 import net.minecraftforge.eventbus.api.SubscribeEvent
-import net.minecraftforge.registries.ForgeRegistries
 
 object DimensionalFontMapTrades {
     private const val SOLD_TYPES_TAG = "dimension_drink:font_map_sold_types"
@@ -104,13 +101,9 @@ class DimensionalFontMapListing(
     private val villagerXp: Int
 ) : VillagerTrades.ItemListing {
     override fun getOffer(trader: Entity, random: RandomSource): MerchantOffer? {
-        val level = trader.level() as? ServerLevel ?: return null
-        val currency = currencyItem() ?: return null
-        val soldTypes = (trader as? AbstractVillager)
-            ?.let { DimensionalFontMapTrades.readSoldTypes(it.persistentData) }
-            ?: emptySet()
-        val map = nextMap(level, trader.blockPosition(), soldTypes) ?: return null
-        return createOffer(map, villagerXp, currency)
+        // The seven themed spirit traders own the entire wandering-trader surface.
+        // Retain this listing type as a binary-compatible no-op for older integrations.
+        return null
     }
 
     internal fun nextMap(level: ServerLevel, origin: BlockPos, excludedTypes: Set<String>): ItemStack? {
@@ -126,10 +119,6 @@ class DimensionalFontMapListing(
         const val DEFINITION_TAG = "dimension_drink:font_definition_id"
         const val COST = 8
         const val MAX_USES = 8
-
-        private val COPPER_COIN by lazy {
-            ResourceLocation("createdeco", "copper_coin")
-        }
 
         internal fun createOffer(
             level: ServerLevel,
@@ -172,9 +161,5 @@ class DimensionalFontMapListing(
             .eligible(ObeliskDataManager.enabledDimensionDrinks())
             .mapTo(linkedSetOf(), ObeliskDefinition::id)
 
-        internal fun currencyItem(): Item? {
-            val coin = ForgeRegistries.ITEMS.getValue(COPPER_COIN)
-            return coin?.takeUnless { it == Items.AIR }
-        }
     }
 }

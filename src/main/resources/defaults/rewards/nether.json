@@ -4,10 +4,6 @@
   "baseRolls": 0,
   "rollsPerKill": 1,
   "damagePerBonusRoll": 16.0,
-  "killCurrency": {
-    "item": "createdeco:iron_coin",
-    "perKill": 1,
-    "burstSize": 4
-  },
+  "killCurrency": null,
   "pools": []
 }

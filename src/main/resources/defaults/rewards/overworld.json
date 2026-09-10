@@ -4,10 +4,6 @@
   "baseRolls": 0,
   "rollsPerKill": 1,
   "damagePerBonusRoll": 18.0,
-  "killCurrency": {
-    "item": "createdeco:copper_coin",
-    "perKill": 1,
-    "burstSize": 4
-  },
+  "killCurrency": null,
   "pools": []
 }

@@ -159,7 +159,7 @@ class ObeliskDataGameTests {
         helper.assertTrue(offer.baseCostA.`is`(Items.EMERALD) && offer.baseCostA.count == 8, "Expected an eight-unit map price")
         helper.assertTrue(offer.costB.isEmpty, "Expected no secondary map cost")
         helper.assertTrue(offer.maxUses == 8 && offer.xp == 6, "Expected authored map uses and villager XP")
-        helper.assertTrue(offer.priceMultiplier == 0.0f, "Expected coin pricing not to scale with demand")
+        helper.assertTrue(offer.priceMultiplier == 0.0f, "Expected authored pricing not to scale with demand")
         helper.assertTrue(result.`is`(Items.FILLED_MAP), "Expected a vanilla filled map result")
         helper.assertTrue(result.hoverName.string == "${definition.displayName} Map", "Expected the font type in the map name")
         helper.assertTrue(
