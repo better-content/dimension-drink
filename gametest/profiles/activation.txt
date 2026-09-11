@@ -1,0 +1,3 @@
+charged_obelisk_activates_run_and_returns_player
+font_requires_visible_charge_to_start_run
+relocated_spawn_normalizes_canonical_target

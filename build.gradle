@@ -11,15 +11,22 @@ ext {
     modDescription = 'Neutral-charge dimensional fonts open real-dimension expeditions from small altars.'
 }
 
+// Every invocation gets its own generated fixture; failed worlds are never reset by a later run.
+ext.gameTestRunId = UUID.randomUUID().toString()
+ext.gameTestRunDirectory = layout.buildDirectory.dir("gametest/${gameTestRunId}").get().asFile
 apply from: rootProject.file('gradle/forge-module.gradle')
 
 def dimensionDrinkGameTestNamespaces = (findProperty('dimensionDrinkGameTestNamespaces') ?: modId).toString()
-def dimensionDrinkGameTestSelection = (findProperty('dimensionDrinkGameTestSelection') ?: 'smoke').toString()
+def explicitGameTestSelection = findProperty('dimensionDrinkGameTestSelection')?.toString()?.toLowerCase(Locale.ROOT)
+ext.dimensionDrinkGameTestSelection = explicitGameTestSelection ?: 'all'
+def supportedSelections = ['all', 'smoke', 'run', 'activation', 'rewards', 'void', 'data', 'template', 'multiplayer', 'commands', 'runtime']
+if (!supportedSelections.contains(dimensionDrinkGameTestSelection)) {
+    throw new GradleException("Unknown Dimension Drink GameTest selection: ${dimensionDrinkGameTestSelection}")
+}
 
 gradle.projectsEvaluated {
     minecraft.runs.configureEach {
         property 'forge.enabledGameTestNamespaces', dimensionDrinkGameTestNamespaces
-        property 'dimension_drink.gametest.selection', dimensionDrinkGameTestSelection
     }
 }
 
@@ -43,7 +50,30 @@ tasks.register('verifyFast') {
 
 tasks.register('verifyFull') {
     group = 'verification'
-    description = 'Runs the full verification lane, including headless Forge GameTests.'
+    description = 'Runs deterministic checks and every production headless Forge GameTest.'
     dependsOn(tasks.named('verifyFast'))
     dependsOn(tasks.named('headlessGameTest'))
 }
+
+tasks.register('verifySmoke') {
+    group = 'verification'
+    description = 'Runs deterministic checks and the explicit lifecycle smoke GameTest profile.'
+    dependsOn(tasks.named('verifyFast'))
+    dependsOn(tasks.named('headlessGameTest'))
+}
+
+gradle.taskGraph.whenReady { graph ->
+    boolean full = graph.hasTask(tasks.named('verifyFull').get())
+    boolean smoke = graph.hasTask(tasks.named('verifySmoke').get())
+    if (full && smoke) throw new GradleException('Run verifyFull and verifySmoke in separate invocations')
+    String required = full ? 'all' : smoke ? 'smoke' : null
+    if (required != null && explicitGameTestSelection != null && explicitGameTestSelection != required) {
+        throw new GradleException("${full ? 'verifyFull' : 'verifySmoke'} requires GameTest selection ${required}")
+    }
+    if (required != null) project.ext.dimensionDrinkGameTestSelection = required
+    if ((full || smoke) && dimensionDrinkGameTestNamespaces != modId) {
+        throw new GradleException('Verification requires the dimension_drink GameTest namespace')
+    }
+}
+
+apply from: rootProject.file('gradle/gametest-evidence.gradle')

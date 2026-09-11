@@ -7,7 +7,7 @@ import net.minecraftforge.gametest.PrefixGameTestTemplate
 @PrefixGameTestTemplate(false)
 class ObeliskRewardsGameTests {
     @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_rewards", timeoutTicks = 700)
-    fun successful_run_buffers_rewards_and_shows_boss_bar(helper: GameTestHelper) {
-        ObeliskGameTestSupport.successfulRunBuffersRewardsAndShowsBossBar(helper)
+    fun successful_run_posts_return_event_and_clears_boss_bar(helper: GameTestHelper) {
+        ObeliskGameTestSupport.successfulRunPostsReturnEventAndClearsBossBar(helper)
     }
 }

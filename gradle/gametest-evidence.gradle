@@ -1,0 +1,71 @@
+import groovy.json.JsonSlurper
+
+// The expected profile is reviewed alongside tests; the reporter records runtime IDs.
+def executionReport = new File(gameTestRunDirectory, 'execution.json')
+minecraft.runs.gameTestServer.property('bc.gametest.dimension_drink.report', executionReport.absolutePath)
+
+def validateExecution = { File reportFile, List<String> expected, String profile, String runId ->
+    if (!expected || expected.toSet().size() != expected.size()) {
+        throw new GradleException('GameTest profile must contain unique, nonempty expected IDs')
+    }
+    if (!reportFile.isFile()) throw new GradleException("Missing fresh GameTest execution report: ${reportFile}")
+    def report = new JsonSlurper().parse(reportFile)
+    if (report.profile != profile || report.runId != runId || report.finished != true) {
+        throw new GradleException('GameTest run did not finish the selected profile with fresh execution evidence')
+    }
+    def registered = report.registered
+    def executed = report.results.collect { it.id }
+    if (registered.sort() != expected.sort() || executed.sort() != expected.sort()) {
+        throw new GradleException("Incomplete GameTest profile. Expected=${expected}; registered=${registered}; executed=${executed}")
+    }
+    def failures = report.results.findAll { it.status != 'passed' }
+    if (failures) throw new GradleException("GameTests failed: ${failures}")
+}
+
+tasks.matching { it.name == 'runGameTestServer' }.configureEach {
+    doFirst {
+        systemProperty 'dimension_drink.gametest.selection', dimensionDrinkGameTestSelection
+        systemProperty 'bc.gametest.dimension_drink.runId', gameTestRunId
+        java.nio.file.Files.deleteIfExists(executionReport.toPath())
+        logger.lifecycle("Dimension Drink GameTest profile ${dimensionDrinkGameTestSelection}; fixture ${gameTestRunDirectory}")
+    }
+    doLast {
+        def expectedProfile = file("gametest/profiles/${dimensionDrinkGameTestSelection}.txt")
+        def expected = expectedProfile.readLines().collect { it.trim() }.findAll { it && !it.startsWith('#') }
+        validateExecution(executionReport, expected, dimensionDrinkGameTestSelection, gameTestRunId)
+        logger.lifecycle("Verified ${expected.size()} executed GameTests in profile ${dimensionDrinkGameTestSelection}: ${executionReport}")
+    }
+}
+
+tasks.register('verifyGameTestEvidenceGuard') {
+    group = 'verification'
+    description = 'Exercises execution-evidence validation without starting Forge.'
+    doLast {
+        def fixture = layout.buildDirectory.file('gametest-guard-fixtures/execution.json').get().asFile
+        fixture.parentFile.mkdirs()
+        def valid = [profile: 'all', runId: 'current', finished: true,
+                     registered: ['required'], results: [[id: 'required', status: 'passed']]]
+        fixture.text = groovy.json.JsonOutput.toJson(valid)
+        validateExecution(fixture, ['required'], 'all', 'current')
+        def invalid = [
+            valid + [runId: 'previous'], valid + [profile: 'smoke'], valid + [finished: false],
+            valid + [registered: []], valid + [registered: ['other']],
+            valid + [results: []], valid + [results: [[id: 'other', status: 'passed']]],
+            valid + [results: [[id: 'required', status: 'failed']]],
+            valid + [results: [[id: 'required', status: 'passed'], [id: 'required', status: 'passed']]],
+            valid + [registered: [], results: []]
+        ].collect { groovy.json.JsonOutput.toJson(it) } + ['{"profile":']
+        invalid.each { payload ->
+            fixture.text = payload
+            boolean rejected = false
+            try { validateExecution(fixture, ['required'], 'all', 'current') } catch (Exception expected) { rejected = true }
+            if (!rejected) throw new GradleException("Execution guard accepted invalid evidence: ${payload}")
+        }
+        java.nio.file.Files.deleteIfExists(fixture.toPath())
+        boolean rejectedMissing = false
+        try { validateExecution(fixture, ['required'], 'all', 'current') } catch (Exception expected) { rejectedMissing = true }
+        if (!rejectedMissing) throw new GradleException('Execution guard accepted missing evidence')
+        logger.lifecycle('GameTest execution guard rejected 12 invalid/missing evidence cases')
+    }
+}
+tasks.named('verifyFast').configure { dependsOn('verifyGameTestEvidenceGuard') }

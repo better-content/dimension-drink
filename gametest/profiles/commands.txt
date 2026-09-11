@@ -1,0 +1,3 @@
+cleanup_run_command_removes_active_run
+debug_spawn_command_creates_charged_obelisk
+return_command_respects_binding_state

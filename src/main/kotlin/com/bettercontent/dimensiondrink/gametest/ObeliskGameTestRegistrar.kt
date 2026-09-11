@@ -20,7 +20,7 @@ object ObeliskGameTestRegistrar {
             "multiplayer" -> event.register(ObeliskMultiplayerGameTests::class.java)
             "commands" -> event.register(ObeliskCommandGameTests::class.java)
             "runtime" -> event.register(ObeliskRuntimeGameTests::class.java)
-            else -> {
+            "all" -> {
                 event.register(ObeliskSmokeGameTests::class.java)
                 event.register(ObeliskRunLifecycleGameTests::class.java)
                 event.register(ObeliskActivationGameTests::class.java)
@@ -32,6 +32,7 @@ object ObeliskGameTestRegistrar {
                 event.register(ObeliskCommandGameTests::class.java)
                 event.register(ObeliskRuntimeGameTests::class.java)
             }
+            else -> error("Unknown Dimension Drink GameTest selection: $selection")
         }
     }
 }

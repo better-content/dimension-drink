@@ -1,0 +1,2 @@
+end_death_detaches_participant_and_preserves_survivor
+nether_death_detaches_participant_and_preserves_survivor

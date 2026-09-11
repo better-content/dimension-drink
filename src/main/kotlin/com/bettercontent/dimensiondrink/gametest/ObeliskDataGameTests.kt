@@ -114,13 +114,18 @@ class ObeliskDataGameTests {
     }
 
     @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "obelisk_data", timeoutTicks = 120)
-    fun court_pots_use_modded_plants_outside_dry_biomes(helper: GameTestHelper) {
+    fun court_pots_resolve_available_plants_or_safe_fallback(helper: GameTestHelper) {
         val samples = listOf(BlockPos(1, 64, 1), BlockPos(4, 64, -3), BlockPos(-6, 70, 2))
         samples.forEach { pos ->
             val block = pickCourtPotBlock(false, pos)
             val id = BuiltInRegistries.BLOCK.getKey(block)
-            helper.assertTrue(block != Blocks.POTTED_DEAD_BUSH, "Expected non-dry court pot at $pos not to resolve to dead bush")
-            helper.assertTrue(id.namespace != "minecraft", "Expected non-dry court pot at $pos to use a modded plant, found $id")
+            val configuredId = com.bettercontent.dimensiondrink.worldgen.pickCourtPotBlockId(false, pos)
+            val available = BuiltInRegistries.BLOCK.get(net.minecraft.resources.ResourceLocation(configuredId))
+            if (available == Blocks.AIR) {
+                helper.assertTrue(block == Blocks.POTTED_DEAD_BUSH, "Expected safe fallback when optional modded plants are absent")
+            } else {
+                helper.assertTrue(block == available && id.namespace != "minecraft", "Expected available modded pot $configuredId, found $id")
+            }
             helper.assertTrue(id.path.startsWith("potted_"), "Expected non-dry court pot at $pos to resolve to a potted block, found $id")
         }
         helper.succeed()

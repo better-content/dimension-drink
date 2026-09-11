@@ -7,9 +7,25 @@ Pack-owned obelisk and charge-font worldgen/runtime mod for Forge `1.20.1`.
 ```bash
 ./gradlew verifyFast
 ./gradlew verifyFull
+./gradlew verifySmoke
 ```
 
-`verifyFast` runs the JVM verification lane. `verifyFull` adds the headless Forge GameTest pass using the dedicated lifecycle smoke selection. Set `-PdimensionDrinkGameTestSelection=all` only when intentionally exercising the broader legacy suites.
+`verifyFast` runs the JVM verification lane. `verifyFull` adds **all production
+GameTests** (48 at this revision). `verifySmoke` adds only the 11 lifecycle smoke
+tests. `./gradlew headlessGameTest -PdimensionDrinkGameTestSelection=runtime` selects a focused
+profile; supported selectors are `all`, `smoke`, `run`, `activation`, `rewards`,
+`void`, `data`, `template`, `multiplayer`, `commands`, and `runtime`. Unknown selectors
+and overrides conflicting with `verifyFull` or `verifySmoke` fail.
+
+Each GameTest invocation retains its generated world, logs, and `execution.json` under
+`build/gametest/<run-id>/`. The gate compares actual runtime registration and
+successful completion against the reviewed IDs in `gametest/profiles/`, rejects
+missing or incomplete evidence, and records the selected profile and run ID.
+Inspect failed evidence before manually removing its fixture. A later run uses a
+new fixture; it does not delete a previous failed world. Runtime charge scenarios
+use deterministic modifier fixtures and separate batches; worldgen scenarios
+prepare their terrain and worldgen heightmaps explicitly. `verifyFast` also runs
+12 negative execution-evidence checks without starting Forge.
 
 ## Font generation and discovery
 
