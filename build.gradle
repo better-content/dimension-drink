@@ -16,6 +16,32 @@ ext.gameTestRunId = UUID.randomUUID().toString()
 ext.gameTestRunDirectory = layout.buildDirectory.dir("gametest/${gameTestRunId}").get().asFile
 apply from: rootProject.file('gradle/forge-module.gradle')
 
+// CI and fresh-release builds provide verified runtime JARs explicitly. Ordinary local builds
+// retain the canonical sibling build/libs convention.
+def betterContentJar = { String repository, String artifact ->
+    def directory = providers.environmentVariable('BC_CUSTOM_MOD_JAR_DIR').orNull
+    if (directory != null && directory.isBlank()) {
+        throw new GradleException('BC_CUSTOM_MOD_JAR_DIR must not be blank')
+    }
+    def jar = directory == null
+        ? file("../${repository}/build/libs/${artifact}")
+        : file(directory).toPath().resolve(artifact).toFile()
+    if (!jar.isFile()) {
+        throw new GradleException("Missing Better Content provider ${artifact} at ${jar}; prepare BC_CUSTOM_MOD_JAR_DIR or build ${repository} first")
+    }
+    jar
+}
+
+repositories {
+    ivy {
+        name = 'betterContentFixesLocal'
+        url = uri(betterContentJar('better-content-fixes', 'better-content-fixes-0.1.8.jar').parentFile)
+        patternLayout { artifact('[artifact]-[revision].[ext]') }
+        metadataSources { artifact() }
+        content { includeGroup('bettercontent.local') }
+    }
+}
+
 def dimensionDrinkGameTestNamespaces = (findProperty('dimensionDrinkGameTestNamespaces') ?: modId).toString()
 def explicitGameTestSelection = findProperty('dimensionDrinkGameTestSelection')?.toString()?.toLowerCase(Locale.ROOT)
 ext.dimensionDrinkGameTestSelection = explicitGameTestSelection ?: 'all'
@@ -36,6 +62,9 @@ dependencies {
 
     compileOnly fg.deobf(mantleDep)
     compileOnly fg.deobf(tconstructDep)
+    compileOnly fg.deobf('bettercontent.local:better-content-fixes:0.1.8')
+    testCompileOnly fg.deobf('bettercontent.local:better-content-fixes:0.1.8')
+    testRuntimeOnly fg.deobf('bettercontent.local:better-content-fixes:0.1.8')
     if ((findProperty('dimensionDrinkIncludeCompatRuntime') ?: 'false').toString().toBoolean()) {
         runtimeOnly fg.deobf(mantleDep)
         runtimeOnly fg.deobf(tconstructDep)

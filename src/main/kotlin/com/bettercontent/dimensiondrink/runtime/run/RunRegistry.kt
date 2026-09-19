@@ -548,6 +548,11 @@ object RunRegistry : RunService {
                 record.pendingPlayers += playerId
             } else if (handle == null || !backend.isPlayerInRun(player, handle)) {
                 if (!returnPlayer(player)) clearPlayerAssignment(server, playerId)
+            } else {
+                // A player reaches this branch only after the active Font backend confirms the
+                // current site bounds. This is an admitted immediate-risk window, so it may stop
+                // Sleeping Overhaul's accelerated sleep without changing ordinary simulation.
+                FontSleepDangerAdmission.interrupt(player, record.state == RunState.ACTIVE, stillInWindow = true)
             }
         }
         if (runs[record.id] !== record) return
