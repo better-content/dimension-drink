@@ -89,10 +89,12 @@ object RunRegistry : RunService {
             returningPlayers -= player.uuid
         }
 
-        detachPlayer(record, player.uuid, disqualify)
-        backend.clearPlayer(player.uuid)
         when (result) {
             ReturnRunResult.Returned -> {
+                // Assignment is consumed only after the backend confirms transport. A failed
+                // return remains retryable and must not lose the player's run binding.
+                detachPlayer(record, player.uuid, disqualify)
+                backend.clearPlayer(player.uuid)
                 totalReturns++
                 player.fallDistance = 0.0f
                 if (record != null && returnContext != null) {
