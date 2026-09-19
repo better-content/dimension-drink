@@ -76,7 +76,10 @@ object RunRegistry : RunService {
     fun returnPlayer(player: ServerPlayer, disqualify: Boolean = true): Boolean {
         val record = mutableRunForPlayer(player.uuid)
         val returnContext = record
-            ?.takeIf { !disqualify && player.uuid in it.survivors && player.uuid !in it.disqualifiedPlayers }
+            // This event records a completed Font extraction, not a challenge reward. A player
+            // who leaves through the return font (or is extracted as a font expires) still made
+            // the trip; only final death prevents a living extraction from being reported.
+            ?.takeIf { player.uuid in it.survivors && player.uuid !in it.disqualifiedPlayers }
             ?.let(FontEventContextResolver::resolve)
 
         returningPlayers += player.uuid
@@ -264,8 +267,11 @@ object RunRegistry : RunService {
         }
     }
 
-    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     fun onLivingDeath(event: LivingDeathEvent) {
+        // LOWEST observes the final event result after revival/zero-heart integrations have had
+        // their chance to cancel it. A canceled lethal crossing must retain its Font binding.
+        if (event.isCanceled) return
         val player = event.entity as? ServerPlayer ?: return
         FontTravelAuthorization.clear(player.uuid)
         val record = mutableRunForPlayer(player.uuid) ?: return
@@ -281,10 +287,15 @@ object RunRegistry : RunService {
         if (player.uuid in returningPlayers) return
         val record = mutableRunForPlayer(player.uuid) ?: return
         if (event.to != record.backendLevelKey) {
-            detachPlayer(record, player.uuid, disqualify = true)
-            backend.clearPlayer(player.uuid)
-            forcedCleanups++
-            persistOrClose(player.server, record, "external-dimension-change")
+            // Aether's native fall-out and any other departure only reach this path for a
+            // player actually bound to this Font. Return through the recorded origin so the
+            // factual extraction event is emitted after a successful transport.
+            if (!returnPlayer(player)) {
+                detachPlayer(record, player.uuid, disqualify = true)
+                backend.clearPlayer(player.uuid)
+                forcedCleanups++
+                persistOrClose(player.server, record, "external-dimension-change")
+            }
         }
     }
 
@@ -417,9 +428,7 @@ object RunRegistry : RunService {
                 }
                 if (
                     result == ReturnRunResult.Returned &&
-                    returnContext != null &&
-                    playerId in record.survivors &&
-                    playerId !in record.disqualifiedPlayers
+                    returnContext != null
                 ) {
                     postAggregateReturnEvent(player, record, returnContext)
                 }
@@ -552,14 +561,12 @@ object RunRegistry : RunService {
             closeRun(server, record.id, "origin-font-unavailable")
             return
         }
-        val playerCount = record.activePlayers.size
-
         record.ticksElapsed += ObeliskConstants.TICKS_PER_SECOND
         record.updatedGameTime = currentGameTime(server)
-        val drain = obelisk.getModifiedBaseDrain() + playerCount * obelisk.getModifiedPlayerDrain()
+        // A session keeps its configured solo duration. Joining or leaving travelers must not
+        // shorten the remaining time for everyone already in the Font.
+        val drain = obelisk.getModifiedBaseDrain()
         if (!obelisk.drainCharge(drain)) {
-            record.disqualifiedPlayers += record.activePlayers
-            record.survivors.removeAll(record.activePlayers)
             record.state = RunState.FAILED
             closeRun(server, record.id, "charge-depleted")
             return

@@ -8,8 +8,9 @@ import net.minecraftforge.eventbus.api.Event
 import java.util.UUID
 
 /**
- * Posted after a surviving participant has been transported home by a successfully completed
- * dimensional Font run. Early exits, collapsed runs, logout returns, and death returns do not post it.
+ * Posted exactly once after a living Font participant has been transported home. This is factual
+ * extraction evidence: voluntary returns and charge-expiry extraction qualify, while final death,
+ * logout without a transport, and a rejected transport do not. Challenge rewards remain separate.
  */
 class FontAggregateReturnEvent(
     val player: ServerPlayer,

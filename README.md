@@ -37,11 +37,13 @@ Naturally generated Fonts are added to a saved discovery index as their chunks l
 
 These contracts are new-world-only. Existing copied configuration, historical structures, and saves are not migrated or scanned; remove old Font configuration and create a new world when validating the new distribution.
 
-A successful aggregate run completion posts `FontAggregateReturnEvent` once for each surviving
-participant actually transported back to the origin. When Better Content Threads is present, the
-optional bridge reuses the active `the_end_is_not_a_door` correlation token to emit
-`font_route_completed=returned`; automatic failure, death, logout, and server-stop cleanup paths
-do not emit it.
+`FontAggregateReturnEvent` posts once for every living participant actually transported back to
+the origin, including a voluntary return, charge-expiry extraction, and a Font-bound Aether
+fall-out. It is factual extraction evidence rather than a challenge reward. Final death, logout
+without transport, rejected transport, and server-stop cleanup do not emit it. Aether departure
+handling applies only while the player is bound to an Aether Font session. When Better Content
+Threads is present, the optional bridge reuses the active `the_end_is_not_a_door` correlation token
+to emit `font_route_completed=returned`.
 
 ## Release artifact
 

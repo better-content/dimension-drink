@@ -257,6 +257,8 @@ object ObeliskGameTestSupport {
         val server = helper.level.server
         val client = connectHeadlessPlayer(helper)
         val player = client.player
+        val events = FontEventRecorder(player.uuid)
+        MinecraftForge.EVENT_BUS.register(events)
         val originLevel = helper.level
         val originPos = helper.absolutePos(BlockPos(9, 2, 3))
         var runId: UUID? = null
@@ -293,18 +295,25 @@ object ObeliskGameTestSupport {
             }, onSuccess = {
                 helper.assertTrue(RunRegistry.getRun(player.uuid) == null, "Expected dry closure to clear player ownership")
                 helper.assertTrue(
+                    events.returns.size == 1,
+                    "Expected charge expiry to emit one factual extraction event after returning the living player"
+                )
+                helper.assertTrue(
                     obelisk.getChargeStored() < entryCost,
                     "Expected a dry-closed font to remain below its next entry cost while passive recharge resumes"
                 )
                 helper.assertTrue(obelisk.isCharging(), "Expected passive recharge to resume after dry closure")
                 helper.assertTrue(!FontChunkTicketManager.hasTicket(runId!!), "Expected dry closure to release its origin chunk ticket")
                 runId = null
-                client.close(server)
-                helper.succeed()
+                try { client.close(server) } finally {
+                    MinecraftForge.EVENT_BUS.unregister(events)
+                    helper.succeed()
+                }
             })
         } catch (failure: Throwable) {
-            runId?.let { RunRegistry.finishRun(server, it) }
-            client.close(server)
+            try { runId?.let { RunRegistry.finishRun(server, it) } } finally {
+                try { client.close(server) } finally { MinecraftForge.EVENT_BUS.unregister(events) }
+            }
             throw failure
         }
     }
@@ -867,6 +876,13 @@ object ObeliskGameTestSupport {
             val expectedTarget = requireNotNull(canonicalLevelKey(definitionId))
             helper.assertTrue(player.serverLevel().dimension() == expectedTarget && survivor.serverLevel().dimension() == expectedTarget,
                 "Expected both participants actually transported into $expectedTarget before death")
+            val canceledCrossing = LivingDeathEvent(player, player.damageSources().generic())
+            canceledCrossing.isCanceled = true
+            RunRegistry.onLivingDeath(canceledCrossing)
+            helper.assertTrue(
+                RunRegistry.getRun(player.uuid)?.runId == runId,
+                "A canceled lethal crossing must retain the Font assignment"
+            )
             val death = LivingDeathEvent(player, player.damageSources().generic())
             RunRegistry.onLivingDeath(death)
             helper.assertTrue(!death.isCanceled, "Font cleanup must leave vanilla death uncanceled")
