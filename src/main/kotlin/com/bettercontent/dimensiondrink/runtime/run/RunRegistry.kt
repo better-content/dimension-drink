@@ -413,11 +413,12 @@ object RunRegistry : RunService {
         server: MinecraftServer,
         runId: UUID,
         reason: String,
-        successfulCompletion: Boolean = false
+        successfulCompletion: Boolean = false,
+        extraction: Boolean = false
     ): Boolean {
         val record = runs[runId] ?: return false
         if (record.state == RunState.FINISHING || record.state == RunState.FINISHED) return false
-        val returnContext = record.takeIf { successfulCompletion }?.let(FontEventContextResolver::resolve)
+        val returnContext = record.takeIf { successfulCompletion || extraction }?.let(FontEventContextResolver::resolve)
         record.state = RunState.FINISHING
         (record.activePlayers + record.pendingPlayers).toList().forEach { playerId ->
             val player = server.playerList.getPlayer(playerId)
@@ -575,7 +576,7 @@ object RunRegistry : RunService {
         val drain = obelisk.getModifiedBaseDrain()
         if (!obelisk.drainCharge(drain)) {
             record.state = RunState.FAILED
-            closeRun(server, record.id, "charge-depleted")
+            closeRun(server, record.id, "charge-depleted", extraction = true)
             return
         }
         RunSavedData.get(server).upsert(record)
