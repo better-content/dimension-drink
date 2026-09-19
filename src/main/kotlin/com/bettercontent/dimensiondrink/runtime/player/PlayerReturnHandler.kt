@@ -30,20 +30,19 @@ object PlayerReturnHandler {
         val levelKey = record.backendLevelKey
         val bounds = record.backendSiteBounds
         if (levelKey == null || bounds == null) {
-            RunRegistry.clearPlayerAssignment(player.server, player.uuid)
-            RunBackendManager.backend.clearPlayer(player.uuid)
+            if (!RunRegistry.returnPlayer(player)) RunRegistry.clearPlayerAssignment(player.server, player.uuid)
             return
         }
 
         if (player.serverLevel().dimension() != levelKey) {
-            RunRegistry.clearPlayerAssignment(player.server, player.uuid)
-            RunBackendManager.backend.clearPlayer(player.uuid)
+            // Aether fall-out and other exits are extraction paths. Let the registry
+            // confirm transport before consuming the participant binding.
+            if (!RunRegistry.returnPlayer(player)) RunRegistry.clearPlayerAssignment(player.server, player.uuid)
             return
         }
 
         if (!bounds.contains(player.blockPosition())) {
-            RunRegistry.clearPlayerAssignment(player.server, player.uuid)
-            RunBackendManager.backend.clearPlayer(player.uuid)
+            if (!RunRegistry.returnPlayer(player)) RunRegistry.clearPlayerAssignment(player.server, player.uuid)
         }
     }
 }
