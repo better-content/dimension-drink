@@ -655,6 +655,30 @@ class ObeliskFeature(codec: Codec<NoneFeatureConfiguration>) : Feature<NoneFeatu
                 .filter { hasPathableNeighbor(it, occupied, candidates) }
                 .forEach { occupied += it }
 
+            // Keep the path network intact, but break up dense non-path interiors. The
+            // reliquary footprint is meant to read as clustered ruins and cultivation
+            // clearings, not a nearly solid mask after overlapping lobes are expanded.
+            if (occupied.isNotEmpty()) {
+                val minX = occupied.minOf { it.x }
+                val maxX = occupied.maxOf { it.x }
+                val minZ = occupied.minOf { it.z }
+                val maxZ = occupied.maxOf { it.z }
+                val boxArea = (maxX - minX + 1) * (maxZ - minZ + 1)
+                val maxOrganicFill = boxArea * 0.60
+                while (occupied.size > maxOrganicFill) {
+                    val removable = occupied.asSequence()
+                        .filter { it !in paths && it != TileCoord(0, 0) }
+                        .filter { it.x in (minX + 1) until maxX && it.z in (minZ + 1) until maxZ }
+                        .maxWithOrNull(
+                            compareBy<TileCoord> { nearestDistance(it, pathList) }
+                                .thenBy { manhattan(it) }
+                                .thenBy { it.x }
+                                .thenBy { it.z }
+                        ) ?: break
+                    occupied.remove(removable)
+                }
+            }
+
             return occupied
                 .filter { it == TileCoord(0, 0) || it in paths || hasPathableNeighbor(it, occupied, candidates) }
                 .toSet()

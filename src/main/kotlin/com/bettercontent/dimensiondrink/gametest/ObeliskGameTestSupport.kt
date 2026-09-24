@@ -1,6 +1,7 @@
 package com.bettercontent.dimensiondrink.gametest
 
 import com.google.gson.GsonBuilder
+import com.mojang.logging.LogUtils
 import com.mojang.authlib.GameProfile
 import com.bettercontent.dimensiondrink.MOD_ID
 import com.bettercontent.dimensiondrink.ObeliskConstants
@@ -244,6 +245,59 @@ object ObeliskGameTestSupport {
             helper.assertTrue(obelisk.activeRunId == null, "Expected origin font run id to clear")
             helper.assertTrue(RunSavedData.get(server).snapshot().none { it.id == handle.runId }, "Expected saved run to clear")
             helper.assertTrue(!FontChunkTicketManager.hasTicket(handle.runId), "Expected final return to release its origin chunk ticket")
+            client.close(server)
+            helper.succeed()
+        } catch (failure: Throwable) {
+            runId?.let { RunRegistry.finishRun(server, it) }
+            client.close(server)
+            throw failure
+        }
+    }
+
+    fun smokeHeadlessFontOnlyRoundTrip(helper: GameTestHelper, definitionId: String) {
+        val server = helper.level.server
+        val expectedDimension = requireNotNull(canonicalLevelKey(definitionId)) {
+            "Expected canonical dimension for Font definition $definitionId"
+        }
+        if (server.getLevel(expectedDimension) == null) {
+            LogUtils.getLogger().info(
+                "Skipping optional {} Font round trip because target dimension {} is not loaded",
+                definitionId,
+                expectedDimension.location()
+            )
+            helper.succeed()
+            return
+        }
+        val client = connectHeadlessPlayer(helper)
+        val player = client.player
+        val originLevel = helper.level
+        val originPos = helper.absolutePos(BlockPos(3, 2, 3))
+        var runId: UUID? = null
+        try {
+            placeChargedDefinitionObelisk(helper, originPos, definitionId)
+            val obelisk = helper.level.getBlockEntity(originPos) as ObeliskBlockEntity
+            val result = RunRegistry.activateObelisk(player, obelisk, originPos)
+            helper.assertTrue(result?.startsWith("Drinking from ") == true, "Expected Font-authorized entry for $definitionId, got: $result")
+            client.pump(server)
+
+            val handle = requireNotNull(RunRegistry.getRun(player.uuid)) { "Expected player-to-run ownership for $definitionId" }
+            runId = handle.runId
+            val destination = requireNotNull(server.getLevel(expectedDimension)) {
+                "Expected target dimension ${expectedDimension.location()} to be loaded"
+            }
+            helper.assertTrue(
+                player.serverLevel().dimension() == expectedDimension,
+                "Expected Font-authorized travel to ${expectedDimension.location()}, got ${player.serverLevel().dimension().location()}"
+            )
+            helper.assertTrue(destination.getBlockState(requireNotNull(RunRegistry.get(handle.runId)?.spawnPos).below()).`is`(ModBlocks.RETURN_FONT.get()),
+                "Expected a return Font at the generated $definitionId arrival")
+
+            helper.assertTrue(RunRegistry.returnPlayer(player), "Expected return from $definitionId to succeed")
+            client.pump(server)
+            helper.assertTrue(player.serverLevel().dimension() == originLevel.dimension(), "Expected $definitionId return to origin dimension")
+            helper.assertTrue(player.blockPosition().closerThan(originPos, 4.0), "Expected $definitionId return beside origin Font")
+            helper.assertTrue(RunRegistry.getRun(player.uuid) == null, "Expected $definitionId player ownership to clear")
+            helper.assertTrue(RunRegistry.get(handle.runId) == null, "Expected $definitionId final return to close session")
             client.close(server)
             helper.succeed()
         } catch (failure: Throwable) {
@@ -1325,8 +1379,9 @@ object ObeliskGameTestSupport {
 
         helper.assertTrue(anchors.isNotEmpty(), "Expected overworld terrain test window to include deterministic candidate site anchors")
 
+        // Force vanilla terrain and structures to finish before the deterministic test
+        // surfaces are authored; otherwise a later getChunk call can replace fixtures.
         anchors.forEach { anchor ->
-            prepareGenerationSurface(helper, anchor.atY(4))
             val anchorChunkX = anchor.x shr 4
             val anchorChunkZ = anchor.z shr 4
             for (chunkX in anchorChunkX - 6..anchorChunkX + 6) {
@@ -1335,6 +1390,7 @@ object ObeliskGameTestSupport {
                 }
             }
         }
+        anchors.forEach { anchor -> prepareGenerationSurface(helper, anchor.atY(4)) }
 
         anchors.forEach { anchor ->
             val anchorChunkX = anchor.x shr 4
@@ -2071,7 +2127,12 @@ object ObeliskGameTestSupport {
             helper.assertTrue(!helper.level.getBlockState(lowerTierCenter.offset(0, 0, -3)).isAir, "Expected $label elevated altar to have a broad lower step")
         }
         for (dy in 1..3) {
-            helper.assertTrue(helper.level.getBlockState(fontPos.above(dy)).isAir, "Expected $label font to keep clear space above it")
+            val clearancePos = fontPos.above(dy)
+            val clearanceState = helper.level.getBlockState(clearancePos)
+            helper.assertTrue(
+                clearanceState.isAir,
+                "Expected $label font at $fontPos to keep clear space above it, found $clearanceState at $clearancePos"
+            )
         }
         val altarCenter = middleTierCenter
         val shardTorch = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(

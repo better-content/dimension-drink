@@ -12,6 +12,16 @@ class ObeliskSmokeGameTests {
         ObeliskGameTestSupport.smokeHeadlessRoundTrip(helper)
     }
 
+    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "font_smoke_font_only", timeoutTicks = 1600)
+    fun ratlantis_font_authorizes_player_round_trip(helper: GameTestHelper) {
+        ObeliskGameTestSupport.smokeHeadlessFontOnlyRoundTrip(helper, "ratlantis")
+    }
+
+    @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "font_smoke_font_only", timeoutTicks = 1600)
+    fun bumblezone_font_authorizes_player_round_trip(helper: GameTestHelper) {
+        ObeliskGameTestSupport.smokeHeadlessFontOnlyRoundTrip(helper, "bumblezone")
+    }
+
     @GameTest(templateNamespace = "dimension_drink", template = "bootstrap/empty", batch = "font_smoke", timeoutTicks = 1200)
     fun entry_cost_and_active_drain_close_dry_run(helper: GameTestHelper) {
         ObeliskGameTestSupport.smokeEntryCostAndActiveDrainCloseDryRun(helper)
