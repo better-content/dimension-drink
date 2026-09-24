@@ -33,6 +33,8 @@ Dimension Drink bundles the Aether, Bumblezone, Nether, and Ratlantis Font defin
 
 Layout and definition selection use independent deterministic seed domains, so terrain opportunity cannot systematically favor a Font type. Custom JSON definitions remain supported when their weights are positive and finite. The effective normalized weights are logged on reload and available with the permission-level-2 `/font audit` command.
 
+Use the permission-level-2 `/font find` command to list one indexed natural Font for each enabled worldgen definition. Found coordinates are clickable and teleport the operator to the site. The command only reads locations recorded as generated chunks load; it does not search or generate remote terrain. A missing type means more terrain must be explored before that world's generated Fonts can be fully checked.
+
 Naturally generated Fonts are added to a saved discovery index as their chunks load. Wandering-trader Font maps use only that index and never locate or generate remote structure chunks; maps are marker-only until players explore their terrain. Player-placed and debug Fonts are not indexed.
 
 These contracts are new-world-only. Existing copied configuration, historical structures, and saves are not migrated or scanned; remove old Font configuration and create a new world when validating the new distribution.

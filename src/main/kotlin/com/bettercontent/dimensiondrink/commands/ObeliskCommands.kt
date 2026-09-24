@@ -19,6 +19,8 @@ import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.arguments.UuidArgument
 import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
+import net.minecraft.network.chat.ClickEvent
+import net.minecraft.network.chat.Style
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.level.block.Blocks
@@ -49,6 +51,51 @@ object ObeliskCommands {
                 ctx.source.sendSuccess({ Component.literal("Indexed natural Fonts: $indexed") }, false)
                 ctx.source.sendSuccess({ Component.literal("Font maps sold: $sold") }, false)
                 1
+            }
+        )
+
+        root.then(
+            Commands.literal("find").executes { ctx ->
+                val definitions = FontSelector.eligible(ObeliskDataManager.enabledDimensionDrinks())
+                val found = FontLocationSavedData.get(ctx.source.server)
+                    .locationsByDefinition(definitions.mapTo(linkedSetOf()) { it.id })
+                ctx.source.sendSuccess({
+                    Component.literal("Naturally generated dimensional Fonts indexed in this world (loaded chunks only):")
+                }, false)
+                definitions.forEach { definition ->
+                    val location = found[definition.id]
+                    if (location == null) {
+                        ctx.source.sendSuccess({
+                            Component.literal("${definition.displayName} [${definition.id}]: NOT FOUND — explore more terrain to generate and index a Font")
+                        }, false)
+                    } else {
+                        val pos = location.pos
+                        val command = "/execute in ${location.level.location()} run tp @s ${pos.x} ${pos.y + 2} ${pos.z}"
+                        val coordinates = Component.literal("${pos.x}, ${pos.y}, ${pos.z}")
+                            .setStyle(Style.EMPTY
+                                .withClickEvent(ClickEvent(ClickEvent.Action.RUN_COMMAND, command))
+                                .withHoverEvent(net.minecraft.network.chat.HoverEvent(
+                                    net.minecraft.network.chat.HoverEvent.Action.SHOW_TEXT,
+                                    Component.literal("Click to visit this naturally generated Font")
+                                )))
+                        ctx.source.sendSuccess({
+                            Component.literal("${definition.displayName} [${definition.id}] in ${location.level.location()} at ")
+                                .append(coordinates)
+                        }, false)
+                    }
+                }
+                if (definitions.isEmpty()) {
+                    ctx.source.sendFailure(Component.literal("No enabled, positive-weight Font definitions are configured."))
+                    0
+                } else {
+                    if (found.size < definitions.size) {
+                        ctx.source.sendFailure(Component.literal("Found ${found.size}/${definitions.size} Font types. The index never generates or loads chunks; explore terrain and run /font find again."))
+                        0
+                    } else {
+                        ctx.source.sendSuccess({ Component.literal("Found all ${definitions.size} configured Font types.") }, false)
+                        1
+                    }
+                }
             }
         )
 

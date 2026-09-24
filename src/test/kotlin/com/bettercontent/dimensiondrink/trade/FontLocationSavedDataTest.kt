@@ -40,4 +40,25 @@ class FontLocationSavedDataTest {
         val saved = data.save(CompoundTag())
         assertEquals(2L, saved.getCompound("maps_sold").getLong("nether"))
     }
+
+    @Test
+    fun fontFinderReturnsOneStableLocationPerEnabledTypeWithoutInventingMissingTypes() {
+        data class Candidate(val id: String, val order: Int, val pos: BlockPos)
+        val candidates = listOf(
+            Candidate("nether", 8, BlockPos(8, 70, 8)),
+            Candidate("nether", 2, BlockPos(2, 70, 2)),
+            Candidate("aether", 4, BlockPos(4, 70, 4))
+        )
+
+        val selected = FontLocationSavedData.onePerDefinition(
+            candidates,
+            setOf("aether", "nether", "ratlantis"),
+            Candidate::id,
+            compareBy(Candidate::order)
+        )
+
+        assertEquals(setOf("aether", "nether"), selected.keys)
+        assertEquals(BlockPos(4, 70, 4), selected["aether"]?.pos)
+        assertEquals(BlockPos(2, 70, 2), selected["nether"]?.pos)
+    }
 }

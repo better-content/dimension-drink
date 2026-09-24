@@ -26,6 +26,10 @@ class FontLocationSavedData private constructor(
 ) : SavedData() {
     fun snapshot(): List<FontLocation> = locations.values.toList()
 
+    /** One deterministic naturally generated location per enabled definition; does not load chunks. */
+    fun locationsByDefinition(definitionIds: Set<String>): Map<String, FontLocation> =
+        locationsByDefinition(locations.values, definitionIds)
+
     fun salesSnapshot(): Map<String, Long> = mapsSold.toSortedMap()
 
     fun register(level: ServerLevel, pos: BlockPos, definitionId: String) {
@@ -92,6 +96,30 @@ class FontLocationSavedData private constructor(
     companion object {
         private const val DATA_NAME = "dimension_drink_font_locations"
         const val SCHEMA_VERSION = 1
+
+        internal fun locationsByDefinition(
+            candidates: Iterable<FontLocation>,
+            definitionIds: Set<String>
+        ): Map<String, FontLocation> = onePerDefinition(
+            candidates,
+            definitionIds,
+            FontLocation::definitionId,
+            compareBy<FontLocation> { it.level.location().toString() }.thenBy { it.pos.asLong() }
+        )
+
+        internal fun <T> onePerDefinition(
+            candidates: Iterable<T>,
+            definitionIds: Set<String>,
+            definitionId: (T) -> String,
+            stableOrder: Comparator<T>
+        ): Map<String, T> {
+            if (definitionIds.isEmpty()) return emptyMap()
+            return candidates.asSequence()
+                .filter { definitionId(it) in definitionIds }
+                .sortedWith(compareBy<T>(definitionId).then(stableOrder))
+                .distinctBy(definitionId)
+                .associateBy(definitionId)
+        }
 
         fun get(server: MinecraftServer): FontLocationSavedData =
             server.overworld().dataStorage.computeIfAbsent(::load, ::FontLocationSavedData, DATA_NAME)
