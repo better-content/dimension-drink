@@ -30,10 +30,34 @@ import net.minecraftforge.eventbus.api.SubscribeEvent
 object DimensionalFontMapTrades {
     private const val SOLD_TYPES_TAG = "dimension_drink:font_map_sold_types"
 
+    /** Stable caller API for continuing an authored seller's existing map rotation. */
+    @JvmStatic
+    fun soldDefinitionIds(sellerData: CompoundTag): Set<String> = readSoldTypes(sellerData)
+
     /** Stable JVM entry point used by the pack's wandering-trader integration. */
     @JvmStatic
     fun wanderingTraderListing(villagerXp: Int): VillagerTrades.ItemListing =
         DimensionalFontMapListing(villagerXp)
+
+    /**
+     * Creates the next map offer for an authored seller.
+     *
+     * The caller supplies the payment item because Dimension Drink does not own the
+     * pack's economy. The destination is selected only from [FontLocationSavedData],
+     * so this method never searches for or generates a chunk. [excludedTypes] should
+     * contain the seller's already-sold definition ids for the current seller cycle;
+     * sale recording and cycle advancement remain the caller's responsibility through
+     * [onTradeCompleted].
+     */
+    @JvmStatic
+    fun authoredSellerOffer(
+        level: ServerLevel,
+        origin: BlockPos,
+        villagerXp: Int,
+        currency: Item,
+        excludedTypes: Set<String> = emptySet()
+    ): MerchantOffer? = DimensionalFontMapListing(villagerXp)
+        .nextOffer(level, origin, excludedTypes, currency)
 
     @SubscribeEvent
     fun onTradeCompleted(event: TradeWithVillagerEvent) {
@@ -115,6 +139,15 @@ class DimensionalFontMapListing(
         return createMap(level, destination.pos, definition)
     }
 
+    internal fun nextOffer(
+        level: ServerLevel,
+        origin: BlockPos,
+        excludedTypes: Set<String>,
+        currency: Item
+    ): MerchantOffer? = nextMap(level, origin, excludedTypes)?.let { map ->
+        createOffer(map, villagerXp, currency)
+    }
+
     companion object {
         const val DEFINITION_TAG = "dimension_drink:font_definition_id"
         const val COST = 8
@@ -153,7 +186,9 @@ class DimensionalFontMapListing(
             return map
         }
 
-        internal fun createOffer(map: ItemStack, villagerXp: Int, currency: Item): MerchantOffer {
+        /** Creates a map offer using exactly the currency item supplied by the seller. */
+        @JvmStatic
+        fun createOffer(map: ItemStack, villagerXp: Int, currency: Item): MerchantOffer {
             return MerchantOffer(ItemStack(currency, COST), map, MAX_USES, villagerXp, 0.0f)
         }
 
