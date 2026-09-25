@@ -36,7 +36,7 @@ repositories {
     maven { url = 'https://maven.llamalad7.mixinextras.org/releases/' }
     ivy {
         name = 'betterContentFixesLocal'
-        url = uri(betterContentJar('better-content-fixes', 'better-content-fixes-0.1.8.jar').parentFile)
+        url = uri(betterContentJar('better-content-fixes', 'better-content-fixes-0.1.9.jar').parentFile)
         patternLayout { artifact('[artifact]-[revision].[ext]') }
         metadataSources { artifact() }
         content { includeGroup('bettercontent.local') }
@@ -63,15 +63,15 @@ dependencies {
 
     compileOnly fg.deobf(mantleDep)
     compileOnly fg.deobf(tconstructDep)
-    compileOnly fg.deobf('bettercontent.local:better-content-fixes:0.1.8')
+    compileOnly fg.deobf('bettercontent.local:better-content-fixes:0.1.9')
     // Forge dev runs load declared mandatory dependencies from runtimeOnly; testRuntimeOnly
     // alone is not part of the GameTestServer launch classpath.
-    runtimeOnly fg.deobf('bettercontent.local:better-content-fixes:0.1.8')
+    runtimeOnly fg.deobf('bettercontent.local:better-content-fixes:0.1.9')
     // Better Content Fixes uses MixinExtras at runtime. The provider's reobfuscated
     // development JAR does not expose that nested dependency to ForgeGradle runs.
     runtimeOnly 'io.github.llamalad7:mixinextras-forge:0.5.4'
-    testCompileOnly fg.deobf('bettercontent.local:better-content-fixes:0.1.8')
-    testRuntimeOnly fg.deobf('bettercontent.local:better-content-fixes:0.1.8')
+    testCompileOnly fg.deobf('bettercontent.local:better-content-fixes:0.1.9')
+    testRuntimeOnly fg.deobf('bettercontent.local:better-content-fixes:0.1.9')
     if ((findProperty('dimensionDrinkIncludeCompatRuntime') ?: 'false').toString().toBoolean()) {
         runtimeOnly fg.deobf(mantleDep)
         runtimeOnly fg.deobf(tconstructDep)

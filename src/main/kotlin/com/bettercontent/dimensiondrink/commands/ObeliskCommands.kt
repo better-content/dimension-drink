@@ -114,6 +114,26 @@ object ObeliskCommands {
                 )
         )
 
+        if (System.getProperty("bc.pack_test.debug") == "true") {
+            root.then(
+                Commands.literal("harness_enter")
+                    .then(Commands.argument("template", StringArgumentType.word()).executes { ctx ->
+                        val player = ctx.source.playerOrException
+                        val template = StringArgumentType.getString(ctx, "template")
+                        if (spawnDebugObelisk(player, template) != 1) return@executes 0
+                        val pos = debugSpawnPos(player.serverLevel(), player.blockPosition())
+                        val obelisk = player.serverLevel().getBlockEntity(pos) as? ObeliskBlockEntity
+                            ?: error("harness Font block entity missing at $pos")
+                        val result = RunRegistry.activateObelisk(player, obelisk, pos)
+                        check(result?.startsWith("Drinking from ") == true) {
+                            "harness Font activation failed: $result"
+                        }
+                        logger.info("BC_FONT_HARNESS_ENTER player={} template={} origin={}", player.gameProfile.name, template, pos)
+                        1
+                    })
+            )
+        }
+
         root.then(
             Commands.literal("list_runs").executes { ctx ->
                 val runs = RunRegistry.snapshot().sortedBy { it.createdGameTime }
