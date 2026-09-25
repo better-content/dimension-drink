@@ -33,6 +33,7 @@ class FontLocationSavedData private constructor(
     fun salesSnapshot(): Map<String, Long> = mapsSold.toSortedMap()
 
     fun register(level: ServerLevel, pos: BlockPos, definitionId: String) {
+        if (level.dimension() != Level.OVERWORLD) return
         val location = FontLocation(level.dimension(), pos.immutable(), definitionId)
         if (locations.put(key(location.level, location.pos), location) != location) setDirty()
     }
@@ -134,6 +135,7 @@ class FontLocationSavedData private constructor(
             for (index in 0 until list.size) {
                 val entry = list.getCompound(index)
                 val levelId = ResourceLocation.tryParse(entry.getString("level")) ?: continue
+                if (levelId != Level.OVERWORLD.location()) continue
                 val definition = entry.getString("definition").takeIf(String::isNotBlank) ?: continue
                 val level = ResourceKey.create(Registries.DIMENSION, levelId)
                 val location = FontLocation(level, BlockPos.of(entry.getLong("pos")), definition)

@@ -6,6 +6,7 @@ import net.minecraft.core.BlockPos
 import net.minecraft.nbt.CompoundTag
 import net.minecraft.util.RandomSource
 import net.minecraft.world.level.ChunkPos
+import net.minecraft.world.level.Level
 import net.minecraft.world.level.StructureManager
 import net.minecraft.world.level.WorldGenLevel
 import net.minecraft.world.level.chunk.ChunkGenerator
@@ -73,6 +74,9 @@ class DimensionalFontStructurePiece(
         chunkPos: ChunkPos,
         pivot: BlockPos
     ) {
+        // Structure placement is shared across every dimension with matching biomes.
+        // Fonts themselves are a world-generation feature of the Overworld only.
+        if (level.level.dimension() != Level.OVERWORLD) return
         val definition = ObeliskDataManager.getObelisk(definitionId) ?: return
         DimensionalFontSiteGenerator.place(level, box, center, siteSeed, definition, maxCharge)
     }
