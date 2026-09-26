@@ -27,6 +27,7 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.InteractionResult
+import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.material.Fluids
@@ -168,6 +169,10 @@ object ObeliskCommands {
                     player.teleportTo(sealPos.x + 0.5, sealPos.y + 1.0, sealPos.z + 0.5)
                 }
                 val state = level.getBlockState(sealPos)
+                logger.info("BC_FONT_HARNESS_RETURN_INPUT player={} held={} sneaking={}",
+                    player.gameProfile.name, player.mainHandItem, player.isShiftKeyDown)
+                player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY)
+                player.setShiftKeyDown(false)
                 logger.info("BC_FONT_HARNESS_RETURN_INTERACT player={} seal={}", player.gameProfile.name, sealPos)
                 val result = state.use(level, player, InteractionHand.MAIN_HAND,
                     BlockHitResult(Vec3.atCenterOf(sealPos), Direction.UP, sealPos, false))
