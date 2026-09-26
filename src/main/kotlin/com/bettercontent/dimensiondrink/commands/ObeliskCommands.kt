@@ -126,8 +126,8 @@ object ObeliskCommands {
                     .then(Commands.argument("template", StringArgumentType.word()).executes { ctx ->
                         val player = ctx.source.playerOrException
                         val template = StringArgumentType.getString(ctx, "template")
-                        if (spawnDebugObelisk(player, template) != 1) return@executes 0
                         val pos = debugSpawnPos(player.serverLevel(), player.blockPosition())
+                        if (spawnDebugObelisk(player, template) != 1) return@executes 0
                         check(player.serverLevel().getBlockEntity(pos) is ObeliskBlockEntity) {
                             "harness Font block entity missing at $pos"
                         }
