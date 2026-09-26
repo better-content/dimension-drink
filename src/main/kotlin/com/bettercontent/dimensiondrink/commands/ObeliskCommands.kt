@@ -6,6 +6,7 @@ import com.mojang.logging.LogUtils
 import com.bettercontent.dimensiondrink.api.RunBeginResult
 import com.bettercontent.dimensiondrink.data.ObeliskDataManager
 import com.bettercontent.dimensiondrink.content.ObeliskBlockEntity
+import com.bettercontent.dimensiondrink.registry.ModBlocks
 import com.bettercontent.dimensiondrink.runtime.ObeliskRuntimeService
 import com.bettercontent.dimensiondrink.runtime.backend.RunBackendManager
 import com.bettercontent.dimensiondrink.runtime.backend.RunSiteSavedData
@@ -18,14 +19,19 @@ import net.minecraft.commands.Commands
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.arguments.UuidArgument
 import net.minecraft.core.BlockPos
+import net.minecraft.core.Direction
 import net.minecraft.network.chat.Component
 import net.minecraft.network.chat.ClickEvent
 import net.minecraft.network.chat.Style
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.InteractionHand
+import net.minecraft.world.InteractionResult
 import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.material.Fluids
+import net.minecraft.world.phys.BlockHitResult
+import net.minecraft.world.phys.Vec3
 import net.minecraftforge.event.RegisterCommandsEvent
 import net.minecraftforge.eventbus.api.SubscribeEvent
 import java.util.UUID
@@ -122,16 +128,41 @@ object ObeliskCommands {
                         val template = StringArgumentType.getString(ctx, "template")
                         if (spawnDebugObelisk(player, template) != 1) return@executes 0
                         val pos = debugSpawnPos(player.serverLevel(), player.blockPosition())
-                        val obelisk = player.serverLevel().getBlockEntity(pos) as? ObeliskBlockEntity
-                            ?: error("harness Font block entity missing at $pos")
-                        val result = RunRegistry.activateObelisk(player, obelisk, pos)
-                        check(result?.startsWith("Drinking from ") == true) {
-                            "harness Font activation failed: $result"
+                        check(player.serverLevel().getBlockEntity(pos) is ObeliskBlockEntity) {
+                            "harness Font block entity missing at $pos"
                         }
+                        check(player.mainHandItem.isEmpty && !player.isShiftKeyDown) { "harness Font requires an empty hand and no sneaking" }
+                        val level = player.serverLevel()
+                        val state = level.getBlockState(pos)
+                        check(state.block === ModBlocks.OBELISK.get()) { "harness Font block missing at $pos" }
+                        val result = state.use(level, player, InteractionHand.MAIN_HAND,
+                            BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false))
+                        check(result == InteractionResult.CONSUME || result == InteractionResult.SUCCESS) {
+                            "harness Font interaction was not consumed: $result"
+                        }
+                        check(RunRegistry.getRun(player.uuid) != null) { "harness Font interaction did not bind the player" }
                         logger.info("BC_FONT_HARNESS_ENTER player={} template={} origin={}", player.gameProfile.name, template, pos)
                         1
                     })
             )
+            root.then(Commands.literal("harness_return").executes { ctx ->
+                val player = ctx.source.playerOrException
+                val run = RunRegistry.getRun(player.uuid) ?: error("harness return requires an active Font run")
+                val level = player.serverLevel()
+                val sealPos = (0..5).map(player.blockPosition()::below).firstOrNull {
+                    level.getBlockState(it).block === ModBlocks.RETURN_FONT.get()
+                } ?: error("harness return Font missing beneath player")
+                val state = level.getBlockState(sealPos)
+                val result = state.use(level, player, InteractionHand.MAIN_HAND,
+                    BlockHitResult(Vec3.atCenterOf(sealPos), Direction.UP, sealPos, false))
+                check(result == InteractionResult.CONSUME || result == InteractionResult.SUCCESS) {
+                    "harness return Font interaction was not consumed: $result"
+                }
+                check(RunRegistry.getRun(player.uuid) == null) { "harness return Font did not clear the run" }
+                logger.info("BC_FONT_HARNESS_RETURN player={} template={} destination={}",
+                    player.gameProfile.name, run.definitionId, player.serverLevel().dimension().location())
+                1
+            })
         }
 
         root.then(
