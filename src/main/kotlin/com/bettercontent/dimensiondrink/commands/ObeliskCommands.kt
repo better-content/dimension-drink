@@ -148,10 +148,20 @@ object ObeliskCommands {
             root.then(Commands.literal("harness_return").executes { ctx ->
                 val player = ctx.source.playerOrException
                 val run = RunRegistry.getRun(player.uuid) ?: error("harness return requires an active Font run")
+                val record = RunRegistry.get(run.runId) ?: error("harness return run record is missing")
                 val level = player.serverLevel()
-                val sealPos = (0..5).map(player.blockPosition()::below).firstOrNull {
-                    level.getBlockState(it).block === ModBlocks.RETURN_FONT.get()
-                } ?: error("harness return Font missing beneath player")
+                check(record.backendLevelKey == level.dimension()) {
+                    "harness player is outside the active Font destination"
+                }
+                val sealPos = record.spawnPos?.below() ?: error("harness return site has no spawn anchor")
+                check(level.getBlockState(sealPos).block === ModBlocks.RETURN_FONT.get()) {
+                    "harness return Font missing at active site $sealPos"
+                }
+                if (player.blockPosition() != sealPos.above()) {
+                    logger.info("BC_FONT_HARNESS_RETURN_REPOSITION player={} from={} seal={}",
+                        player.gameProfile.name, player.blockPosition(), sealPos)
+                    player.teleportTo(sealPos.x + 0.5, sealPos.y + 1.0, sealPos.z + 0.5)
+                }
                 val state = level.getBlockState(sealPos)
                 val result = state.use(level, player, InteractionHand.MAIN_HAND,
                     BlockHitResult(Vec3.atCenterOf(sealPos), Direction.UP, sealPos, false))
