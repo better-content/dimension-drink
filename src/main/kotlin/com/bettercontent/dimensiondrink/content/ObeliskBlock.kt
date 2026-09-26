@@ -69,7 +69,6 @@ class ObeliskBlock(
     ): InteractionResult {
         if (level.isClientSide) return InteractionResult.SUCCESS
         val serverPlayer = player as? ServerPlayer ?: return InteractionResult.PASS
-        val obelisk = level.getBlockEntity(pos) as? ObeliskBlockEntity ?: return InteractionResult.PASS
         val held = player.getItemInHand(hand)
 
         if (returnOnly) {
@@ -81,6 +80,8 @@ class ObeliskBlock(
             }
             return InteractionResult.CONSUME
         }
+
+        val obelisk = level.getBlockEntity(pos) as? ObeliskBlockEntity ?: return InteractionResult.PASS
 
         if (held.item is AxeItem) {
             val scraped = obelisk.scrapeAltarCopperOxidation(level)
