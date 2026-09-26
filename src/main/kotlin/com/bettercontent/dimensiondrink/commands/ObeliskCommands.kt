@@ -157,18 +157,22 @@ object ObeliskCommands {
                     "harness player is outside the active Font destination"
                 }
                 val sealPos = record.spawnPos?.below()?.takeIf {
-                    level.chunkSource.getChunkNow(it.x shr 4, it.z shr 4)
-                        ?.getBlockState(it)?.block === ModBlocks.RETURN_FONT.get()
+                    level.getBlockState(it).`is`(ModBlocks.RETURN_FONT.get())
                 } ?: findLoadedDebugReturnFont(level, player.blockPosition())
                     ?: error("harness return Font missing near ${player.blockPosition()} and recorded site ${record.spawnPos}")
+                logger.info("BC_FONT_HARNESS_RETURN_FOUND player={} seal={} state={}",
+                    player.gameProfile.name, sealPos, level.getBlockState(sealPos))
                 if (player.blockPosition() != sealPos.above()) {
                     logger.info("BC_FONT_HARNESS_RETURN_REPOSITION player={} from={} seal={}",
                         player.gameProfile.name, player.blockPosition(), sealPos)
                     player.teleportTo(sealPos.x + 0.5, sealPos.y + 1.0, sealPos.z + 0.5)
                 }
                 val state = level.getBlockState(sealPos)
+                logger.info("BC_FONT_HARNESS_RETURN_INTERACT player={} seal={}", player.gameProfile.name, sealPos)
                 val result = state.use(level, player, InteractionHand.MAIN_HAND,
                     BlockHitResult(Vec3.atCenterOf(sealPos), Direction.UP, sealPos, false))
+                logger.info("BC_FONT_HARNESS_RETURN_RESULT player={} result={} dimension={} active_run={}",
+                    player.gameProfile.name, result, player.serverLevel().dimension().location(), RunRegistry.getRun(player.uuid)?.runId)
                 check(result == InteractionResult.CONSUME || result == InteractionResult.SUCCESS) {
                     "harness return Font interaction was not consumed: $result"
                 }
