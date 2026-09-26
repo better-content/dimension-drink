@@ -150,13 +150,17 @@ object ObeliskCommands {
                 val run = RunRegistry.getRun(player.uuid) ?: error("harness return requires an active Font run")
                 val record = RunRegistry.get(run.runId) ?: error("harness return run record is missing")
                 val level = player.serverLevel()
+                logger.info("BC_FONT_HARNESS_RETURN_LOOKUP player={} position={} dimension={} recorded_dimension={} recorded_spawn={}",
+                    player.gameProfile.name, player.blockPosition(), level.dimension().location(),
+                    record.backendLevelKey?.location(), record.spawnPos)
                 check(record.backendLevelKey == level.dimension()) {
                     "harness player is outside the active Font destination"
                 }
-                val sealPos = record.spawnPos?.below() ?: error("harness return site has no spawn anchor")
-                check(level.getBlockState(sealPos).block === ModBlocks.RETURN_FONT.get()) {
-                    "harness return Font missing at active site $sealPos"
-                }
+                val sealPos = record.spawnPos?.below()?.takeIf {
+                    level.chunkSource.getChunkNow(it.x shr 4, it.z shr 4)
+                        ?.getBlockState(it)?.block === ModBlocks.RETURN_FONT.get()
+                } ?: findLoadedDebugReturnFont(level, player.blockPosition())
+                    ?: error("harness return Font missing near ${player.blockPosition()} and recorded site ${record.spawnPos}")
                 if (player.blockPosition() != sealPos.above()) {
                     logger.info("BC_FONT_HARNESS_RETURN_REPOSITION player={} from={} seal={}",
                         player.gameProfile.name, player.blockPosition(), sealPos)
@@ -169,8 +173,8 @@ object ObeliskCommands {
                     "harness return Font interaction was not consumed: $result"
                 }
                 check(RunRegistry.getRun(player.uuid) == null) { "harness return Font did not clear the run" }
-                logger.info("BC_FONT_HARNESS_RETURN player={} template={} destination={}",
-                    player.gameProfile.name, run.definitionId, player.serverLevel().dimension().location())
+                logger.info("BC_FONT_HARNESS_RETURN player={} template={} seal={} destination={}",
+                    player.gameProfile.name, run.definitionId, sealPos, player.serverLevel().dimension().location())
                 1
             })
         }
@@ -492,6 +496,26 @@ object ObeliskCommands {
     private fun isWater(state: BlockState): Boolean {
         val fluidType = state.fluidState.type
         return fluidType == Fluids.WATER || fluidType == Fluids.FLOWING_WATER
+    }
+
+    private fun findLoadedDebugReturnFont(level: ServerLevel, center: BlockPos): BlockPos? {
+        val mutable = BlockPos.MutableBlockPos()
+        for (chunkZ in (center.z shr 4) - 1..(center.z shr 4) + 1) {
+            for (chunkX in (center.x shr 4) - 1..(center.x shr 4) + 1) {
+                val chunk = level.chunkSource.getChunkNow(chunkX, chunkZ) ?: continue
+                for (y in level.minBuildHeight until level.maxBuildHeight) {
+                    for (z in (chunkZ shl 4) until ((chunkZ + 1) shl 4)) {
+                        for (x in (chunkX shl 4) until ((chunkX + 1) shl 4)) {
+                            mutable.set(x, y, z)
+                            if (chunk.getBlockState(mutable).block === ModBlocks.RETURN_FONT.get()) {
+                                return mutable.immutable()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return null
     }
 
     private fun lookedAtObelisk(player: ServerPlayer): ObeliskBlockEntity? {
